@@ -175,6 +175,38 @@ final class AppState: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Task 11 实现回放，这里先占位。
-    func togglePlay() {}
+    // MARK: - Playback
+
+    private let playbackEngine = PlaybackEngine()
+
+    func togglePlay() {
+        switch phase {
+        case .playing:
+            playbackEngine.stop()
+            phase = .idle
+        case .idle:
+            guard hasPermission else {
+                Permissions.requestAccessibility()
+                refreshPermission()
+                return
+            }
+            guard let script = selectedScript, !script.blocks.isEmpty else { return }
+            phase = .playing(iteration: 1, currentBlockID: nil)
+            playbackEngine.play(script: script) { [weak self] iteration in
+                Task { @MainActor in
+                    guard let self, case .playing = self.phase else { return }
+                    self.phase = .playing(iteration: iteration, currentBlockID: nil)
+                }
+            } onBlock: { [weak self] blockID in
+                Task { @MainActor in
+                    guard let self, case .playing(let it, _) = self.phase else { return }
+                    self.phase = .playing(iteration: it, currentBlockID: blockID)
+                }
+            } onFinish: { [weak self] in
+                Task { @MainActor in self?.phase = .idle }
+            }
+        case .countdown, .recording:
+            break
+        }
+    }
 }
