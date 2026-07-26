@@ -66,10 +66,13 @@ final class EventRecorder {
     }
 
     private func handle(type: CGEventType, cgEvent: CGEvent) {
-        // tap 被系统禁用（超时/权限变化）：尝试重启
+        // tap 被系统禁用（超时/权限变化）：尝试重启，并确认重启成功
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap {
                 CGEvent.tapEnable(tap: tap, enable: true)
+                if !CGEvent.tapIsEnabled(tap: tap) {
+                    DispatchQueue.main.async { [weak self] in self?.onTapFailure?() }
+                }
             } else {
                 DispatchQueue.main.async { [weak self] in self?.onTapFailure?() }
             }

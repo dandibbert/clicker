@@ -110,6 +110,8 @@ final class AppState: ObservableObject {
         case .countdown:
             countdown.close()
             phase = .idle
+            NSApp.unhide(nil)
+            NSApp.activate(ignoringOtherApps: true)
         case .recording:
             finishRecording(source: source)
         case .playing:
@@ -136,6 +138,8 @@ final class AppState: ObservableObject {
                 } else {
                     self.phase = .idle
                     self.refreshPermission()
+                    NSApp.unhide(nil)
+                    NSApp.activate(ignoringOtherApps: true)
                 }
             }
         }
