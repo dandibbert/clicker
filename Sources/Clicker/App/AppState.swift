@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import ClickerCore
 
 /// App 全局阶段。
@@ -78,4 +79,98 @@ final class AppState: ObservableObject {
     func refreshPermission() {
         hasPermission = Permissions.hasAccessibility
     }
+
+    // MARK: - Recording
+
+    private let recorder = EventRecorder()
+    private let countdown = CountdownWindow()
+    private var observers: [NSObjectProtocol] = []
+
+    /// ClickerApp 启动时调用一次。
+    func setUp() {
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: .toggleRecord, object: nil, queue: .main) { [weak self] note in
+            let source = (note.object as? [String: String])?["source"] ?? "ui"
+            Task { @MainActor in self?.toggleRecord(source: source) }
+        })
+        observers.append(center.addObserver(forName: .togglePlay, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.togglePlay() }
+        })
+        recorder.onTapFailure = { [weak self] in
+            Task { @MainActor in
+                self?.finishRecording(source: "failure")
+            }
+        }
+    }
+
+    func toggleRecord(source: String) {
+        switch phase {
+        case .idle:
+            startCountdown()
+        case .countdown:
+            countdown.close()
+            phase = .idle
+        case .recording:
+            finishRecording(source: source)
+        case .playing:
+            break  // 回放中忽略录制开关
+        }
+    }
+
+    private func startCountdown() {
+        guard hasPermission else {
+            Permissions.requestAccessibility()
+            refreshPermission()
+            return
+        }
+        // 隐藏主窗口，避免录到自己
+        NSApp.hide(nil)
+        phase = .countdown(3)
+        countdown.show(seconds: 3) { [weak self] remaining in
+            Task { @MainActor in self?.phase = .countdown(remaining) }
+        } onFinish: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                if self.recorder.start() {
+                    self.phase = .recording
+                } else {
+                    self.phase = .idle
+                    self.refreshPermission()
+                }
+            }
+        }
+    }
+
+    private func finishRecording(source: String) {
+        var events = recorder.stop()
+        phase = .idle
+
+        // 尾部清理：按停止来源裁剪
+        switch source {
+        case "hotkey":
+            events = TailTrimmer.trimHotKeyStop(
+                events,
+                stopKeyCode: UInt16(HotKeyCenter.recordKeyCode),
+                stopFlags: KeyCodeMap.maskOption | KeyCodeMap.maskCommand)
+        case "menubar":
+            events = TailTrimmer.trimMenuBarStop(events)
+        default:
+            break
+        }
+
+        let blocks = EventGrouper.group(events)
+        guard !blocks.isEmpty else {
+            NSApp.unhide(nil)
+            return
+        }
+        let name = "录制 \(scripts.count + 1)"
+        let script = Script(name: name, blocks: blocks)
+        update(script)
+        selectedScriptID = script.id
+        NSApp.unhide(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Task 11 实现回放，这里先占位。
+    func togglePlay() {}
 }

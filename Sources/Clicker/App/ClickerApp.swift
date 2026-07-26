@@ -2,7 +2,15 @@ import SwiftUI
 
 @main
 struct ClickerApp: App {
-    @StateObject private var state = AppState()
+    @StateObject private var state: AppState
+    private let hotKeys = HotKeyCenter()
+
+    init() {
+        let s = AppState()
+        _state = StateObject(wrappedValue: s)
+        s.setUp()
+        hotKeys.register()
+    }
 
     var body: some Scene {
         WindowGroup {
