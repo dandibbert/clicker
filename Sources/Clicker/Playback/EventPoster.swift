@@ -43,8 +43,10 @@ enum EventPoster {
         case .keyDown(let keyCode, let flags, let chars):
             guard let e = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode),
                                   keyDown: true) else { return }
-            if keyCode == 0 && !chars.isEmpty {
-                // unicode 注入路径（编辑过的文本）
+            if !chars.isEmpty {
+                // unicode 注入路径：keyboardSetUnicodeString 覆盖字符解释但保留 keyCode，
+                // 录制的字符（含大小写、移位符号）按原样重放。
+                // 快捷键块 chars 为 ""，保持纯虚拟键行为。
                 let utf16 = Array(chars.utf16)
                 e.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
             }

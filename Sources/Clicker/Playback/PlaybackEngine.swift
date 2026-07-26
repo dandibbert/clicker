@@ -7,6 +7,8 @@ import ClickerCore
 final class PlaybackEngine {
     private var task: Task<Void, Never>?
     private var escMonitor: Any?
+    private var localEscMonitor: Any?
+    private var generation = 0
 
     var isPlaying: Bool { task != nil }
 
@@ -16,6 +18,8 @@ final class PlaybackEngine {
               onBlock: @escaping (UUID?) -> Void,
               onFinish: @escaping () -> Void) {
         stop()
+        generation += 1
+        let gen = generation
         let steps = BlockExpander.expand(script.blocks)
         guard !steps.isEmpty else { onFinish(); return }
 
@@ -30,11 +34,25 @@ final class PlaybackEngine {
             }
         }
 
+        // 本地监听：Clicker 自身为前台时，全局监听收不到发给本 app 的按键
+        localEscMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 {  // Esc
+                Task { @MainActor in
+                    guard let self, self.isPlaying else { return }
+                    self.stop()
+                    onFinish()
+                }
+                return nil  // 吞掉 Esc，不传给窗口
+            }
+            return event
+        }
+
         let repeatCount = script.repeatForever ? Int.max : max(1, script.repeatCount)
         let interval = max(0, script.repeatInterval)
 
         task = Task { [weak self] in
             for iteration in 1...repeatCount {
+                await Task.yield()  // 全零时长 + 无限重复的脚本不至于饿死主线程
                 if Task.isCancelled { break }
                 onIteration(iteration)
                 let start = ContinuousClock.now
@@ -61,14 +79,16 @@ final class PlaybackEngine {
             }
             let wasCancelled = Task.isCancelled
             await MainActor.run { [weak self] in
-                self?.cleanUpMonitor()
-                self?.task = nil
+                guard let self, gen == self.generation else { return }
+                self.cleanUpMonitor()
+                self.task = nil
                 if !wasCancelled { onFinish() }
             }
         }
     }
 
     func stop() {
+        generation += 1  // 使旧会话的收尾逻辑失效
         task?.cancel()
         task = nil
         cleanUpMonitor()
@@ -78,6 +98,10 @@ final class PlaybackEngine {
         if let m = escMonitor {
             NSEvent.removeMonitor(m)
             escMonitor = nil
+        }
+        if let m = localEscMonitor {
+            NSEvent.removeMonitor(m)
+            localEscMonitor = nil
         }
     }
 }
