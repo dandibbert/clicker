@@ -41,36 +41,3 @@ final class SystemPlaybackEventPoster: PlaybackEventPosting {
         EventPoster.post(action)
     }
 }
-
-@MainActor
-final class SystemPlaybackStopMonitor: PlaybackStopMonitoring {
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
-
-    func start(onStop: @escaping () -> Void) {
-        stop()
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == 53 {
-                Task { @MainActor in onStop() }
-            }
-        }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == 53 {
-                Task { @MainActor in onStop() }
-                return nil
-            }
-            return event
-        }
-    }
-
-    func stop() {
-        if let globalMonitor {
-            NSEvent.removeMonitor(globalMonitor)
-            self.globalMonitor = nil
-        }
-        if let localMonitor {
-            NSEvent.removeMonitor(localMonitor)
-            self.localMonitor = nil
-        }
-    }
-}

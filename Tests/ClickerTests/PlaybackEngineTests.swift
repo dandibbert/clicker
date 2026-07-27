@@ -275,6 +275,35 @@ final class PlaybackEngineTests: XCTestCase {
             .keyUp(keyCode: 5, flags: 22),
         ])
     }
+
+    func testStopMonitorCallbackCleansUpAndFinishesOnce() async {
+        let stopMonitor = RecordingPlaybackStopMonitor()
+        let engine = PlaybackEngine(
+            timing: TestPlaybackTiming(),
+            poster: RecordingPlaybackPoster(),
+            stopMonitor: stopMonitor
+        )
+        var finishCount = 0
+        engine.play(
+            script: Script(
+                name: "monitored wait",
+                blocks: [.wait(WaitBlock(duration: 1))]
+            ),
+            onIteration: { _ in },
+            onBlock: { _ in },
+            onFinish: { finishCount += 1 }
+        )
+        let stopCountBeforeTrigger = stopMonitor.stopCount
+
+        stopMonitor.triggerStop()
+        stopMonitor.triggerStop()
+        await Task.yield()
+
+        XCTAssertEqual(finishCount, 1)
+        XCTAssertEqual(stopMonitor.stopCount, stopCountBeforeTrigger + 1)
+        XCTAssertFalse(stopMonitor.isStarted)
+        XCTAssertFalse(engine.isPlaying)
+    }
 }
 
 @MainActor
@@ -314,4 +343,25 @@ private final class RecordingPlaybackPoster: PlaybackEventPosting {
 private final class NoopPlaybackStopMonitor: PlaybackStopMonitoring {
     func start(onStop _: @escaping () -> Void) {}
     func stop() {}
+}
+
+@MainActor
+private final class RecordingPlaybackStopMonitor: PlaybackStopMonitoring {
+    private var onStop: (() -> Void)?
+    private(set) var stopCount = 0
+
+    var isStarted: Bool { onStop != nil }
+
+    func start(onStop: @escaping () -> Void) {
+        self.onStop = onStop
+    }
+
+    func stop() {
+        stopCount += 1
+        onStop = nil
+    }
+
+    func triggerStop() {
+        onStop?()
+    }
 }
