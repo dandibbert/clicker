@@ -304,6 +304,142 @@ final class PlaybackEngineTests: XCTestCase {
         XCTAssertFalse(stopMonitor.isStarted)
         XCTAssertFalse(engine.isPlaying)
     }
+
+    func testNaturalCompletionActivatesTargetThenRestoresPreviousApplication() async {
+        let applicationController = RecordingPlaybackApplicationController(
+            frontmostBundleIdentifier: "com.example.previous"
+        )
+        let engine = PlaybackEngine(
+            timing: TestPlaybackTiming(),
+            poster: RecordingPlaybackPoster(),
+            stopMonitor: NoopPlaybackStopMonitor(),
+            applicationController: applicationController
+        )
+        let finished = expectation(description: "playback finished")
+
+        engine.play(
+            script: Script(
+                name: "targeted wait",
+                blocks: [.wait(WaitBlock(duration: 1))],
+                targetBundleIdentifier: "com.example.target"
+            ),
+            onIteration: { _ in },
+            onBlock: { _ in },
+            onFinish: { finished.fulfill() }
+        )
+        await fulfillment(of: [finished], timeout: 1)
+
+        XCTAssertEqual(applicationController.events, [
+            "capture:com.example.previous",
+            "activate:com.example.target",
+            "restore:com.example.previous",
+        ])
+    }
+
+    func testCancellationReleasesInputBeforeRestoringApplicationOnce() async {
+        var lifecycleEvents: [String] = []
+        let applicationController = RecordingPlaybackApplicationController(
+            frontmostBundleIdentifier: "com.example.previous",
+            onEvent: { lifecycleEvents.append($0) }
+        )
+        let released = expectation(description: "held input released")
+        var engine: PlaybackEngine!
+        var didStop = false
+        let poster = RecordingPlaybackPoster { action in
+            switch action {
+            case .keyDown where !didStop:
+                lifecycleEvents.append("post:keyDown")
+                didStop = true
+                engine.stop()
+                engine.stop()
+            case .keyUp where didStop:
+                lifecycleEvents.append("post:keyUp")
+                released.fulfill()
+            default:
+                break
+            }
+        }
+        engine = PlaybackEngine(
+            timing: TestPlaybackTiming(),
+            poster: poster,
+            stopMonitor: NoopPlaybackStopMonitor(),
+            applicationController: applicationController
+        )
+
+        engine.play(
+            script: Script(
+                name: "targeted held key",
+                blocks: [
+                    .shortcut(ShortcutBlock(keyCode: 4, flags: 11, duration: 1)),
+                ],
+                targetBundleIdentifier: "com.example.target"
+            ),
+            onIteration: { _ in },
+            onBlock: { _ in },
+            onFinish: {}
+        )
+        await fulfillment(of: [released], timeout: 1)
+
+        XCTAssertEqual(lifecycleEvents, [
+            "capture:com.example.previous",
+            "activate:com.example.target",
+            "post:keyDown",
+            "post:keyUp",
+            "restore:com.example.previous",
+        ])
+    }
+
+    func testReplacementRestoresOldApplicationBeforeActivatingNewTarget() async {
+        let applicationController = RecordingPlaybackApplicationController(
+            frontmostBundleIdentifier: "com.example.previous"
+        )
+        let replacementFinished = expectation(description: "replacement finished")
+        var engine: PlaybackEngine!
+        var didReplace = false
+        let poster = RecordingPlaybackPoster { action in
+            guard case .keyDown(keyCode: 4, _, _) = action, !didReplace else { return }
+            didReplace = true
+            engine.play(
+                script: Script(
+                    name: "new target",
+                    blocks: [.wait(WaitBlock(duration: 1))],
+                    targetBundleIdentifier: "com.example.new"
+                ),
+                onIteration: { _ in },
+                onBlock: { _ in },
+                onFinish: { replacementFinished.fulfill() }
+            )
+        }
+        engine = PlaybackEngine(
+            timing: TestPlaybackTiming(),
+            poster: poster,
+            stopMonitor: NoopPlaybackStopMonitor(),
+            applicationController: applicationController
+        )
+
+        engine.play(
+            script: Script(
+                name: "old target",
+                blocks: [
+                    .shortcut(ShortcutBlock(keyCode: 4, flags: 11, duration: 1)),
+                ],
+                targetBundleIdentifier: "com.example.old"
+            ),
+            onIteration: { _ in },
+            onBlock: { _ in },
+            onFinish: {}
+        )
+        await fulfillment(of: [replacementFinished], timeout: 1)
+
+        XCTAssertEqual(applicationController.events, [
+            "capture:com.example.previous",
+            "activate:com.example.old",
+            "restore:com.example.previous",
+            "capture:com.example.previous",
+            "activate:com.example.new",
+            "restore:com.example.previous",
+        ])
+    }
 }
 
 @MainActor
@@ -363,5 +499,39 @@ private final class RecordingPlaybackStopMonitor: PlaybackStopMonitoring {
 
     func triggerStop() {
         onStop?()
+    }
+}
+
+@MainActor
+private final class RecordingPlaybackApplicationController: PlaybackApplicationControlling {
+    private var frontmostBundleIdentifier: String?
+    private let onEvent: (String) -> Void
+    private(set) var events: [String] = []
+
+    init(
+        frontmostBundleIdentifier: String?,
+        onEvent: @escaping (String) -> Void = { _ in }
+    ) {
+        self.frontmostBundleIdentifier = frontmostBundleIdentifier
+        self.onEvent = onEvent
+    }
+
+    func captureAndActivate(target: String?) -> PlaybackApplicationSession {
+        let previous = frontmostBundleIdentifier
+        record("capture:\(previous ?? "nil")")
+        if let target {
+            record("activate:\(target)")
+            frontmostBundleIdentifier = target
+        }
+        return PlaybackApplicationSession { [weak self] in
+            guard let self, let previous else { return }
+            self.record("restore:\(previous)")
+            self.frontmostBundleIdentifier = previous
+        }
+    }
+
+    private func record(_ event: String) {
+        events.append(event)
+        onEvent(event)
     }
 }
