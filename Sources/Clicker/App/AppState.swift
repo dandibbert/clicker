@@ -19,15 +19,16 @@ final class AppState: ObservableObject {
     @Published var selectedScriptID: UUID?
     @Published var hasPermission = Permissions.hasAccessibility
     @Published var corruptFileNames: [String] = []
+    @Published var persistenceIssue: ScriptStoreIssue?
 
-    let store: ScriptStore
+    let store: ScriptPersisting
     private let recorder: EventRecording
     private let countdown: CountdownPresenting
     private let application: RecordingApplicationControlling
     private let playbackEngine: PlaybackControlling
 
     init(
-        store: ScriptStore = ScriptStore(directory: ScriptStore.defaultDirectory()),
+        store: ScriptPersisting = ScriptStore(directory: ScriptStore.defaultDirectory()),
         recorder: EventRecording = EventRecorder(),
         countdown: CountdownPresenting = CountdownWindow(),
         application: RecordingApplicationControlling = SystemRecordingApplicationController(),
@@ -52,16 +53,36 @@ final class AppState: ObservableObject {
         scripts.first { $0.id == selectedScriptID }
     }
 
-    /// 修改并自动保存。
-    func update(_ script: Script) {
+    @discardableResult
+    func create(_ script: Script) -> Bool {
+        guard !scripts.contains(where: { $0.id == script.id }) else { return false }
+        do {
+            try store.save(script)
+        } catch {
+            persistenceIssue = makePersistenceIssue(from: error, fallback: .replace)
+            return false
+        }
+        scripts.append(script)
+        persistenceIssue = nil
+        return true
+    }
+
+    /// 只修改仍存在的脚本，并在持久化成功后提交到内存。
+    @discardableResult
+    func update(_ script: Script) -> Bool {
+        guard scripts.contains(where: { $0.id == script.id }) else { return false }
         var s = script
         s.modifiedAt = Date()
-        if let idx = scripts.firstIndex(where: { $0.id == s.id }) {
-            scripts[idx] = s
-        } else {
-            scripts.append(s)
+        do {
+            try store.save(s)
+        } catch {
+            persistenceIssue = makePersistenceIssue(from: error, fallback: .replace)
+            return false
         }
-        try? store.save(s)
+        guard let index = scripts.firstIndex(where: { $0.id == s.id }) else { return false }
+        scripts[index] = s
+        persistenceIssue = nil
+        return true
     }
 
     func deleteScript(id: UUID) {
@@ -78,8 +99,9 @@ final class AppState: ObservableObject {
         s.modifiedAt = Date()
         // 块 ID 需要重新生成，避免与原脚本冲突；绝对时间轴保持不变。
         s.blocks = s.blocks.map { $0.duplicated() }
-        update(s)
-        selectedScriptID = s.id
+        if create(s) {
+            selectedScriptID = s.id
+        }
     }
 
     func refreshPermission() {
@@ -185,8 +207,9 @@ final class AppState: ObservableObject {
             application.restoreClicker()
             return
         }
-        update(script)
-        selectedScriptID = script.id
+        if create(script) {
+            selectedScriptID = script.id
+        }
         application.restoreClicker()
     }
 
@@ -243,5 +266,13 @@ final class AppState: ObservableObject {
         playbackGeneration += 1
         playbackEngine.stop()
         phase = .idle
+    }
+
+    private func makePersistenceIssue(
+        from error: Error,
+        fallback operation: ScriptStoreIssue.Operation
+    ) -> ScriptStoreIssue {
+        if let issue = error as? ScriptStoreIssue { return issue }
+        return ScriptStoreIssue(operation: operation, message: String(describing: error))
     }
 }
