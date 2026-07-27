@@ -42,8 +42,9 @@ final class AppState: ObservableObject {
     }
 
     func reload() {
-        scripts = store.loadAll()
-        corruptFileNames = store.corruptFiles
+        let result = store.loadAll()
+        scripts = result.scripts
+        corruptFileNames = result.issues.compactMap(\.fileName)
         if selectedScriptID == nil { selectedScriptID = scripts.first?.id }
     }
 

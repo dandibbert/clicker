@@ -1,10 +1,44 @@
 import Foundation
 
+public struct ScriptStoreIssue: Error, Equatable, Sendable, Identifiable {
+    public enum Operation: String, Equatable, Sendable {
+        case list
+        case read
+        case decode
+        case encode
+        case temporaryWrite
+        case replace
+        case delete
+    }
+
+    public var operation: Operation
+    public var fileName: String?
+    public var message: String
+
+    public var id: String {
+        "\(operation.rawValue):\(fileName ?? ""):\(message)"
+    }
+
+    public init(operation: Operation, fileName: String? = nil, message: String) {
+        self.operation = operation
+        self.fileName = fileName
+        self.message = message
+    }
+}
+
+public struct ScriptStoreLoadResult: Equatable, Sendable {
+    public var scripts: [Script]
+    public var issues: [ScriptStoreIssue]
+
+    public init(scripts: [Script], issues: [ScriptStoreIssue]) {
+        self.scripts = scripts
+        self.issues = issues
+    }
+}
+
 /// 脚本库：每脚本一个 JSON 文件，文件名 = "\(id).json"。
 public final class ScriptStore {
     public let directory: URL
-    /// 最近一次 loadAll 中无法解析的文件名，供 UI 提示。
-    public private(set) var corruptFiles: [String] = []
 
     /// 默认目录：~/Library/Application Support/Clicker/scripts/
     public static func defaultDirectory() -> URL {
@@ -33,22 +67,50 @@ public final class ScriptStore {
         try FileManager.default.removeItem(at: fileURL(for: id))
     }
 
-    /// 加载全部脚本，按创建时间升序。损坏文件跳过并记录到 corruptFiles。
-    public func loadAll() -> [Script] {
-        corruptFiles = []
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: directory, includingPropertiesForKeys: nil) else { return [] }
+    /// 加载全部脚本，按创建时间升序，并保留每个失败的结构化信息。
+    public func loadAll() -> ScriptStoreLoadResult {
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return ScriptStoreLoadResult(scripts: [], issues: [])
+        }
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil
+            )
+        } catch {
+            return ScriptStoreLoadResult(
+                scripts: [],
+                issues: [ScriptStoreIssue(operation: .list, message: String(describing: error))]
+            )
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
         var scripts: [Script] = []
+        var issues: [ScriptStoreIssue] = []
         for url in files where url.pathExtension == "json" {
             do {
                 let data = try Data(contentsOf: url)
-                scripts.append(try decoder.decode(Script.self, from: data))
+                do {
+                    scripts.append(try decoder.decode(Script.self, from: data))
+                } catch {
+                    issues.append(ScriptStoreIssue(
+                        operation: .decode,
+                        fileName: url.lastPathComponent,
+                        message: String(describing: error)
+                    ))
+                }
             } catch {
-                corruptFiles.append(url.lastPathComponent)
+                issues.append(ScriptStoreIssue(
+                    operation: .read,
+                    fileName: url.lastPathComponent,
+                    message: String(describing: error)
+                ))
             }
         }
-        return scripts.sorted { $0.createdAt < $1.createdAt }
+        return ScriptStoreLoadResult(
+            scripts: scripts.sorted { $0.createdAt < $1.createdAt },
+            issues: issues
+        )
     }
 }

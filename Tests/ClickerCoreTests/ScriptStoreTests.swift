@@ -22,7 +22,7 @@ final class ScriptStoreTests: XCTestCase {
                        modifiedAt: Date(timeIntervalSince1970: 1000))
         s.blocks = [.wait(WaitBlock(duration: 1.5))]
         try store.save(s)
-        let loaded = store.loadAll()
+        let loaded = store.loadAll().scripts
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded.first, s)
     }
@@ -32,7 +32,7 @@ final class ScriptStoreTests: XCTestCase {
         try store.save(s)
         s.name = "v2"
         try store.save(s)
-        let loaded = store.loadAll()
+        let loaded = store.loadAll().scripts
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded.first?.name, "v2")
     }
@@ -41,17 +41,31 @@ final class ScriptStoreTests: XCTestCase {
         let s = Script(name: "待删除")
         try store.save(s)
         try store.delete(id: s.id)
-        XCTAssertTrue(store.loadAll().isEmpty)
+        XCTAssertTrue(store.loadAll().scripts.isEmpty)
     }
 
-    func testCorruptFileSkipped() throws {
+    func testCorruptFileReturnsGoodScriptsAndStructuredDecodeIssue() throws {
         let good = Script(name: "正常")
         try store.save(good)
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         try Data("not json".utf8).write(to: tmpDir.appendingPathComponent("bad.json"))
-        let loaded = store.loadAll()
-        XCTAssertEqual(loaded.count, 1)
-        XCTAssertEqual(store.corruptFiles.count, 1)
+        let result = store.loadAll()
+
+        XCTAssertEqual(result.scripts, [good])
+        XCTAssertEqual(result.issues.count, 1)
+        XCTAssertEqual(result.issues.first?.operation, .decode)
+        XCTAssertEqual(result.issues.first?.fileName, "bad.json")
+    }
+
+    func testUnlistableDirectoryReturnsStructuredListIssue() throws {
+        try Data("not a directory".utf8).write(to: tmpDir)
+
+        let result = store.loadAll()
+
+        XCTAssertTrue(result.scripts.isEmpty)
+        XCTAssertEqual(result.issues.count, 1)
+        XCTAssertEqual(result.issues.first?.operation, .list)
+        XCTAssertNil(result.issues.first?.fileName)
     }
 
     func testLoadAllSortedByCreation() throws {
@@ -59,17 +73,18 @@ final class ScriptStoreTests: XCTestCase {
         let b = Script(name: "B", createdAt: Date(timeIntervalSince1970: 200))
         try store.save(b)
         try store.save(a)
-        XCTAssertEqual(store.loadAll().map(\.name), ["A", "B"])
+        XCTAssertEqual(store.loadAll().scripts.map(\.name), ["A", "B"])
     }
 
     func testV1FixtureLoadsAndNextSaveWritesSchemaVersion4() throws {
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         try legacyV1ScriptData.write(to: tmpDir.appendingPathComponent("legacy.json"))
 
-        let loaded = store.loadAll()
+        let result = store.loadAll()
+        let loaded = result.scripts
 
         XCTAssertEqual(loaded.count, 1)
-        XCTAssertTrue(store.corruptFiles.isEmpty)
+        XCTAssertTrue(result.issues.isEmpty)
         let script = try XCTUnwrap(loaded.first)
         XCTAssertEqual(script.schemaVersion, 4)
         XCTAssertEqual(script.trailingDelay, 0)
