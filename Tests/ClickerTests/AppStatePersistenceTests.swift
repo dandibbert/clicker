@@ -45,6 +45,35 @@ final class AppStatePersistenceTests: XCTestCase {
         XCTAssertEqual(store.deletedIDs, [script.id])
     }
 
+    func testFailedDeletePreservesScriptAndSelectionAndPublishesIssue() {
+        let script = Script(name: "keep me")
+        let store = StubScriptStore(scripts: [script])
+        store.deleteError = ScriptStoreIssue(operation: .delete, message: "delete failed")
+        let state = makeState(store: store)
+
+        state.deleteScript(id: script.id)
+
+        XCTAssertEqual(state.scripts, [script])
+        XCTAssertEqual(state.selectedScriptID, script.id)
+        XCTAssertEqual(state.persistenceIssue?.operation, .delete)
+    }
+
+    func testReloadKeepsGoodScriptsAndPublishesStructuredLoadIssue() {
+        let script = Script(name: "good")
+        let issue = ScriptStoreIssue(
+            operation: .decode,
+            fileName: "bad.json",
+            message: "invalid JSON"
+        )
+        let store = StubScriptStore(scripts: [script], issues: [issue])
+
+        let state = makeState(store: store)
+
+        XCTAssertEqual(state.scripts, [script])
+        XCTAssertEqual(state.persistenceIssue, issue)
+        XCTAssertEqual(state.corruptFileNames, ["bad.json"])
+    }
+
     private func makeState(store: StubScriptStore) -> AppState {
         let state = AppState(
             store: store,

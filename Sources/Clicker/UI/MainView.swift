@@ -1,4 +1,5 @@
 import SwiftUI
+import ClickerCore
 
 struct MainView: View {
     @EnvironmentObject var state: AppState
@@ -19,6 +20,31 @@ struct MainView: View {
             for: NSApplication.didBecomeActiveNotification)) { _ in
             state.refreshPermission()
         }
+        .alert(item: $state.persistenceIssue) { issue in
+            Alert(
+                title: Text(issueTitle(issue.operation)),
+                message: Text(issueMessage(issue)),
+                dismissButton: .default(Text("好"))
+            )
+        }
+    }
+
+    private func issueTitle(_ operation: ScriptStoreIssue.Operation) -> String {
+        switch operation {
+        case .list, .read, .decode:
+            "加载脚本失败"
+        case .encode, .createDirectory, .temporaryWrite, .replace:
+            "保存脚本失败"
+        case .delete:
+            "删除脚本失败"
+        }
+    }
+
+    private func issueMessage(_ issue: ScriptStoreIssue) -> String {
+        if let fileName = issue.fileName {
+            return "\(fileName)\n\(issue.message)"
+        }
+        return issue.message
     }
 }
 

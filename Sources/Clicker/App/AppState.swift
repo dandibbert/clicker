@@ -46,6 +46,7 @@ final class AppState: ObservableObject {
         let result = store.loadAll()
         scripts = result.scripts
         corruptFileNames = result.issues.compactMap(\.fileName)
+        persistenceIssue = result.issues.first
         if selectedScriptID == nil { selectedScriptID = scripts.first?.id }
     }
 
@@ -86,9 +87,16 @@ final class AppState: ObservableObject {
     }
 
     func deleteScript(id: UUID) {
+        guard scripts.contains(where: { $0.id == id }) else { return }
+        do {
+            try store.delete(id: id)
+        } catch {
+            persistenceIssue = makePersistenceIssue(from: error, fallback: .delete)
+            return
+        }
         scripts.removeAll { $0.id == id }
-        try? store.delete(id: id)
         if selectedScriptID == id { selectedScriptID = scripts.first?.id }
+        persistenceIssue = nil
     }
 
     func duplicateScript(id: UUID) {
