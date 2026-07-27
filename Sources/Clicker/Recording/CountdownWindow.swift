@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// 屏幕中央 3-2-1 倒数浮层。无边框、置顶、不抢焦点。
-final class CountdownWindow {
+final class CountdownWindow: CountdownPresenting {
     private var window: NSPanel?
     private var timer: Timer?
 

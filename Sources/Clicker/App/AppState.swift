@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreGraphics
 import ClickerCore
 
 /// App 全局阶段。
@@ -20,9 +21,20 @@ final class AppState: ObservableObject {
     @Published var corruptFileNames: [String] = []
 
     let store: ScriptStore
+    private let recorder: EventRecording
+    private let countdown: CountdownPresenting
+    private let application: RecordingApplicationControlling
 
-    init(store: ScriptStore = ScriptStore(directory: ScriptStore.defaultDirectory())) {
+    init(
+        store: ScriptStore = ScriptStore(directory: ScriptStore.defaultDirectory()),
+        recorder: EventRecording = EventRecorder(),
+        countdown: CountdownPresenting = CountdownWindow(),
+        application: RecordingApplicationControlling = SystemRecordingApplicationController()
+    ) {
         self.store = store
+        self.recorder = recorder
+        self.countdown = countdown
+        self.application = application
         reload()
     }
 
@@ -72,15 +84,17 @@ final class AppState: ObservableObject {
 
     // MARK: - Recording
 
-    private let recorder = EventRecorder()
-    private let countdown = CountdownWindow()
     private var observers: [NSObjectProtocol] = []
+    private var recordingTargetBundleIdentifier: String?
 
     /// ClickerApp 启动时调用一次。
     func setUp() {
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: .toggleRecord, object: nil, queue: .main) { [weak self] note in
-            let source = (note.object as? [String: String])?["source"] ?? "ui"
+            let source: RecordingStopSource =
+                (note.object as? [String: String])?["source"] == "hotkey"
+                ? .hotkey
+                : .ui
             Task { @MainActor in self?.toggleRecord(source: source) }
         })
         observers.append(center.addObserver(forName: .togglePlay, object: nil, queue: .main) { [weak self] _ in
@@ -88,25 +102,34 @@ final class AppState: ObservableObject {
         })
         recorder.onTapFailure = { [weak self] in
             Task { @MainActor in
-                self?.finishRecording(source: "failure")
+                self?.finishRecording(source: .failure)
             }
         }
     }
 
-    func toggleRecord(source: String) {
+    func toggleRecord(source: RecordingStopSource) {
         switch phase {
         case .idle:
             startCountdown()
         case .countdown:
             countdown.close()
             phase = .idle
-            NSApp.unhide(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            application.restoreClicker()
         case .recording:
             finishRecording(source: source)
         case .playing:
             break  // 回放中忽略录制开关
         }
+    }
+
+    func establishMenuBarCutoff(at timestamp: CGEventTimestamp) -> RecordingCutoff? {
+        guard phase == .recording else { return nil }
+        return recorder.cutoff(at: timestamp)
+    }
+
+    func stopRecordingFromMenuBar(cutoff: RecordingCutoff) {
+        guard phase == .recording else { return }
+        finishRecording(source: .menubar(cutoff: cutoff))
     }
 
     private func startCountdown() {
@@ -115,8 +138,8 @@ final class AppState: ObservableObject {
             refreshPermission()
             return
         }
-        // 隐藏主窗口，避免录到自己
-        NSApp.hide(nil)
+        recordingTargetBundleIdentifier = application.frontmostApplicationBundleIdentifier()
+        application.hideClicker()
         phase = .countdown(3)
         countdown.show(seconds: 3) { [weak self] remaining in
             Task { @MainActor in self?.phase = .countdown(remaining) }
@@ -128,41 +151,29 @@ final class AppState: ObservableObject {
                 } else {
                     self.phase = .idle
                     self.refreshPermission()
-                    NSApp.unhide(nil)
-                    NSApp.activate(ignoringOtherApps: true)
+                    self.application.restoreClicker()
                 }
             }
         }
     }
 
-    private func finishRecording(source: String) {
-        var events = recorder.stop().events
+    private func finishRecording(source: RecordingStopSource) {
+        let capture = recorder.stop()
         phase = .idle
-
-        // 尾部清理：按停止来源裁剪
-        switch source {
-        case "hotkey":
-            events = TailTrimmer.trimHotKeyStop(
-                events,
-                stopKeyCode: UInt16(HotKeyCenter.recordKeyCode),
-                stopFlags: KeyCodeMap.maskOption | KeyCodeMap.maskCommand)
-        case "menubar":
-            events = TailTrimmer.trimMenuBarStop(events)
-        default:
-            break
-        }
-
-        let blocks = EventGrouper.group(events)
-        guard !blocks.isEmpty else {
-            NSApp.unhide(nil)
+        let script = RecordingScriptFactory.makeScript(
+            name: "录制 \(scripts.count + 1)",
+            capture: capture,
+            stopSource: source,
+            targetBundleIdentifier: recordingTargetBundleIdentifier
+        )
+        recordingTargetBundleIdentifier = nil
+        guard !script.blocks.isEmpty || script.trailingDelay > 0 else {
+            application.restoreClicker()
             return
         }
-        let name = "录制 \(scripts.count + 1)"
-        let script = Script(name: name, blocks: blocks)
         update(script)
         selectedScriptID = script.id
-        NSApp.unhide(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        application.restoreClicker()
     }
 
     // MARK: - Playback

@@ -65,7 +65,7 @@ public enum TailTrimmer {
         guard foundStopKeyDown, let sequenceStart else { return capture }
         return RecordingCapture(
             events: Array(capture.events.prefix(sequenceStart)),
-            duration: sanitizedDuration(capture.events[sequenceStart].t)
+            duration: capture.duration
         )
     }
 

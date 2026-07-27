@@ -4,10 +4,12 @@ import SwiftUI
 struct ClickerApp: App {
     @StateObject private var state: AppState
     private let hotKeys = HotKeyCenter()
+    private let statusItem: StatusItemController
 
     init() {
         let s = AppState()
         _state = StateObject(wrappedValue: s)
+        statusItem = StatusItemController(state: s)
         s.setUp()
         hotKeys.register()
     }
@@ -19,44 +21,6 @@ struct ClickerApp: App {
                 .frame(minWidth: 760, minHeight: 480)
         }
 
-        MenuBarExtra {
-            MenuBarContent()
-                .environmentObject(state)
-        } label: {
-            Image(systemName: menuBarIcon)
-        }
-    }
-
-    private var menuBarIcon: String {
-        switch state.phase {
-        case .idle: return "cursorarrow.click.2"
-        case .countdown: return "timer"
-        case .recording: return "record.circle.fill"
-        case .playing: return "play.circle.fill"
-        }
-    }
-}
-
-/// 菜单栏内容。录制/回放控制在 Task 10/11 接入引擎后补全动作。
-struct MenuBarContent: View {
-    @EnvironmentObject var state: AppState
-
-    var body: some View {
-        Group {
-            switch state.phase {
-            case .idle:
-                Button("开始录制") { NotificationCenter.default.post(name: .toggleRecord, object: nil) }
-                    .keyboardShortcut("r", modifiers: [.option, .command])
-                Button("回放") { NotificationCenter.default.post(name: .togglePlay, object: nil) }
-                    .keyboardShortcut("p", modifiers: [.option, .command])
-            case .countdown, .recording:
-                Button("停止录制") { NotificationCenter.default.post(name: .toggleRecord, object: ["source": "menubar"]) }
-            case .playing:
-                Button("停止回放") { NotificationCenter.default.post(name: .togglePlay, object: nil) }
-            }
-            Divider()
-            Button("退出 Clicker") { NSApp.terminate(nil) }
-        }
     }
 }
 

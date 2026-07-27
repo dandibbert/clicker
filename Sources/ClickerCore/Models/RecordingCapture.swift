@@ -15,8 +15,8 @@ public struct RecordingCutoff: Equatable, Sendable {
     public var duration: TimeInterval
 
     public init(eventCount: Int, duration: TimeInterval) {
-        self.eventCount = eventCount
-        self.duration = duration
+        self.eventCount = max(0, eventCount)
+        self.duration = TimelineValue.time(duration)
     }
 }
 

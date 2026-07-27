@@ -75,6 +75,45 @@ final class EventRecorderTests: XCTestCase {
         XCTAssertEqual(capture.events[0].t, 0.25, accuracy: 0.000_001)
         XCTAssertEqual(capture.duration, 0.5, accuracy: 0.000_001)
     }
+
+    func testCutoffAtMenuInteractionTimestampExcludesLaterCapturedEvents() throws {
+        var now: CGEventTimestamp = 1_000_000_000
+        let eventTap = StubEventTapSession()
+        let recorder = EventRecorder(
+            eventTap: eventTap,
+            timestampNow: { now }
+        )
+        XCTAssertTrue(recorder.start())
+
+        eventTap.emit(
+            type: .mouseMoved,
+            event: try mouseEvent(timestamp: 1_200_000_000)
+        )
+        eventTap.emit(
+            type: .leftMouseDown,
+            event: try mouseEvent(timestamp: 1_400_000_000, type: .leftMouseDown)
+        )
+        now = 1_500_000_000
+
+        let cutoff = recorder.cutoff(at: 1_300_000_000)
+
+        XCTAssertEqual(cutoff.eventCount, 1)
+        XCTAssertEqual(cutoff.duration, 0.3, accuracy: 0.000_001)
+    }
+
+    private func mouseEvent(
+        timestamp: CGEventTimestamp,
+        type: CGEventType = .mouseMoved
+    ) throws -> CGEvent {
+        let event = try XCTUnwrap(CGEvent(
+            mouseEventSource: nil,
+            mouseType: type,
+            mouseCursorPosition: .zero,
+            mouseButton: .left
+        ))
+        event.timestamp = timestamp
+        return event
+    }
 }
 
 private final class StubEventTapSession: EventTapSession {

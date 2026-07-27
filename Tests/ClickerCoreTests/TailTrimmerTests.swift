@@ -80,7 +80,7 @@ final class TailTrimmerTests: XCTestCase {
         )
 
         XCTAssertEqual(trimmed.events, [plainDown, plainUp])
-        XCTAssertEqual(trimmed.duration, 1.0, accuracy: 0.000_001)
+        XCTAssertEqual(trimmed.duration, 1.5, accuracy: 0.000_001)
     }
 
     func testHotKeyCaptureTrimRemovesRepeatedStopDownsFromModifierSequenceStart() {
@@ -112,7 +112,7 @@ final class TailTrimmerTests: XCTestCase {
         )
 
         XCTAssertEqual(trimmed.events, keptEvents)
-        XCTAssertEqual(trimmed.duration, 0.8, accuracy: 0.000_001)
+        XCTAssertEqual(trimmed.duration, 1.6, accuracy: 0.000_001)
     }
 
     func testHotKeyCaptureTrimRemovesRepeatedCompleteStopPairsFromModifierStart() {
@@ -142,7 +142,7 @@ final class TailTrimmerTests: XCTestCase {
         )
 
         XCTAssertEqual(trimmed.events, keptEvents)
-        XCTAssertEqual(trimmed.duration, 0.8, accuracy: 0.000_001)
+        XCTAssertEqual(trimmed.duration, 1.3, accuracy: 0.000_001)
     }
 
     func testHotKeyTrimAcceptsModifierReleaseBeforeStopKeyUp() {
@@ -170,7 +170,7 @@ final class TailTrimmerTests: XCTestCase {
         )
 
         XCTAssertEqual(trimmed.events, keptEvents)
-        XCTAssertEqual(trimmed.duration, 0.8, accuracy: 0.000_001)
+        XCTAssertEqual(trimmed.duration, 1.3, accuracy: 0.000_001)
     }
 
     func testHotKeyTrimStopsAtReleasedEarlierModifierGesture() {
@@ -200,7 +200,7 @@ final class TailTrimmerTests: XCTestCase {
         )
 
         XCTAssertEqual(trimmed.events, keptEvents)
-        XCTAssertEqual(trimmed.duration, 0.8, accuracy: 0.000_001)
+        XCTAssertEqual(trimmed.duration, 1.3, accuracy: 0.000_001)
     }
 
     func testHotKeyCaptureTrimWithoutMatchingChordIsUnchanged() {
@@ -241,6 +241,31 @@ final class TailTrimmerTests: XCTestCase {
             ),
             capture
         )
+    }
+
+    func testHotKeyTrimRemovesGestureWithoutShorteningOriginalCutoff() {
+        let stopFlags = KeyCodeMap.maskOption | KeyCodeMap.maskCommand
+        let keptEvents = [
+            ev(0.1, .leftDown, x: 1, y: 1),
+            ev(0.2, .leftUp, x: 1, y: 1),
+        ]
+        let capture = RecordingCapture(
+            events: keptEvents + [
+                ev(1.2, .flagsChanged, keyCode: 58, flags: KeyCodeMap.maskOption),
+                ev(1.3, .flagsChanged, keyCode: 55, flags: stopFlags),
+                ev(1.4, .keyDown, keyCode: 15, flags: stopFlags, chars: "r"),
+            ],
+            duration: 1.5
+        )
+
+        let trimmed = TailTrimmer.trimHotKeyStop(
+            capture,
+            stopKeyCode: 15,
+            stopFlags: stopFlags
+        )
+
+        XCTAssertEqual(trimmed.events, keptEvents)
+        XCTAssertEqual(trimmed.duration, 1.5, accuracy: 0.000_001)
     }
 
     func testCutoffTrimsPrefixAndSetsExactDuration() {

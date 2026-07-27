@@ -3,7 +3,7 @@ import AppKit
 import ClickerCore
 
 /// CGEventTap 监听（listenOnly），把系统事件转成 RecordedEvent。
-final class EventRecorder {
+final class EventRecorder: EventRecording {
     private let eventTap: EventTapSession
     private let timestampNow: () -> CGEventTimestamp
     private let timestampInterval: (CGEventTimestamp, CGEventTimestamp) -> TimeInterval
@@ -54,6 +54,14 @@ final class EventRecorder {
             events: events,
             duration: elapsedTime(at: end)
         )
+    }
+
+    func cutoff(at timestamp: CGEventTimestamp) -> RecordingCutoff {
+        let duration = elapsedTime(at: timestamp)
+        let eventCount = events.prefix { event in
+            event.t < duration
+        }.count
+        return RecordingCutoff(eventCount: eventCount, duration: duration)
     }
 
     private func handle(type: CGEventType, cgEvent: CGEvent) {
