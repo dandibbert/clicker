@@ -136,6 +136,29 @@ struct BlockEditorView: View {
         }
     }
 
+    private func rescaledPoints(
+        _ points: [TrackPoint],
+        fromDuration oldDuration: Double,
+        toDuration newDuration: Double
+    ) -> [TrackPoint] {
+        let clampedDuration = max(0, newDuration)
+        if oldDuration > 0 {
+            let ratio = clampedDuration / oldDuration
+            return points.map { TrackPoint(t: $0.t * ratio, x: $0.x, y: $0.y) }
+        }
+        if points.count > 1, clampedDuration > 0 {
+            let lastIndex = Double(points.count - 1)
+            return points.enumerated().map { index, point in
+                TrackPoint(
+                    t: clampedDuration * Double(index) / lastIndex,
+                    x: point.x,
+                    y: point.y
+                )
+            }
+        }
+        return points.map { TrackPoint(t: 0, x: $0.x, y: $0.y) }
+    }
+
     private func save() {
         var updated = block
         switch block {
@@ -147,28 +170,45 @@ struct BlockEditorView: View {
                 let dx = endX - last.x, dy = endY - last.y
                 b.points = b.points.map { TrackPoint(t: $0.t, x: $0.x + dx, y: $0.y + dy) }
             }
-            if b.duration > 0, duration > 0, duration != b.duration {
-                let ratio = duration / b.duration
-                b.points = b.points.map { TrackPoint(t: $0.t * ratio, x: $0.x, y: $0.y) }
-                b.duration = duration
+            if duration != b.duration {
+                b.points = rescaledPoints(
+                    b.points,
+                    fromDuration: b.duration,
+                    toDuration: duration
+                )
             }
+            b.duration = max(0, duration)
             updated = .move(b)
         case .drag(var b):
             if let first = b.points.first, let last = b.points.last,
                b.points.count >= 2 {
                 let oldSpanX = last.x - first.x, oldSpanY = last.y - first.y
                 let newSpanX = endX - x, newSpanY = endY - y
-                b.points = b.points.map { p in
-                    let fx = oldSpanX == 0 ? 0 : (p.x - first.x) / oldSpanX
-                    let fy = oldSpanY == 0 ? 0 : (p.y - first.y) / oldSpanY
+                let pointCount = b.points.count
+                b.points = b.points.enumerated().map { index, p in
+                    let fallbackProgress: Double
+                    if index == 0 {
+                        fallbackProgress = 0
+                    } else if index == pointCount - 1 {
+                        fallbackProgress = 1
+                    } else if last.t > 0 {
+                        fallbackProgress = p.t / last.t
+                    } else {
+                        fallbackProgress = Double(index) / Double(pointCount - 1)
+                    }
+                    let fx = oldSpanX == 0 ? fallbackProgress : (p.x - first.x) / oldSpanX
+                    let fy = oldSpanY == 0 ? fallbackProgress : (p.y - first.y) / oldSpanY
                     return TrackPoint(t: p.t, x: x + fx * newSpanX, y: y + fy * newSpanY)
                 }
             }
-            if b.duration > 0, duration > 0, duration != b.duration {
-                let ratio = duration / b.duration
-                b.points = b.points.map { TrackPoint(t: $0.t * ratio, x: $0.x, y: $0.y) }
-                b.duration = duration
+            if duration != b.duration {
+                b.points = rescaledPoints(
+                    b.points,
+                    fromDuration: b.duration,
+                    toDuration: duration
+                )
             }
+            b.duration = max(0, duration)
             updated = .drag(b)
         case .scroll(var b):
             b.steps = [ScrollStep(t: 0, dx: 0, dy: y)]
