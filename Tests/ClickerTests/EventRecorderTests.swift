@@ -1,0 +1,98 @@
+import CoreGraphics
+import XCTest
+@testable import Clicker
+import ClickerCore
+
+final class EventRecorderTests: XCTestCase {
+    func testStopReturnsFinalDuration() {
+        var now: CGEventTimestamp = 1_000_000_000
+        let eventTap = StubEventTapSession()
+        let recorder = EventRecorder(
+            eventTap: eventTap,
+            timestampNow: { now }
+        )
+
+        XCTAssertTrue(recorder.start())
+        now = 3_250_000_000
+
+        let capture: RecordingCapture = recorder.stop()
+
+        XCTAssertEqual(capture.events, [])
+        XCTAssertEqual(capture.duration, 2.25, accuracy: 0.000_001)
+    }
+
+    func testEventTimestampUsesNanosecondsInTheCutoffMonotonicDomain() throws {
+        var now: CGEventTimestamp = 2_000_000_000
+        let eventTap = StubEventTapSession()
+        let recorder = EventRecorder(
+            eventTap: eventTap,
+            timestampNow: { now }
+        )
+        XCTAssertTrue(recorder.start())
+
+        let event = try XCTUnwrap(CGEvent(
+            mouseEventSource: nil,
+            mouseType: .mouseMoved,
+            mouseCursorPosition: CGPoint(x: 40, y: 80),
+            mouseButton: .left
+        ))
+        event.timestamp = 2_250_000_000
+        now = 9_000_000_000
+        eventTap.emit(type: .mouseMoved, event: event)
+        now = 3_000_000_000
+
+        let capture = recorder.stop()
+
+        XCTAssertEqual(capture.events.count, 1)
+        XCTAssertEqual(capture.events[0].t, 0.25, accuracy: 0.000_001)
+        XCTAssertEqual(capture.duration, 1, accuracy: 0.000_001)
+    }
+
+    func testInjectedTimeConverterDrivesEventsAndFinalDuration() throws {
+        var now: CGEventTimestamp = 100
+        let eventTap = StubEventTapSession()
+        let recorder = EventRecorder(
+            eventTap: eventTap,
+            timestampNow: { now },
+            elapsedTime: { start, end in
+                TimeInterval(end - start) / 100
+            }
+        )
+        XCTAssertTrue(recorder.start())
+
+        let event = try XCTUnwrap(CGEvent(
+            mouseEventSource: nil,
+            mouseType: .mouseMoved,
+            mouseCursorPosition: .zero,
+            mouseButton: .left
+        ))
+        event.timestamp = 125
+        eventTap.emit(type: .mouseMoved, event: event)
+        now = 150
+
+        let capture = recorder.stop()
+
+        XCTAssertEqual(capture.events[0].t, 0.25, accuracy: 0.000_001)
+        XCTAssertEqual(capture.duration, 0.5, accuracy: 0.000_001)
+    }
+}
+
+private final class StubEventTapSession: EventTapSession {
+    private(set) var isRunning = false
+    private var handler: ((CGEventType, CGEvent) -> Void)?
+
+    func start(handler: @escaping (CGEventType, CGEvent) -> Void) -> Bool {
+        self.handler = handler
+        isRunning = true
+        return true
+    }
+
+    func stop() {
+        isRunning = false
+        handler = nil
+    }
+
+    func emit(type: CGEventType, event: CGEvent) {
+        handler?(type, event)
+    }
+}

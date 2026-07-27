@@ -4,76 +4,62 @@ import ClickerCore
 
 /// CGEventTap 监听（listenOnly），把系统事件转成 RecordedEvent。
 final class EventRecorder {
-    private var tap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
-    private var startTime: CFAbsoluteTime = 0
+    private let eventTap: EventTapSession
+    private let timestampNow: () -> CGEventTimestamp
+    private let timestampInterval: (CGEventTimestamp, CGEventTimestamp) -> TimeInterval
+    private var startTimestamp: CGEventTimestamp?
     private(set) var events: [RecordedEvent] = []
     /// tap 被系统禁用且重建失败时回调（主线程）。
     var onTapFailure: (() -> Void)?
 
-    var isRunning: Bool { tap != nil }
+    var isRunning: Bool { eventTap.isRunning }
 
     /// 回放期间发出的合成事件带此标记，录制时跳过（防自录）。
     static let syntheticMarker: Int64 = 0x434C4B52  // "CLKR"
 
+    init(
+        eventTap: EventTapSession = CoreGraphicsEventTapSession(),
+        timestampNow: @escaping () -> CGEventTimestamp = {
+            clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        },
+        elapsedTime: @escaping (CGEventTimestamp, CGEventTimestamp) -> TimeInterval = {
+            start, end in
+            guard end >= start else { return 0 }
+            return TimeInterval(end - start) / 1_000_000_000
+        }
+    ) {
+        self.eventTap = eventTap
+        self.timestampNow = timestampNow
+        timestampInterval = elapsedTime
+    }
+
     func start() -> Bool {
         events = []
-        startTime = CFAbsoluteTimeGetCurrent()
-
-        // 注：原为一条 11 项按位或的长表达式，Swift 编译器类型检查超时，
-        // 改为等价的 reduce 形式（语义完全一致）。
-        let maskTypes: [CGEventType] = [
-            .mouseMoved,
-            .leftMouseDown, .leftMouseUp, .leftMouseDragged,
-            .rightMouseDown, .rightMouseUp, .rightMouseDragged,
-            .scrollWheel,
-            .keyDown, .keyUp, .flagsChanged,
-        ]
-        let mask: CGEventMask = maskTypes.reduce(CGEventMask(0)) { acc, type in
-            acc | (CGEventMask(1) << CGEventMask(type.rawValue))
+        let start = timestampNow()
+        guard eventTap.start(handler: { [weak self] type, event in
+            self?.handle(type: type, cgEvent: event)
+        }) else {
+            startTimestamp = nil
+            return false
         }
-
-        let callback: CGEventTapCallBack = { _, type, cgEvent, refcon in
-            let recorder = Unmanaged<EventRecorder>.fromOpaque(refcon!).takeUnretainedValue()
-            recorder.handle(type: type, cgEvent: cgEvent)
-            return Unmanaged.passUnretained(cgEvent)
-        }
-
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: mask,
-            callback: callback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
-        ) else { return false }
-
-        self.tap = tap
-        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
+        startTimestamp = start
         return true
     }
 
-    func stop() -> [RecordedEvent] {
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
-        }
-        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
-        tap = nil
-        runLoopSource = nil
-        return events
+    func stop() -> RecordingCapture {
+        let end = timestampNow()
+        eventTap.stop()
+        defer { startTimestamp = nil }
+        return RecordingCapture(
+            events: events,
+            duration: elapsedTime(at: end)
+        )
     }
 
     private func handle(type: CGEventType, cgEvent: CGEvent) {
         // tap 被系统禁用（超时/权限变化）：尝试重启，并确认重启成功
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let tap {
-                CGEvent.tapEnable(tap: tap, enable: true)
-                if !CGEvent.tapIsEnabled(tap: tap) {
-                    DispatchQueue.main.async { [weak self] in self?.onTapFailure?() }
-                }
-            } else {
+            if !eventTap.reenable() {
                 DispatchQueue.main.async { [weak self] in self?.onTapFailure?() }
             }
             return
@@ -81,7 +67,7 @@ final class EventRecorder {
         // 跳过回放引擎发出的合成事件
         if cgEvent.getIntegerValueField(.eventSourceUserData) == Self.syntheticMarker { return }
 
-        let t = CFAbsoluteTimeGetCurrent() - startTime
+        let t = elapsedTime(at: cgEvent.timestamp)
         let loc = cgEvent.location
         let kind: EventKind
         switch type {
@@ -127,5 +113,10 @@ final class EventRecorder {
             isRepeat: kind == .keyDown
                 && cgEvent.getIntegerValueField(.keyboardEventAutorepeat) != 0
         ))
+    }
+
+    private func elapsedTime(at timestamp: CGEventTimestamp) -> TimeInterval {
+        guard let startTimestamp, timestamp >= startTimestamp else { return 0 }
+        return timestampInterval(startTimestamp, timestamp)
     }
 }

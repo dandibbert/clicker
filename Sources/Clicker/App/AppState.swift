@@ -136,7 +136,7 @@ final class AppState: ObservableObject {
     }
 
     private func finishRecording(source: String) {
-        var events = recorder.stop()
+        var events = recorder.stop().events
         phase = .idle
 
         // 尾部清理：按停止来源裁剪

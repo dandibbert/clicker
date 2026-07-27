@@ -6,7 +6,7 @@ public struct RecordingCapture: Equatable, Sendable {
 
     public init(events: [RecordedEvent], duration: TimeInterval) {
         self.events = events
-        self.duration = duration
+        self.duration = TimelineValue.time(duration)
     }
 }
 
