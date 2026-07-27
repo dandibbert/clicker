@@ -2,110 +2,253 @@ import XCTest
 @testable import ClickerCore
 
 final class BlockExpanderTests: XCTestCase {
-    func testClickExpansion() {
-        let blocks: [ActionBlock] = [.click(ClickBlock(x: 100, y: 200, button: .left, clickCount: 1))]
-        let steps = BlockExpander.expand(blocks)
-        XCTAssertEqual(steps.count, 2)
-        guard case .mouseDown(let x, let y, let btn, let clicks) = steps[0].action else { return XCTFail() }
-        XCTAssertEqual(x, 100); XCTAssertEqual(y, 200)
-        XCTAssertEqual(btn, .left); XCTAssertEqual(clicks, 1)
-        guard case .mouseUp = steps[1].action else { return XCTFail() }
-        // down/up 有一个固定小间隔
-        XCTAssertGreaterThan(steps[1].t, steps[0].t)
+    func testClickDelayHoldAndTrailingDelayProduceExactPlan() {
+        let id = UUID()
+        let script = Script(
+            name: "Click",
+            blocks: [.click(ClickBlock(
+                id: id,
+                x: 10,
+                y: 20,
+                button: .left,
+                clickCount: 2,
+                delayBefore: 0.4,
+                duration: 0.25,
+                upX: 30,
+                upY: 40,
+                downFlags: 11,
+                upFlags: 12
+            ))],
+            trailingDelay: 0.5
+        )
+
+        let plan = BlockExpander.plan(for: script)
+
+        XCTAssertEqual(plan.steps.count, 2)
+        XCTAssertEqual(plan.steps[0].t, 0.4, accuracy: 0.000_001)
+        XCTAssertEqual(plan.steps[0].action, .mouseDown(
+            x: 10,
+            y: 20,
+            button: .left,
+            clickCount: 2,
+            flags: 11
+        ))
+        XCTAssertEqual(plan.steps[0].blockID, id)
+        XCTAssertEqual(plan.steps[1].t, 0.65, accuracy: 0.000_001)
+        XCTAssertEqual(plan.steps[1].action, .mouseUp(
+            x: 30,
+            y: 40,
+            button: .left,
+            flags: 12
+        ))
+        XCTAssertEqual(plan.duration, 1.15, accuracy: 0.000_001)
     }
 
-    func testWaitShiftsTime() {
+    func testWaitOnlyPlanHasNoStepsAndRetainsDuration() {
+        let plan = BlockExpander.plan(blocks: [.wait(WaitBlock(duration: 2))], trailingDelay: 0)
+
+        XCTAssertTrue(plan.steps.isEmpty)
+        XCTAssertEqual(plan.duration, 2, accuracy: 0.000_001)
+    }
+
+    func testTrailingOnlyEmptyScriptRetainsPositiveDuration() {
+        let plan = BlockExpander.plan(for: Script(name: "Empty", trailingDelay: 0.75))
+
+        XCTAssertTrue(plan.steps.isEmpty)
+        XCTAssertEqual(plan.duration, 0.75, accuracy: 0.000_001)
+    }
+
+    func testOverlappingKeystrokesAreChronologicalStableAndExact() {
+        let id = UUID()
+        let block = TypeTextBlock(
+            id: id,
+            text: "ab",
+            keystrokes: [
+                Keystroke(
+                    t: 0,
+                    keyCode: 4,
+                    chars: "a",
+                    upT: 0.2,
+                    downFlags: 101,
+                    upFlags: 102
+                ),
+                Keystroke(
+                    t: 0.1,
+                    keyCode: 5,
+                    chars: "b",
+                    upT: 0.2,
+                    downFlags: 201,
+                    upFlags: 202
+                ),
+            ],
+            delayBefore: 0.3
+        )
+
+        let plan = BlockExpander.plan(blocks: [.typeText(block)], trailingDelay: 0)
+
+        XCTAssertEqual(plan.steps.count, 4)
+        XCTAssertEqual(plan.steps[0].t, 0.3, accuracy: 0.000_001)
+        XCTAssertEqual(plan.steps[0].action, .keyDown(keyCode: 4, flags: 101, chars: "a"))
+        XCTAssertEqual(plan.steps[1].t, 0.4, accuracy: 0.000_001)
+        XCTAssertEqual(plan.steps[1].action, .keyDown(keyCode: 5, flags: 201, chars: "b"))
+        XCTAssertEqual(plan.steps[2].t, 0.5, accuracy: 0.000_001)
+        XCTAssertEqual(plan.steps[2].action, .keyUp(keyCode: 4, flags: 102))
+        XCTAssertEqual(plan.steps[3].t, 0.5, accuracy: 0.000_001)
+        XCTAssertEqual(plan.steps[3].action, .keyUp(keyCode: 5, flags: 202))
+        XCTAssertEqual(plan.steps.map(\.blockID), [id, id, id, id])
+        XCTAssertEqual(plan.duration, 0.5, accuracy: 0.000_001)
+    }
+
+    func testMouseAndScrollSampleFlagsAndLocationsSurviveExpansion() {
+        let moveID = UUID()
+        let dragID = UUID()
+        let scrollID = UUID()
         let blocks: [ActionBlock] = [
-            .wait(WaitBlock(duration: 2.0)),
-            .click(ClickBlock(x: 1, y: 1, button: .left, clickCount: 1)),
+            .move(MoveBlock(
+                id: moveID,
+                duration: 0.2,
+                points: [
+                    TrackPoint(t: 0, x: 1, y: 2, flags: 11),
+                    TrackPoint(t: 0.2, x: 3, y: 4, flags: 12),
+                ]
+            )),
+            .drag(DragBlock(
+                id: dragID,
+                button: .right,
+                duration: 0.3,
+                points: [
+                    TrackPoint(t: 0, x: 5, y: 6, flags: 21),
+                    TrackPoint(t: 0.1, x: 7, y: 8, flags: 22),
+                    TrackPoint(t: 0.3, x: 9, y: 10, flags: 23),
+                ]
+            )),
+            .scroll(ScrollBlock(
+                id: scrollID,
+                x: 11,
+                y: 12,
+                duration: 0.1,
+                steps: [ScrollStep(t: 0, dx: 13, dy: -14, flags: 31)]
+            )),
         ]
-        let steps = BlockExpander.expand(blocks)
-        XCTAssertEqual(steps.first?.t ?? 0, 2.0, accuracy: 0.001)
+
+        let plan = BlockExpander.plan(blocks: blocks, trailingDelay: 0)
+        let moveActions = plan.steps.filter { $0.blockID == moveID }.map(\.action)
+        let dragActions = plan.steps.filter { $0.blockID == dragID }.map(\.action)
+        let scrollActions = plan.steps.filter { $0.blockID == scrollID }.map(\.action)
+
+        XCTAssertEqual(moveActions, [
+            .mouseMove(x: 1, y: 2, flags: 11),
+            .mouseMove(x: 3, y: 4, flags: 12),
+        ])
+        XCTAssertEqual(dragActions, [
+            .mouseDown(x: 5, y: 6, button: .right, clickCount: 1, flags: 21),
+            .mouseDrag(x: 7, y: 8, button: .right, flags: 22),
+            .mouseUp(x: 9, y: 10, button: .right, flags: 23),
+        ])
+        XCTAssertEqual(scrollActions, [
+            .scroll(x: 11, y: 12, dx: 13, dy: -14, flags: 31),
+        ])
+        XCTAssertEqual(plan.duration, 0.6, accuracy: 0.000_001)
     }
 
-    func testMoveExpansion() {
-        let blocks: [ActionBlock] = [.move(MoveBlock(duration: 0.2, points: [
-            TrackPoint(t: 0, x: 0, y: 0), TrackPoint(t: 0.2, x: 100, y: 100),
-        ]))]
-        let steps = BlockExpander.expand(blocks)
-        XCTAssertEqual(steps.count, 2)
-        guard case .mouseMove(let x, _) = steps[1].action else { return XCTFail() }
-        XCTAssertEqual(x, 100)
-        XCTAssertEqual(steps[1].t, 0.2, accuracy: 0.001)
+    func testEditedTextUsesUnicodeGeneratedTiming() {
+        let block = TypeTextBlock(text: "你好", keystrokes: [])
+
+        let plan = BlockExpander.plan(blocks: [.typeText(block)], trailingDelay: 0)
+
+        XCTAssertEqual(plan.steps.count, 4)
+        XCTAssertEqual(plan.steps[0].t, 0, accuracy: 0.000_001)
+        XCTAssertEqual(plan.steps[0].action, .keyDown(keyCode: 0, flags: 0, chars: "你"))
+        XCTAssertEqual(plan.steps[1].t, 0.02, accuracy: 0.000_001)
+        XCTAssertEqual(plan.steps[1].action, .keyUp(keyCode: 0, flags: 0))
+        XCTAssertEqual(plan.steps[2].t, 0.06, accuracy: 0.000_001)
+        XCTAssertEqual(plan.steps[2].action, .keyDown(keyCode: 0, flags: 0, chars: "好"))
+        XCTAssertEqual(plan.steps[3].t, 0.08, accuracy: 0.000_001)
+        XCTAssertEqual(plan.steps[3].action, .keyUp(keyCode: 0, flags: 0))
+        XCTAssertEqual(plan.duration, 0.08, accuracy: 0.000_001)
     }
 
-    func testDragExpansion() {
-        let blocks: [ActionBlock] = [.drag(DragBlock(button: .left, duration: 0.3, points: [
-            TrackPoint(t: 0, x: 10, y: 10),
-            TrackPoint(t: 0.15, x: 50, y: 50),
-            TrackPoint(t: 0.3, x: 90, y: 90),
-        ]))]
-        let steps = BlockExpander.expand(blocks)
-        // down + 中间 drag 移动 + up
-        XCTAssertEqual(steps.count, 3)
-        guard case .mouseDown(let x0, _, _, _) = steps[0].action, x0 == 10 else { return XCTFail() }
-        guard case .mouseDrag(let x1, _, _) = steps[1].action, x1 == 50 else { return XCTFail() }
-        guard case .mouseUp(let x2, _, _) = steps[2].action, x2 == 90 else { return XCTFail() }
+    func testShortcutUsesExactDurationAndUpFlags() {
+        let block = ShortcutBlock(
+            keyCode: 8,
+            flags: 41,
+            delayBefore: 0.4,
+            upFlags: 42,
+            duration: 0.25
+        )
+
+        let plan = BlockExpander.plan(blocks: [.shortcut(block)], trailingDelay: 0)
+
+        XCTAssertEqual(plan.steps.count, 2)
+        XCTAssertEqual(plan.steps[0].t, 0.4, accuracy: 0.000_001)
+        XCTAssertEqual(plan.steps[0].action, .keyDown(keyCode: 8, flags: 41, chars: ""))
+        XCTAssertEqual(plan.steps[1].t, 0.65, accuracy: 0.000_001)
+        XCTAssertEqual(plan.steps[1].action, .keyUp(keyCode: 8, flags: 42))
+        XCTAssertEqual(plan.duration, 0.65, accuracy: 0.000_001)
     }
 
-    func testTypeTextExpansion() {
-        let blocks: [ActionBlock] = [.typeText(TypeTextBlock(text: "he", keystrokes: [
-            Keystroke(t: 0, keyCode: 4, chars: "h"),
-            Keystroke(t: 0.1, keyCode: 14, chars: "e"),
-        ]))]
-        let steps = BlockExpander.expand(blocks)
-        // 每个 keystroke → keyDown + keyUp
-        XCTAssertEqual(steps.count, 4)
-        guard case .keyDown(let kc, _, let chars) = steps[0].action else { return XCTFail() }
-        XCTAssertEqual(kc, 4); XCTAssertEqual(chars, "h")
-        guard case .keyUp = steps[1].action else { return XCTFail() }
-    }
-
-    func testEditedTextRegeneratesKeystrokes() {
-        // 用户编辑了 text 但 keystrokes 是旧的：以 text 为准，用 unicode 注入
-        let blocks: [ActionBlock] = [.typeText(TypeTextBlock(text: "你好", keystrokes: [
-            Keystroke(t: 0, keyCode: 4, chars: "h"),
-        ]))]
-        let steps = BlockExpander.expand(blocks)
-        // text 与 keystrokes.chars 拼接不一致 → 逐字符 unicode 注入（down+up 各一）
-        XCTAssertEqual(steps.count, 4)
-        guard case .keyDown(_, _, let c0) = steps[0].action else { return XCTFail() }
-        XCTAssertEqual(c0, "你")
-    }
-
-    func testShortcutExpansion() {
-        let blocks: [ActionBlock] = [.shortcut(ShortcutBlock(keyCode: 8, flags: KeyCodeMap.maskCommand))]
-        let steps = BlockExpander.expand(blocks)
-        XCTAssertEqual(steps.count, 2)
-        guard case .keyDown(let kc, let flags, _) = steps[0].action else { return XCTFail() }
-        XCTAssertEqual(kc, 8)
-        XCTAssertEqual(flags & KeyCodeMap.maskCommand, KeyCodeMap.maskCommand)
-    }
-
-    func testScrollExpansion() {
-        let blocks: [ActionBlock] = [.scroll(ScrollBlock(x: 5, y: 5, duration: 0.1, steps: [
-            ScrollStep(t: 0, dx: 0, dy: -3), ScrollStep(t: 0.1, dx: 0, dy: -5),
-        ]))]
-        let steps = BlockExpander.expand(blocks)
-        XCTAssertEqual(steps.count, 2)
-        guard case .scroll(let dx, let dy) = steps[0].action else { return XCTFail() }
-        XCTAssertEqual(dx, 0); XCTAssertEqual(dy, -3)
-    }
-
-    func testTotalDurationAccumulates() {
+    func testExplicitWaitAndActionDelayBothAdvanceTimeline() {
         let blocks: [ActionBlock] = [
-            .wait(WaitBlock(duration: 1.0)),
-            .move(MoveBlock(duration: 0.5, points: [
-                TrackPoint(t: 0, x: 0, y: 0), TrackPoint(t: 0.5, x: 10, y: 10),
+            .wait(WaitBlock(duration: 2)),
+            .click(ClickBlock(
+                x: 1,
+                y: 1,
+                button: .left,
+                clickCount: 1,
+                delayBefore: 0.3
+            )),
+        ]
+
+        let plan = BlockExpander.plan(blocks: blocks, trailingDelay: 0)
+
+        XCTAssertEqual(plan.steps.first?.t ?? -1, 2.3, accuracy: 0.000_001)
+        XCTAssertEqual(plan.duration, 2.33, accuracy: 0.000_001)
+    }
+
+    func testNegativeAndNonFiniteDurationsDoNotMoveClockBackward() {
+        let blocks: [ActionBlock] = [
+            .wait(WaitBlock(duration: -1)),
+            .click(ClickBlock(
+                x: 1,
+                y: 2,
+                button: .left,
+                clickCount: 1,
+                delayBefore: -0.5,
+                duration: -0.25
+            )),
+            .shortcut(ShortcutBlock(
+                keyCode: 8,
+                flags: 0,
+                delayBefore: .nan,
+                duration: .infinity
+            )),
+        ]
+
+        let plan = BlockExpander.plan(blocks: blocks, trailingDelay: -Double.infinity)
+
+        XCTAssertEqual(plan.steps.count, 4)
+        XCTAssertEqual(plan.steps.map(\.t), [0, 0, 0, 0])
+        XCTAssertEqual(plan.duration, 0, accuracy: 0.000_001)
+        XCTAssertTrue(plan.steps.allSatisfy { $0.t.isFinite && $0.t >= 0 })
+    }
+
+    func testCompatibilityExpandReturnsPlanSteps() {
+        let blocks: [ActionBlock] = [
+            .move(MoveBlock(duration: 0.2, points: [
+                TrackPoint(t: 0, x: 0, y: 0),
+                TrackPoint(t: 0.2, x: 100, y: 100),
             ])),
-            .wait(WaitBlock(duration: 1.0)),
-            .click(ClickBlock(x: 10, y: 10, button: .left, clickCount: 1)),
+            .scroll(ScrollBlock(
+                x: 5,
+                y: 6,
+                duration: 0.1,
+                steps: [ScrollStep(t: 0, dx: 0, dy: -3)]
+            )),
         ]
-        let steps = BlockExpander.expand(blocks)
-        // click 的 down 在 1.0 + 0.5 + 1.0 = 2.5
-        guard case .mouseDown = steps.last(where: { if case .mouseDown = $0.action { return true }; return false })!.action
-        else { return XCTFail() }
-        let downStep = steps.first { if case .mouseDown = $0.action { return true }; return false }!
-        XCTAssertEqual(downStep.t, 2.5, accuracy: 0.001)
+
+        XCTAssertEqual(
+            BlockExpander.expand(blocks),
+            BlockExpander.plan(blocks: blocks, trailingDelay: 0).steps
+        )
     }
 }

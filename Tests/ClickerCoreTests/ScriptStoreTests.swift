@@ -61,4 +61,24 @@ final class ScriptStoreTests: XCTestCase {
         try store.save(a)
         XCTAssertEqual(store.loadAll().map(\.name), ["A", "B"])
     }
+
+    func testV1FixtureLoadsAndNextSaveWritesSchemaVersion2() throws {
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        try legacyV1ScriptData.write(to: tmpDir.appendingPathComponent("legacy.json"))
+
+        let loaded = store.loadAll()
+
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertTrue(store.corruptFiles.isEmpty)
+        let script = try XCTUnwrap(loaded.first)
+        XCTAssertEqual(script.schemaVersion, 1)
+        XCTAssertEqual(script.trailingDelay, 0)
+        XCTAssertNil(script.targetBundleIdentifier)
+
+        try store.save(script)
+        let savedURL = tmpDir.appendingPathComponent("\(script.id.uuidString).json")
+        let savedData = try Data(contentsOf: savedURL)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: savedData) as? [String: Any])
+        XCTAssertEqual(object["schemaVersion"] as? Int, 2)
+    }
 }

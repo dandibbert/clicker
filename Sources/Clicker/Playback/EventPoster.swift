@@ -9,35 +9,39 @@ enum EventPoster {
 
     static func post(_ action: StepAction) {
         switch action {
-        case .mouseMove(let x, let y):
+        case .mouseMove(let x, let y, let flags):
             guard let e = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved,
                                   mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: .left)
             else { return }
+            e.flags = CGEventFlags(rawValue: flags)
             mark(e); e.post(tap: .cghidEventTap)
 
-        case .mouseDown(let x, let y, let button, let clickCount):
+        case .mouseDown(let x, let y, let button, let clickCount, let flags):
             let type: CGEventType = button == .left ? .leftMouseDown : .rightMouseDown
             let cgButton: CGMouseButton = button == .left ? .left : .right
             guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                                   mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: cgButton)
             else { return }
             e.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
+            e.flags = CGEventFlags(rawValue: flags)
             mark(e); e.post(tap: .cghidEventTap)
 
-        case .mouseUp(let x, let y, let button):
+        case .mouseUp(let x, let y, let button, let flags):
             let type: CGEventType = button == .left ? .leftMouseUp : .rightMouseUp
             let cgButton: CGMouseButton = button == .left ? .left : .right
             guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                                   mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: cgButton)
             else { return }
+            e.flags = CGEventFlags(rawValue: flags)
             mark(e); e.post(tap: .cghidEventTap)
 
-        case .mouseDrag(let x, let y, let button):
+        case .mouseDrag(let x, let y, let button, let flags):
             let type: CGEventType = button == .left ? .leftMouseDragged : .rightMouseDragged
             let cgButton: CGMouseButton = button == .left ? .left : .right
             guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                                   mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: cgButton)
             else { return }
+            e.flags = CGEventFlags(rawValue: flags)
             mark(e); e.post(tap: .cghidEventTap)
 
         case .keyDown(let keyCode, let flags, let chars):
@@ -59,10 +63,12 @@ enum EventPoster {
             e.flags = CGEventFlags(rawValue: flags)
             mark(e); e.post(tap: .cghidEventTap)
 
-        case .scroll(let dx, let dy):
+        case .scroll(let x, let y, let dx, let dy, let flags):
             guard let e = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
                                   wheel1: Int32(dy), wheel2: Int32(dx), wheel3: 0)
             else { return }
+            e.location = CGPoint(x: x, y: y)
+            e.flags = CGEventFlags(rawValue: flags)
             mark(e); e.post(tap: .cghidEventTap)
         }
     }

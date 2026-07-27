@@ -1,90 +1,210 @@
 import Foundation
 
-/// 动作块 → 回放步骤序列。纯函数。
+/// 动作块 → 回放时间轴。纯函数。
 public enum BlockExpander {
-    /// 点击 down→up 的间隔。
-    static let clickHold: TimeInterval = 0.03
-    /// 打字每字符 down→up 的间隔与字符间步进（keystrokes 缺失时序时使用）。
+    /// 编辑文本生成事件时，字符按下到抬起的间隔。
     static let keyHold: TimeInterval = 0.02
+    /// 编辑文本生成事件时，相邻字符按下的间隔。
     static let keyStride: TimeInterval = 0.06
 
+    private static func clampedDuration(_ duration: TimeInterval) -> TimeInterval {
+        guard duration.isFinite, duration > 0 else { return 0 }
+        return duration
+    }
+
+    /// 兼容旧调用方，只返回投递步骤。
     public static func expand(_ blocks: [ActionBlock]) -> [PlaybackStep] {
+        plan(blocks: blocks).steps
+    }
+
+    public static func plan(for script: Script) -> PlaybackPlan {
+        plan(blocks: script.blocks, trailingDelay: script.trailingDelay)
+    }
+
+    public static func plan(
+        blocks: [ActionBlock],
+        trailingDelay: TimeInterval = 0
+    ) -> PlaybackPlan {
         var steps: [PlaybackStep] = []
         var clock: TimeInterval = 0
 
         for block in blocks {
+            if case .wait(let wait) = block {
+                clock += clampedDuration(wait.duration)
+                continue
+            }
+
+            clock += clampedDuration(block.delayBefore)
+            let start = clock
+            var effectiveDuration = clampedDuration(block.duration)
+
             switch block {
-            case .wait(let w):
-                clock += w.duration
+            case .wait:
+                break
 
-            case .move(let m):
-                for p in m.points {
-                    steps.append(PlaybackStep(t: clock + p.t,
-                                              action: .mouseMove(x: p.x, y: p.y), blockID: m.id))
+            case .move(let move):
+                for point in move.points {
+                    steps.append(PlaybackStep(
+                        t: start + point.t,
+                        action: .mouseMove(x: point.x, y: point.y, flags: point.flags),
+                        blockID: move.id
+                    ))
                 }
-                clock += m.duration
 
-            case .click(let c):
-                steps.append(PlaybackStep(t: clock,
-                    action: .mouseDown(x: c.x, y: c.y, button: c.button, clickCount: c.clickCount),
-                    blockID: c.id))
-                steps.append(PlaybackStep(t: clock + clickHold,
-                    action: .mouseUp(x: c.x, y: c.y, button: c.button), blockID: c.id))
-                clock += clickHold
+            case .click(let click):
+                steps.append(PlaybackStep(
+                    t: start,
+                    action: .mouseDown(
+                        x: click.x,
+                        y: click.y,
+                        button: click.button,
+                        clickCount: click.clickCount,
+                        flags: click.downFlags
+                    ),
+                    blockID: click.id
+                ))
+                steps.append(PlaybackStep(
+                    t: start + effectiveDuration,
+                    action: .mouseUp(
+                        x: click.upX,
+                        y: click.upY,
+                        button: click.button,
+                        flags: click.upFlags
+                    ),
+                    blockID: click.id
+                ))
 
-            case .drag(let d):
-                guard let first = d.points.first, let last = d.points.last else { break }
-                steps.append(PlaybackStep(t: clock + first.t,
-                    action: .mouseDown(x: first.x, y: first.y, button: d.button, clickCount: 1),
-                    blockID: d.id))
-                for p in d.points.dropFirst().dropLast() {
-                    steps.append(PlaybackStep(t: clock + p.t,
-                        action: .mouseDrag(x: p.x, y: p.y, button: d.button), blockID: d.id))
-                }
-                steps.append(PlaybackStep(t: clock + last.t,
-                    action: .mouseUp(x: last.x, y: last.y, button: d.button), blockID: d.id))
-                clock += d.duration
-
-            case .scroll(let s):
-                for step in s.steps {
-                    steps.append(PlaybackStep(t: clock + step.t,
-                        action: .scroll(dx: step.dx, dy: step.dy), blockID: s.id))
-                }
-                clock += s.duration
-
-            case .typeText(let t):
-                let recordedText = t.keystrokes.map(\.chars).joined()
-                if recordedText == t.text, !t.keystrokes.isEmpty {
-                    // 未被编辑：按原始时序重放 keyCode
-                    for k in t.keystrokes {
-                        steps.append(PlaybackStep(t: clock + k.t,
-                            action: .keyDown(keyCode: k.keyCode, flags: 0, chars: k.chars),
-                            blockID: t.id))
-                        steps.append(PlaybackStep(t: clock + k.t + keyHold,
-                            action: .keyUp(keyCode: k.keyCode, flags: 0), blockID: t.id))
+            case .drag(let drag):
+                if let first = drag.points.first, let last = drag.points.last {
+                    steps.append(PlaybackStep(
+                        t: start + first.t,
+                        action: .mouseDown(
+                            x: first.x,
+                            y: first.y,
+                            button: drag.button,
+                            clickCount: 1,
+                            flags: first.flags
+                        ),
+                        blockID: drag.id
+                    ))
+                    for point in drag.points.dropFirst().dropLast() {
+                        steps.append(PlaybackStep(
+                            t: start + point.t,
+                            action: .mouseDrag(
+                                x: point.x,
+                                y: point.y,
+                                button: drag.button,
+                                flags: point.flags
+                            ),
+                            blockID: drag.id
+                        ))
                     }
-                    clock += (t.keystrokes.last?.t ?? 0) + keyHold
+                    steps.append(PlaybackStep(
+                        t: start + last.t,
+                        action: .mouseUp(
+                            x: last.x,
+                            y: last.y,
+                            button: drag.button,
+                            flags: last.flags
+                        ),
+                        blockID: drag.id
+                    ))
+                }
+
+            case .scroll(let scroll):
+                for step in scroll.steps {
+                    steps.append(PlaybackStep(
+                        t: start + step.t,
+                        action: .scroll(
+                            x: scroll.x,
+                            y: scroll.y,
+                            dx: step.dx,
+                            dy: step.dy,
+                            flags: step.flags
+                        ),
+                        blockID: scroll.id
+                    ))
+                }
+
+            case .typeText(let typeText):
+                let recordedText = typeText.keystrokes.map(\.chars).joined()
+                if recordedText == typeText.text, !typeText.keystrokes.isEmpty {
+                    for keystroke in typeText.keystrokes {
+                        steps.append(PlaybackStep(
+                            t: start + keystroke.t,
+                            action: .keyDown(
+                                keyCode: keystroke.keyCode,
+                                flags: keystroke.downFlags,
+                                chars: keystroke.chars
+                            ),
+                            blockID: typeText.id
+                        ))
+                        steps.append(PlaybackStep(
+                            t: start + keystroke.upT,
+                            action: .keyUp(
+                                keyCode: keystroke.keyCode,
+                                flags: keystroke.upFlags
+                            ),
+                            blockID: typeText.id
+                        ))
+                    }
                 } else {
-                    // 编辑过：逐字符 unicode 注入（keyCode 0 + chars，由 EventPoster 走 unicode 路径）
                     var offset: TimeInterval = 0
-                    for ch in t.text {
-                        steps.append(PlaybackStep(t: clock + offset,
-                            action: .keyDown(keyCode: 0, flags: 0, chars: String(ch)), blockID: t.id))
-                        steps.append(PlaybackStep(t: clock + offset + keyHold,
-                            action: .keyUp(keyCode: 0, flags: 0), blockID: t.id))
+                    var generatedDuration: TimeInterval = 0
+                    for character in typeText.text {
+                        steps.append(PlaybackStep(
+                            t: start + offset,
+                            action: .keyDown(
+                                keyCode: 0,
+                                flags: 0,
+                                chars: String(character)
+                            ),
+                            blockID: typeText.id
+                        ))
+                        steps.append(PlaybackStep(
+                            t: start + offset + keyHold,
+                            action: .keyUp(keyCode: 0, flags: 0),
+                            blockID: typeText.id
+                        ))
+                        generatedDuration = offset + keyHold
                         offset += keyStride
                     }
-                    clock += offset
+                    effectiveDuration = max(effectiveDuration, generatedDuration)
                 }
 
-            case .shortcut(let s):
-                steps.append(PlaybackStep(t: clock,
-                    action: .keyDown(keyCode: s.keyCode, flags: s.flags, chars: ""), blockID: s.id))
-                steps.append(PlaybackStep(t: clock + keyHold,
-                    action: .keyUp(keyCode: s.keyCode, flags: s.flags), blockID: s.id))
-                clock += keyHold
+            case .shortcut(let shortcut):
+                steps.append(PlaybackStep(
+                    t: start,
+                    action: .keyDown(
+                        keyCode: shortcut.keyCode,
+                        flags: shortcut.flags,
+                        chars: ""
+                    ),
+                    blockID: shortcut.id
+                ))
+                steps.append(PlaybackStep(
+                    t: start + effectiveDuration,
+                    action: .keyUp(
+                        keyCode: shortcut.keyCode,
+                        flags: shortcut.upFlags
+                    ),
+                    blockID: shortcut.id
+                ))
             }
+
+            clock += effectiveDuration
         }
-        return steps
+
+        let orderedSteps = steps.enumerated().sorted { lhs, rhs in
+            if lhs.element.t == rhs.element.t {
+                return lhs.offset < rhs.offset
+            }
+            return lhs.element.t < rhs.element.t
+        }.map(\.element)
+
+        return PlaybackPlan(
+            steps: orderedSteps,
+            duration: clock + clampedDuration(trailingDelay)
+        )
     }
 }
