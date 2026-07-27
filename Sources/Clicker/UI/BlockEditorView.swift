@@ -170,20 +170,22 @@ struct BlockEditorView: View {
                 let dx = endX - last.x, dy = endY - last.y
                 b.points = b.points.map { TrackPoint(t: $0.t, x: $0.x + dx, y: $0.y + dy) }
             }
-            if duration != b.duration {
+            let newDuration = max(0, duration)
+            if newDuration != b.duration {
                 b.points = rescaledPoints(
                     b.points,
                     fromDuration: b.duration,
-                    toDuration: duration
+                    toDuration: newDuration
                 )
             }
-            b.duration = max(0, duration)
+            b.duration = newDuration
             updated = .move(b)
         case .drag(var b):
             if let first = b.points.first, let last = b.points.last,
                b.points.count >= 2 {
                 let oldSpanX = last.x - first.x, oldSpanY = last.y - first.y
                 let newSpanX = endX - x, newSpanY = endY - y
+                let timeSpan = last.t - first.t
                 let pointCount = b.points.count
                 b.points = b.points.enumerated().map { index, p in
                     let fallbackProgress: Double
@@ -191,8 +193,8 @@ struct BlockEditorView: View {
                         fallbackProgress = 0
                     } else if index == pointCount - 1 {
                         fallbackProgress = 1
-                    } else if last.t > 0 {
-                        fallbackProgress = p.t / last.t
+                    } else if timeSpan > 0 {
+                        fallbackProgress = (p.t - first.t) / timeSpan
                     } else {
                         fallbackProgress = Double(index) / Double(pointCount - 1)
                     }
@@ -201,14 +203,15 @@ struct BlockEditorView: View {
                     return TrackPoint(t: p.t, x: x + fx * newSpanX, y: y + fy * newSpanY)
                 }
             }
-            if duration != b.duration {
+            let newDuration = max(0, duration)
+            if newDuration != b.duration {
                 b.points = rescaledPoints(
                     b.points,
                     fromDuration: b.duration,
-                    toDuration: duration
+                    toDuration: newDuration
                 )
             }
-            b.duration = max(0, duration)
+            b.duration = newDuration
             updated = .drag(b)
         case .scroll(var b):
             b.steps = [ScrollStep(t: 0, dx: 0, dy: y)]
