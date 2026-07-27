@@ -98,10 +98,11 @@ final class ActionBlockTests: XCTestCase {
         decoder.dateDecodingStrategy = .millisecondsSince1970
         let script = try decoder.decode(Script.self, from: legacyV1ScriptData)
 
-        XCTAssertEqual(script.schemaVersion, 1)
+        XCTAssertEqual(script.schemaVersion, 4)
         XCTAssertEqual(script.trailingDelay, 0)
         XCTAssertNil(script.targetBundleIdentifier)
         XCTAssertEqual(script.blocks.count, 7)
+        XCTAssertEqual(script.blocks.map(\.overlapBefore), [0, 0, 0, 0, 0, 0, 0])
 
         guard case .move(let move) = script.blocks[0] else { return XCTFail("expected move") }
         XCTAssertEqual(move.delayBefore, 0)
@@ -119,10 +120,17 @@ final class ActionBlockTests: XCTestCase {
         guard case .drag(let drag) = script.blocks[2] else { return XCTFail("expected drag") }
         XCTAssertEqual(drag.delayBefore, 0)
         XCTAssertEqual(drag.points.map(\.flags), [0, 0])
+        XCTAssertTrue(drag.hasRecordedMouseUp)
 
         guard case .scroll(let scroll) = script.blocks[3] else { return XCTFail("expected scroll") }
         XCTAssertEqual(scroll.delayBefore, 0)
         XCTAssertEqual(scroll.steps[0].flags, 0)
+        XCTAssertEqual(scroll.steps[0].x, 9)
+        XCTAssertEqual(scroll.steps[0].y, 10)
+        XCTAssertEqual(
+            BlockExpander.plan(blocks: [.scroll(scroll)]).steps.first?.action,
+            .scroll(x: 9, y: 10, dx: 1, dy: -2, flags: 0)
+        )
 
         guard case .typeText(let typeText) = script.blocks[4] else { return XCTFail("expected typeText") }
         XCTAssertEqual(typeText.delayBefore, 0)
@@ -137,11 +145,18 @@ final class ActionBlockTests: XCTestCase {
         XCTAssertEqual(shortcut.upFlags, shortcut.flags)
     }
 
-    func testRejectsUnsupportedAndInvalidSchemaVersions() throws {
+    func testAcceptsCurrentSchemaAndRejectsUnsupportedVersions() throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
 
-        for schemaVersion in [0, 99] {
+        var currentObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: legacyV1ScriptData) as? [String: Any]
+        )
+        currentObject["schemaVersion"] = 4
+        let currentData = try JSONSerialization.data(withJSONObject: currentObject)
+        XCTAssertEqual(try decoder.decode(Script.self, from: currentData).schemaVersion, 4)
+
+        for schemaVersion in [0, 5, 99] {
             var object = try XCTUnwrap(
                 JSONSerialization.jsonObject(with: legacyV1ScriptData) as? [String: Any]
             )
@@ -152,26 +167,49 @@ final class ActionBlockTests: XCTestCase {
         }
     }
 
-    func testV2RoundTripPreservesLosslessTimelineFields() throws {
+    func testV2ScrollWithoutStepLocationsUsesBlockLocationFallback() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .millisecondsSince1970
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: legacyV1ScriptData) as? [String: Any]
+        )
+        object["schemaVersion"] = 2
+        let data = try JSONSerialization.data(withJSONObject: object)
+
+        let script = try decoder.decode(Script.self, from: data)
+
+        XCTAssertEqual(script.blocks.map(\.overlapBefore), [0, 0, 0, 0, 0, 0, 0])
+        guard case .drag(let drag) = script.blocks[2] else { return XCTFail() }
+        XCTAssertTrue(drag.hasRecordedMouseUp)
+        guard case .scroll(let scroll) = script.blocks[3] else { return XCTFail() }
+        XCTAssertEqual(scroll.steps[0].x, 9)
+        XCTAssertEqual(scroll.steps[0].y, 10)
+        XCTAssertEqual(
+            BlockExpander.plan(blocks: [.scroll(scroll)]).steps.first?.action,
+            .scroll(x: 9, y: 10, dx: 1, dy: -2, flags: 0)
+        )
+    }
+
+    func testV4RoundTripPreservesLosslessTimelineFields() throws {
         let script = Script(
             id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
             name: "Lossless",
             createdAt: Date(timeIntervalSince1970: 1_000),
             modifiedAt: Date(timeIntervalSince1970: 2_000),
             blocks: [
-                .move(MoveBlock(
+                ActionBlock.move(MoveBlock(
                     id: UUID(uuidString: "10000000-0000-0000-0000-000000000001")!,
                     duration: 0.4,
                     points: [TrackPoint(t: 0.1, x: 1, y: 2, flags: 11)],
-                    delayBefore: 0.01
+                    startOffset: 0.01
                 )),
-                .click(ClickBlock(
+                ActionBlock.click(ClickBlock(
                     id: UUID(uuidString: "20000000-0000-0000-0000-000000000002")!,
                     x: 3,
                     y: 4,
                     button: .right,
                     clickCount: 2,
-                    delayBefore: 0.02,
+                    startOffset: 0.02,
                     duration: 0.25,
                     upX: 5,
                     upY: 6,
@@ -179,7 +217,7 @@ final class ActionBlockTests: XCTestCase {
                     downFlags: 12,
                     upFlags: 13
                 )),
-                .drag(DragBlock(
+                ActionBlock.drag(DragBlock(
                     id: UUID(uuidString: "30000000-0000-0000-0000-000000000003")!,
                     button: .left,
                     duration: 0.5,
@@ -187,17 +225,25 @@ final class ActionBlockTests: XCTestCase {
                         TrackPoint(t: 0, x: 7, y: 8, flags: 14),
                         TrackPoint(t: 0.5, x: 9, y: 10, flags: 15),
                     ],
-                    delayBefore: 0.03
+                    startOffset: 0.03,
+                    hasRecordedMouseUp: false
                 )),
-                .scroll(ScrollBlock(
+                ActionBlock.scroll(ScrollBlock(
                     id: UUID(uuidString: "40000000-0000-0000-0000-000000000004")!,
                     x: 11,
                     y: 12,
                     duration: 0.6,
-                    steps: [ScrollStep(t: 0.2, dx: 13, dy: -14, flags: 16)],
-                    delayBefore: 0.04
+                    steps: [ScrollStep(
+                        t: 0.2,
+                        x: 21,
+                        y: 22,
+                        dx: 13,
+                        dy: -14,
+                        flags: 16
+                    )],
+                    startOffset: 0.04
                 )),
-                .typeText(TypeTextBlock(
+                ActionBlock.typeText(TypeTextBlock(
                     id: UUID(uuidString: "50000000-0000-0000-0000-000000000005")!,
                     text: "A",
                     keystrokes: [Keystroke(
@@ -208,26 +254,27 @@ final class ActionBlockTests: XCTestCase {
                         downFlags: 17,
                         upFlags: 18
                     )],
-                    delayBefore: 0.05,
+                    startOffset: 0.05,
                     duration: 0.4
                 )),
-                .shortcut(ShortcutBlock(
+                ActionBlock.shortcut(ShortcutBlock(
                     id: UUID(uuidString: "60000000-0000-0000-0000-000000000006")!,
                     keyCode: 8,
                     flags: 19,
-                    delayBefore: 0.06,
+                    startOffset: 0.06,
                     upFlags: 20,
                     duration: 0.45
                 )),
                 .wait(WaitBlock(
                     id: UUID(uuidString: "70000000-0000-0000-0000-000000000007")!,
-                    duration: 2
+                    duration: 2,
+                    startOffset: 0.07
                 )),
             ],
             repeatCount: 3,
             repeatForever: true,
             repeatInterval: 0.7,
-            schemaVersion: 2,
+            schemaVersion: 4,
             trailingDelay: 0.8,
             targetBundleIdentifier: "com.example.target"
         )
@@ -240,8 +287,13 @@ final class ActionBlockTests: XCTestCase {
         let decoded = try decoder.decode(Script.self, from: data)
 
         XCTAssertEqual(decoded, script)
+        XCTAssertEqual(
+            decoded.blocks.map(\.startOffset),
+            [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07]
+        )
+        XCTAssertEqual(decoded.blocks.map(\.overlapBefore), Array(repeating: 0, count: 7))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(object["schemaVersion"] as? Int, 2)
+        XCTAssertEqual(object["schemaVersion"] as? Int, 4)
     }
 
     func testTimelineDefaultsAndActionBlockHelpers() {
@@ -268,10 +320,22 @@ final class ActionBlockTests: XCTestCase {
             duration: 0.25
         ))
         let changed = block.withDelayBefore(0.9)
+        let overlapping = block.withOverlapBefore(0.15)
         XCTAssertEqual(block.delayBefore, 0.4, accuracy: 0.000_001)
+        XCTAssertEqual(block.overlapBefore, 0, accuracy: 0.000_001)
         XCTAssertEqual(block.duration, 0.25, accuracy: 0.000_001)
         XCTAssertEqual(changed.delayBefore, 0.9, accuracy: 0.000_001)
+        XCTAssertEqual(changed.overlapBefore, 0, accuracy: 0.000_001)
         XCTAssertEqual(changed.id, id)
+        XCTAssertEqual(overlapping.delayBefore, 0.4, accuracy: 0.000_001)
+        XCTAssertEqual(overlapping.overlapBefore, 0.15, accuracy: 0.000_001)
+        XCTAssertEqual(overlapping.id, id)
+
+        let dragFactory: (UUID, MouseButton, TimeInterval, [TrackPoint], TimeInterval) -> DragBlock
+            = DragBlock.init
+        let compatibleDrag = dragFactory(id, .left, 0.2, [], 0.1)
+        XCTAssertTrue(compatibleDrag.hasRecordedMouseUp)
+        XCTAssertEqual(compatibleDrag.delayBefore, 0.1, accuracy: 0.000_001)
 
         let wait = ActionBlock.wait(WaitBlock(id: id, duration: 2))
         XCTAssertEqual(wait.delayBefore, 0)
@@ -281,7 +345,7 @@ final class ActionBlockTests: XCTestCase {
 
     func testScriptDefaultsToCurrentSchema() {
         let script = Script(name: "测试")
-        XCTAssertEqual(script.schemaVersion, 2)
+        XCTAssertEqual(script.schemaVersion, 4)
         XCTAssertEqual(script.repeatCount, 1)
         XCTAssertFalse(script.repeatForever)
         XCTAssertEqual(script.repeatInterval, 0)

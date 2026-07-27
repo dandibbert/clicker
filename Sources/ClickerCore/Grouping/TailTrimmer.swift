@@ -33,29 +33,36 @@ public enum TailTrimmer {
            capture.events[cursor].kind == .keyUp,
            capture.events[cursor].keyCode == stopKeyCode {
             cursor -= 1
-            while cursor >= 0, capture.events[cursor].kind == .flagsChanged {
+        }
+
+        var sequenceStart: Int?
+        var foundStopKeyDown = false
+        while cursor >= 0 {
+            let event = capture.events[cursor]
+            if event.kind == .keyDown,
+               event.keyCode == stopKeyCode,
+               event.flags & stopFlags == stopFlags {
+                foundStopKeyDown = true
+                sequenceStart = cursor
                 cursor -= 1
+                continue
             }
-        }
-
-        guard cursor >= 0 else { return capture }
-        let stopKeyDown = capture.events[cursor]
-        guard stopKeyDown.kind == .keyDown,
-              stopKeyDown.keyCode == stopKeyCode,
-              stopKeyDown.flags & stopFlags == stopFlags else {
-            return capture
-        }
-
-        var sequenceStart = cursor
-        while sequenceStart > 0 {
-            let precedingEvent = capture.events[sequenceStart - 1]
-            guard precedingEvent.kind == .flagsChanged,
-                  isStopModifierEvent(precedingEvent, stopFlags: stopFlags) else {
-                break
+            if foundStopKeyDown,
+               event.kind == .keyUp,
+               event.keyCode == stopKeyCode {
+                cursor -= 1
+                continue
             }
-            sequenceStart -= 1
+            if event.kind == .flagsChanged,
+               !foundStopKeyDown || event.flags & stopFlags != 0 {
+                sequenceStart = cursor
+                cursor -= 1
+                continue
+            }
+            break
         }
 
+        guard foundStopKeyDown, let sequenceStart else { return capture }
         return RecordingCapture(
             events: Array(capture.events.prefix(sequenceStart)),
             duration: sanitizedDuration(capture.events[sequenceStart].t)
@@ -86,32 +93,6 @@ public enum TailTrimmer {
             result.removeLast()
         }
         return result
-    }
-
-    private static func isStopModifierEvent(
-        _ event: RecordedEvent,
-        stopFlags: UInt64
-    ) -> Bool {
-        guard stopFlags != 0 else { return false }
-        if event.flags & stopFlags != 0 {
-            return true
-        }
-        return modifierMask(for: event.keyCode) & stopFlags != 0
-    }
-
-    private static func modifierMask(for keyCode: UInt16) -> UInt64 {
-        switch keyCode {
-        case 54, 55:
-            return KeyCodeMap.maskCommand
-        case 56, 60:
-            return KeyCodeMap.maskShift
-        case 58, 61:
-            return KeyCodeMap.maskOption
-        case 59, 62:
-            return KeyCodeMap.maskControl
-        default:
-            return 0
-        }
     }
 
     private static func sanitizedDuration(_ duration: TimeInterval) -> TimeInterval {

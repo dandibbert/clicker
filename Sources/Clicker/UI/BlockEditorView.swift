@@ -144,7 +144,15 @@ struct BlockEditorView: View {
         let clampedDuration = max(0, newDuration)
         if oldDuration > 0 {
             let ratio = clampedDuration / oldDuration
-            return points.map { TrackPoint(t: $0.t * ratio, x: $0.x, y: $0.y) }
+            return points.map {
+                TrackPoint(
+                    t: $0.t * ratio,
+                    x: $0.x,
+                    y: $0.y,
+                    flags: $0.flags,
+                    ordinal: $0.ordinal
+                )
+            }
         }
         if points.count > 1, clampedDuration > 0 {
             let lastIndex = Double(points.count - 1)
@@ -152,11 +160,21 @@ struct BlockEditorView: View {
                 TrackPoint(
                     t: clampedDuration * Double(index) / lastIndex,
                     x: point.x,
-                    y: point.y
+                    y: point.y,
+                    flags: point.flags,
+                    ordinal: point.ordinal
                 )
             }
         }
-        return points.map { TrackPoint(t: 0, x: $0.x, y: $0.y) }
+        return points.map {
+            TrackPoint(
+                t: 0,
+                x: $0.x,
+                y: $0.y,
+                flags: $0.flags,
+                ordinal: $0.ordinal
+            )
+        }
     }
 
     private func save() {
@@ -168,7 +186,15 @@ struct BlockEditorView: View {
         case .move(var b):
             if let last = b.points.last {
                 let dx = endX - last.x, dy = endY - last.y
-                b.points = b.points.map { TrackPoint(t: $0.t, x: $0.x + dx, y: $0.y + dy) }
+                b.points = b.points.map {
+                    TrackPoint(
+                        t: $0.t,
+                        x: $0.x + dx,
+                        y: $0.y + dy,
+                        flags: $0.flags,
+                        ordinal: $0.ordinal
+                    )
+                }
             }
             let newDuration = max(0, duration)
             if newDuration != b.duration {
@@ -200,7 +226,13 @@ struct BlockEditorView: View {
                     }
                     let fx = oldSpanX == 0 ? fallbackProgress : (p.x - first.x) / oldSpanX
                     let fy = oldSpanY == 0 ? fallbackProgress : (p.y - first.y) / oldSpanY
-                    return TrackPoint(t: p.t, x: x + fx * newSpanX, y: y + fy * newSpanY)
+                    return TrackPoint(
+                        t: p.t,
+                        x: x + fx * newSpanX,
+                        y: y + fy * newSpanY,
+                        flags: p.flags,
+                        ordinal: p.ordinal
+                    )
                 }
             }
             let newDuration = max(0, duration)
@@ -214,7 +246,14 @@ struct BlockEditorView: View {
             b.duration = newDuration
             updated = .drag(b)
         case .scroll(var b):
-            b.steps = [ScrollStep(t: 0, dx: 0, dy: y)]
+            b.steps = [ScrollStep(
+                t: 0,
+                x: b.x,
+                y: b.y,
+                dx: 0,
+                dy: y,
+                ordinal: b.steps.first?.ordinal ?? 0
+            )]
             b.duration = 0
             updated = .scroll(b)
         case .typeText(var b):

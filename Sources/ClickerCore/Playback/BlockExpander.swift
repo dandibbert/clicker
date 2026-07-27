@@ -1,28 +1,24 @@
 import Foundation
 
-/// 动作块 → 回放时间轴。纯函数。
+/// 动作块 → 绝对回放时间轴。纯函数。
 public enum BlockExpander {
+    private struct KeyReleaseIdentity: Hashable {
+        var t: TimeInterval
+        var keyCode: UInt16
+        var ordinal: Int
+    }
+
     /// 编辑文本生成事件时，字符按下到抬起的间隔。
     static let keyHold: TimeInterval = 0.02
     /// 编辑文本生成事件时，相邻字符按下的间隔。
     static let keyStride: TimeInterval = 0.06
 
-    /// 时间轴上限保留 1 秒余量，确保纳秒换算可安全落在 Int64 范围内。
-    static let maximumTimelineTime = Double(Int64.max) / 1_000_000_000 - 1
-
     private static func sanitizedTime(_ time: TimeInterval) -> TimeInterval {
-        guard time.isFinite, time > 0 else { return 0 }
-        return min(time, maximumTimelineTime)
+        TimelineValue.time(time)
     }
 
     private static func adding(_ lhs: TimeInterval, _ rhs: TimeInterval) -> TimeInterval {
-        let left = sanitizedTime(lhs)
-        let right = sanitizedTime(rhs)
-        guard left < maximumTimelineTime, right < maximumTimelineTime,
-              left <= maximumTimelineTime - right else {
-            return maximumTimelineTime
-        }
-        return left + right
+        TimelineValue.adding(lhs, rhs)
     }
 
     /// 兼容旧调用方，只返回投递步骤。
@@ -39,26 +35,55 @@ public enum BlockExpander {
         trailingDelay: TimeInterval = 0
     ) -> PlaybackPlan {
         var steps: [PlaybackStep] = []
-        var clock: TimeInterval = 0
+        var keyReleaseWasRepeat: [KeyReleaseIdentity: Bool] = [:]
+        var timelineEnd: TimeInterval = 0
 
         for block in blocks {
-            if case .wait(let wait) = block {
-                clock = adding(clock, wait.duration)
-                continue
-            }
-
-            clock = adding(clock, block.delayBefore)
-            let start = clock
+            let start = sanitizedTime(block.startOffset)
             var effectiveDuration = sanitizedTime(block.duration)
             var latestLocalStep: TimeInterval = 0
 
-            func appendStep(localTime: TimeInterval, action: StepAction, blockID: UUID) {
+            func appendStep(
+                localTime: TimeInterval,
+                ordinal: Int,
+                action: StepAction,
+                blockID: UUID
+            ) {
                 let time = sanitizedTime(localTime)
                 latestLocalStep = max(latestLocalStep, time)
                 steps.append(PlaybackStep(
                     t: adding(start, time),
                     action: action,
-                    blockID: blockID
+                    blockID: blockID,
+                    ordinal: ordinal
+                ))
+            }
+
+            func appendKeyRelease(
+                localTime: TimeInterval,
+                keyCode: UInt16,
+                flags: UInt64,
+                ordinal: Int,
+                isRepeat: Bool,
+                blockID: UUID
+            ) {
+                let time = sanitizedTime(localTime)
+                latestLocalStep = max(latestLocalStep, time)
+                let identity = KeyReleaseIdentity(
+                    t: adding(start, time),
+                    keyCode: keyCode,
+                    ordinal: ordinal
+                )
+                if let existingWasRepeat = keyReleaseWasRepeat[identity],
+                   existingWasRepeat || isRepeat {
+                    return
+                }
+                keyReleaseWasRepeat[identity] = isRepeat
+                steps.append(PlaybackStep(
+                    t: identity.t,
+                    action: .keyUp(keyCode: keyCode, flags: flags),
+                    blockID: blockID,
+                    ordinal: ordinal
                 ))
             }
 
@@ -70,6 +95,7 @@ public enum BlockExpander {
                 for point in move.points {
                     appendStep(
                         localTime: point.t,
+                        ordinal: point.ordinal,
                         action: .mouseMove(x: point.x, y: point.y, flags: point.flags),
                         blockID: move.id
                     )
@@ -78,6 +104,7 @@ public enum BlockExpander {
             case .click(let click):
                 appendStep(
                     localTime: 0,
+                    ordinal: click.downOrdinal,
                     action: .mouseDown(
                         x: click.x,
                         y: click.y,
@@ -89,6 +116,7 @@ public enum BlockExpander {
                 )
                 appendStep(
                     localTime: effectiveDuration,
+                    ordinal: click.upOrdinal,
                     action: .mouseUp(
                         x: click.upX,
                         y: click.upY,
@@ -104,6 +132,7 @@ public enum BlockExpander {
                     var time = sanitizedTime(first.t)
                     appendStep(
                         localTime: time,
+                        ordinal: first.ordinal,
                         action: .mouseDown(
                             x: first.x,
                             y: first.y,
@@ -113,10 +142,14 @@ public enum BlockExpander {
                         ),
                         blockID: drag.id
                     )
-                    for point in drag.points.dropFirst().dropLast() {
+                    let dragPoints = drag.hasRecordedMouseUp
+                        ? drag.points.dropFirst().dropLast()
+                        : drag.points.dropFirst()
+                    for point in dragPoints {
                         time = max(time, sanitizedTime(point.t))
                         appendStep(
                             localTime: time,
+                            ordinal: point.ordinal,
                             action: .mouseDrag(
                                 x: point.x,
                                 y: point.y,
@@ -129,6 +162,7 @@ public enum BlockExpander {
                     time = max(time, sanitizedTime(last.t))
                     appendStep(
                         localTime: time,
+                        ordinal: drag.upOrdinal,
                         action: .mouseUp(
                             x: last.x,
                             y: last.y,
@@ -142,11 +176,18 @@ public enum BlockExpander {
 
             case .scroll(let scroll):
                 for step in scroll.steps {
+                    let location: (x: Double, y: Double)
+                    if let x = step.x, let y = step.y {
+                        location = (x, y)
+                    } else {
+                        location = (scroll.x, scroll.y)
+                    }
                     appendStep(
                         localTime: step.t,
+                        ordinal: step.ordinal,
                         action: .scroll(
-                            x: scroll.x,
-                            y: scroll.y,
+                            x: location.x,
+                            y: location.y,
                             dx: step.dx,
                             dy: step.dy,
                             flags: step.flags
@@ -163,6 +204,7 @@ public enum BlockExpander {
                         let upTime = max(downTime, sanitizedTime(keystroke.upT))
                         appendStep(
                             localTime: downTime,
+                            ordinal: keystroke.downOrdinal,
                             action: .keyDown(
                                 keyCode: keystroke.keyCode,
                                 flags: keystroke.downFlags,
@@ -170,22 +212,29 @@ public enum BlockExpander {
                             ),
                             blockID: typeText.id
                         )
-                        appendStep(
+                        appendKeyRelease(
                             localTime: upTime,
-                            action: .keyUp(
-                                keyCode: keystroke.keyCode,
-                                flags: keystroke.upFlags
-                            ),
+                            keyCode: keystroke.keyCode,
+                            flags: keystroke.upFlags,
+                            ordinal: keystroke.upOrdinal,
+                            isRepeat: keystroke.isRepeat,
                             blockID: typeText.id
                         )
                     }
                 } else {
+                    let existingOrdinals = typeText.keystrokes.flatMap {
+                        [$0.downOrdinal, $0.upOrdinal]
+                    }
+                    var ordinal = existingOrdinals.max().map {
+                        TimelineValue.nextOrdinal(after: $0)
+                    } ?? 0
                     var offset: TimeInterval = 0
                     var generatedDuration: TimeInterval = 0
                     for character in typeText.text {
                         let upTime = adding(offset, keyHold)
                         appendStep(
                             localTime: offset,
+                            ordinal: ordinal,
                             action: .keyDown(
                                 keyCode: 0,
                                 flags: 0,
@@ -193,11 +242,14 @@ public enum BlockExpander {
                             ),
                             blockID: typeText.id
                         )
+                        ordinal = TimelineValue.nextOrdinal(after: ordinal)
                         appendStep(
                             localTime: upTime,
+                            ordinal: ordinal,
                             action: .keyUp(keyCode: 0, flags: 0),
                             blockID: typeText.id
                         )
+                        ordinal = TimelineValue.nextOrdinal(after: ordinal)
                         generatedDuration = max(generatedDuration, upTime)
                         offset = adding(offset, keyStride)
                     }
@@ -207,6 +259,7 @@ public enum BlockExpander {
             case .shortcut(let shortcut):
                 appendStep(
                     localTime: 0,
+                    ordinal: shortcut.downOrdinal,
                     action: .keyDown(
                         keyCode: shortcut.keyCode,
                         flags: shortcut.flags,
@@ -214,30 +267,33 @@ public enum BlockExpander {
                     ),
                     blockID: shortcut.id
                 )
-                appendStep(
+                appendKeyRelease(
                     localTime: effectiveDuration,
-                    action: .keyUp(
-                        keyCode: shortcut.keyCode,
-                        flags: shortcut.upFlags
-                    ),
+                    keyCode: shortcut.keyCode,
+                    flags: shortcut.upFlags,
+                    ordinal: shortcut.upOrdinal,
+                    isRepeat: shortcut.isRepeat,
                     blockID: shortcut.id
                 )
             }
 
             effectiveDuration = max(effectiveDuration, latestLocalStep)
-            clock = adding(clock, effectiveDuration)
+            timelineEnd = max(timelineEnd, adding(start, effectiveDuration))
         }
 
         let orderedSteps = steps.enumerated().sorted { lhs, rhs in
-            if lhs.element.t == rhs.element.t {
-                return lhs.offset < rhs.offset
+            if lhs.element.t != rhs.element.t {
+                return lhs.element.t < rhs.element.t
             }
-            return lhs.element.t < rhs.element.t
+            if lhs.element.ordinal != rhs.element.ordinal {
+                return lhs.element.ordinal < rhs.element.ordinal
+            }
+            return lhs.offset < rhs.offset
         }.map(\.element)
 
         return PlaybackPlan(
             steps: orderedSteps,
-            duration: adding(clock, trailingDelay)
+            duration: adding(timelineEnd, trailingDelay)
         )
     }
 }

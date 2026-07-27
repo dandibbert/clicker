@@ -102,25 +102,38 @@ struct ScriptDetailView: View {
                         Button("编辑…") { editingBlockIndex = index }
                         Button("复制") {
                             var s = script
-                            s.blocks.insert(duplicated(block), at: index + 1)
+                            s.blocks = TimelineMutation.duplicating(
+                                at: index,
+                                in: s.blocks
+                            )
                             state.update(s)
                         }
                         Divider()
                         Button("删除", role: .destructive) {
                             var s = script
-                            s.blocks.remove(at: index)
+                            s.blocks = TimelineMutation.deleting(
+                                at: index,
+                                in: s.blocks
+                            )
                             state.update(s)
                         }
                     }
             }
             .onMove { from, to in
                 var s = script
-                s.blocks.move(fromOffsets: from, toOffset: to)
+                s.blocks = TimelineMutation.moving(
+                    fromOffsets: from,
+                    toOffset: to,
+                    in: s.blocks
+                )
                 state.update(s)
             }
             .onDelete { offsets in
                 var s = script
-                s.blocks.remove(atOffsets: offsets)
+                s.blocks = TimelineMutation.deleting(
+                    atOffsets: offsets,
+                    in: s.blocks
+                )
                 state.update(s)
             }
         }
@@ -148,20 +161,12 @@ struct ScriptDetailView: View {
 
     private func append(_ block: ActionBlock, to script: Script) {
         var s = script
-        s.blocks.append(block)
+        s.blocks = TimelineMutation.inserting(
+            block,
+            at: s.blocks.count,
+            in: s.blocks
+        )
         state.update(s)
-    }
-
-    private func duplicated(_ block: ActionBlock) -> ActionBlock {
-        switch block {
-        case .move(var b): b.id = UUID(); return .move(b)
-        case .click(var b): b.id = UUID(); return .click(b)
-        case .drag(var b): b.id = UUID(); return .drag(b)
-        case .scroll(var b): b.id = UUID(); return .scroll(b)
-        case .typeText(var b): b.id = UUID(); return .typeText(b)
-        case .shortcut(var b): b.id = UUID(); return .shortcut(b)
-        case .wait(var b): b.id = UUID(); return .wait(b)
-        }
     }
 
     // MARK: 工具栏按钮

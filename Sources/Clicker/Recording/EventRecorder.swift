@@ -123,7 +123,9 @@ final class EventRecorder {
             keyCode: keyCode, flags: cgEvent.flags.rawValue, chars: chars,
             clickCount: Int(cgEvent.getIntegerValueField(.mouseEventClickState)),
             scrollDX: Double(cgEvent.getIntegerValueField(.scrollWheelEventPointDeltaAxis2)),
-            scrollDY: Double(cgEvent.getIntegerValueField(.scrollWheelEventPointDeltaAxis1))
+            scrollDY: Double(cgEvent.getIntegerValueField(.scrollWheelEventPointDeltaAxis1)),
+            isRepeat: kind == .keyDown
+                && cgEvent.getIntegerValueField(.keyboardEventAutorepeat) != 0
         ))
     }
 }

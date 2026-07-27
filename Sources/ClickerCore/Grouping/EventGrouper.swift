@@ -5,7 +5,6 @@ public enum EventGrouper {
     /// 无操作间隔阈值：≥ 此值产生独立 WaitBlock。
     public static let waitThreshold: TimeInterval = 0.5
 
-    private static let maximumTimelineTime = Double(Int64.max) / 1_000_000_000 - 1
     private static let clickFallbackDuration: TimeInterval = 0.03
     private static let keyFallbackDuration: TimeInterval = 0.02
 
@@ -17,9 +16,37 @@ public enum EventGrouper {
 
     public static func group(_ capture: RecordingCapture) -> GroupedTimeline {
         let events = capture.events
+        let keyMatches = matchingKeys(in: events)
+        var nextSyntheticOrdinal = events.count
+        var fallbackReleaseByOwner: [Int: (time: TimeInterval, ordinal: Int)] = [:]
         var blocks: [ActionBlock] = []
         var previousActionEnd: TimeInterval = 0
         var index = 0
+
+        func syntheticOrdinal() -> Int {
+            defer { nextSyntheticOrdinal += 1 }
+            return nextSyntheticOrdinal
+        }
+
+        func fallbackRelease(forDownIndex downIndex: Int) -> (
+            time: TimeInterval,
+            ordinal: Int
+        ) {
+            let owner = keyMatches.ownerDownIndexByDownIndex[downIndex] ?? downIndex
+            if let existing = fallbackReleaseByOwner[owner] {
+                return existing
+            }
+            let lastDownIndex = keyMatches.lastDownIndexByOwner[owner] ?? downIndex
+            let release = (
+                time: adding(
+                    sanitizedTime(events[lastDownIndex].t),
+                    keyFallbackDuration
+                ),
+                ordinal: syntheticOrdinal()
+            )
+            fallbackReleaseByOwner[owner] = release
+            return release
+        }
 
         func appendAction(_ block: ActionBlock, start: TimeInterval, end: TimeInterval) {
             let actionStart = sanitizedTime(start)
@@ -27,11 +54,14 @@ public enum EventGrouper {
             let gap = elapsed(from: previousActionEnd, to: actionStart)
 
             if gap >= waitThreshold {
-                blocks.append(.wait(WaitBlock(duration: gap)))
-                blocks.append(block.withDelayBefore(0))
-            } else {
-                blocks.append(block.withDelayBefore(gap))
+                blocks.append(.wait(WaitBlock(
+                    duration: gap,
+                    startOffset: previousActionEnd
+                )))
             }
+            blocks.append(
+                block.withStartOffset(actionStart).clearingLegacyTiming()
+            )
             previousActionEnd = max(previousActionEnd, actionEnd)
         }
 
@@ -64,7 +94,8 @@ public enum EventGrouper {
                         t: localTime,
                         x: pointEvent.x,
                         y: pointEvent.y,
-                        flags: pointEvent.flags
+                        flags: pointEvent.flags,
+                        ordinal: nextIndex
                     ))
                     latestLocalTime = max(latestLocalTime, localTime)
                     latestPointTime = max(latestPointTime, pointTime)
@@ -87,19 +118,19 @@ public enum EventGrouper {
                     t: 0,
                     x: event.x,
                     y: event.y,
-                    flags: event.flags
+                    flags: event.flags,
+                    ordinal: index
                 )]
                 var nextIndex = index + 1
                 var sawDrag = false
-                var matchedUp: RecordedEvent?
+                var matchedUp: (event: RecordedEvent, index: Int)?
                 var latestSampleTime = start
                 var latestLocalTime: TimeInterval = 0
 
                 while nextIndex < events.count {
                     let nextEvent = events[nextIndex]
-                    if nextEvent.kind == .flagsChanged {
-                        nextIndex += 1
-                        continue
+                    if nextEvent.kind == event.kind {
+                        break
                     }
                     if nextEvent.kind == dragKind {
                         sawDrag = true
@@ -111,13 +142,11 @@ public enum EventGrouper {
                             t: localTime,
                             x: nextEvent.x,
                             y: nextEvent.y,
-                            flags: nextEvent.flags
+                            flags: nextEvent.flags,
+                            ordinal: nextIndex
                         ))
                         latestLocalTime = max(latestLocalTime, localTime)
-                        latestSampleTime = max(
-                            latestSampleTime,
-                            sanitizedTime(nextEvent.t)
-                        )
+                        latestSampleTime = max(latestSampleTime, sanitizedTime(nextEvent.t))
                         nextIndex += 1
                         continue
                     }
@@ -130,17 +159,15 @@ public enum EventGrouper {
                             t: localTime,
                             x: nextEvent.x,
                             y: nextEvent.y,
-                            flags: nextEvent.flags
+                            flags: nextEvent.flags,
+                            ordinal: nextIndex
                         ))
                         latestLocalTime = max(latestLocalTime, localTime)
-                        latestSampleTime = max(
-                            latestSampleTime,
-                            sanitizedTime(nextEvent.t)
-                        )
-                        matchedUp = nextEvent
-                        nextIndex += 1
+                        latestSampleTime = max(latestSampleTime, sanitizedTime(nextEvent.t))
+                        matchedUp = (nextEvent, nextIndex)
+                        break
                     }
-                    break
+                    nextIndex += 1
                 }
 
                 if sawDrag {
@@ -148,16 +175,16 @@ public enum EventGrouper {
                         .drag(DragBlock(
                             button: button,
                             duration: latestLocalTime,
-                            points: points
+                            points: points,
+                            hasRecordedMouseUp: matchedUp != nil,
+                            upOrdinal: matchedUp?.index ?? syntheticOrdinal()
                         )),
                         start: start,
                         end: latestSampleTime
                     )
-                } else if let upEvent = matchedUp {
-                    let duration = elapsed(
-                        from: start,
-                        to: sanitizedTime(upEvent.t)
-                    )
+                } else if let matchedUp {
+                    let upEvent = matchedUp.event
+                    let duration = elapsed(from: start, to: sanitizedTime(upEvent.t))
                     appendAction(
                         .click(ClickBlock(
                             x: event.x,
@@ -169,7 +196,9 @@ public enum EventGrouper {
                             upY: upEvent.y,
                             upClickCount: upEvent.clickCount,
                             downFlags: event.flags,
-                            upFlags: upEvent.flags
+                            upFlags: upEvent.flags,
+                            downOrdinal: index,
+                            upOrdinal: matchedUp.index
                         )),
                         start: start,
                         end: sanitizedTime(upEvent.t)
@@ -186,13 +215,15 @@ public enum EventGrouper {
                             upY: event.y,
                             upClickCount: event.clickCount,
                             downFlags: event.flags,
-                            upFlags: event.flags
+                            upFlags: event.flags,
+                            downOrdinal: index,
+                            upOrdinal: syntheticOrdinal()
                         )),
                         start: start,
                         end: adding(start, clickFallbackDuration)
                     )
                 }
-                index = nextIndex
+                index += 1
 
             case .leftUp, .rightUp, .leftDrag, .rightDrag:
                 index += 1
@@ -216,9 +247,12 @@ public enum EventGrouper {
                     let localTime = elapsed(from: start, to: stepTime)
                     steps.append(ScrollStep(
                         t: localTime,
+                        x: stepEvent.x,
+                        y: stepEvent.y,
                         dx: stepEvent.scrollDX,
                         dy: stepEvent.scrollDY,
-                        flags: stepEvent.flags
+                        flags: stepEvent.flags,
+                        ordinal: nextIndex
                     ))
                     latestLocalTime = max(latestLocalTime, localTime)
                     latestStepTime = max(latestStepTime, stepTime)
@@ -240,37 +274,24 @@ public enum EventGrouper {
 
             case .keyDown:
                 if isShortcut(event) {
-                    var nextIndex = index + 1
-                    var matchedUp: RecordedEvent?
-
-                    while nextIndex < events.count {
-                        let nextEvent = events[nextIndex]
-                        if nextEvent.kind == .flagsChanged {
-                            nextIndex += 1
-                            continue
-                        }
-                        if nextEvent.kind == .keyUp,
-                           nextEvent.keyCode == event.keyCode {
-                            matchedUp = nextEvent
-                            nextIndex += 1
-                        }
-                        break
-                    }
-
+                    let matchedUpIndex = keyMatches.upIndexByDownIndex[index]
+                    let matchedUp = matchedUpIndex.map { events[$0] }
+                    let effectiveRepeat = keyMatches.repeatDownIndexes.contains(index)
                     let duration: TimeInterval
                     let upFlags: UInt64
+                    let upOrdinal: Int
                     let actionEnd: TimeInterval
-                    if let upEvent = matchedUp {
-                        duration = elapsed(
-                            from: start,
-                            to: sanitizedTime(upEvent.t)
-                        )
+                    if let upEvent = matchedUp, let matchedUpIndex {
+                        duration = elapsed(from: start, to: sanitizedTime(upEvent.t))
                         upFlags = upEvent.flags
+                        upOrdinal = matchedUpIndex
                         actionEnd = sanitizedTime(upEvent.t)
                     } else {
-                        duration = keyFallbackDuration
+                        let fallback = fallbackRelease(forDownIndex: index)
+                        duration = elapsed(from: start, to: fallback.time)
                         upFlags = event.flags
-                        actionEnd = adding(start, duration)
+                        upOrdinal = fallback.ordinal
+                        actionEnd = fallback.time
                     }
 
                     appendAction(
@@ -278,16 +299,19 @@ public enum EventGrouper {
                             keyCode: event.keyCode,
                             flags: event.flags,
                             upFlags: upFlags,
-                            duration: duration
+                            duration: duration,
+                            isRepeat: effectiveRepeat,
+                            downOrdinal: index,
+                            upOrdinal: upOrdinal
                         )),
                         start: start,
                         end: actionEnd
                     )
-                    index = nextIndex
+                    index += 1
                 } else {
                     var keystrokes: [Keystroke] = []
                     var text = ""
-                    var pendingByKeyCode: [UInt16: [Int]] = [:]
+                    var pendingOwnerDownIndexes: Set<Int> = []
                     var nextIndex = index
                     var lastSubstantiveTime = start
                     var latestActionEnd = start
@@ -307,58 +331,61 @@ public enum EventGrouper {
                                 from: lastSubstantiveTime,
                                 to: nextTime
                             )
-                            let hasPendingKeyUp = hasFutureMatchingKeyUp(
-                                pendingByKeyCode: pendingByKeyCode,
-                                events: events,
-                                after: nextIndex
-                            )
                             if !keystrokes.isEmpty,
                                idleSinceLastEvent >= waitThreshold,
-                               !hasPendingKeyUp {
+                               pendingOwnerDownIndexes.isEmpty {
                                 break typeLoop
                             }
 
                             let localTime = elapsed(from: start, to: nextTime)
-                            let keystrokeIndex = keystrokes.count
+                            let matchedUpIndex = keyMatches.upIndexByDownIndex[nextIndex]
+                            let matchedUpEvent = matchedUpIndex.map { events[$0] }
+                            let effectiveRepeat = keyMatches.repeatDownIndexes.contains(nextIndex)
+                            if !effectiveRepeat, matchedUpIndex != nil {
+                                pendingOwnerDownIndexes.insert(nextIndex)
+                            }
+                            let releaseTime: TimeInterval
+                            let upFlags: UInt64
+                            let upOrdinal: Int
+                            if let matchedUpEvent, let matchedUpIndex {
+                                releaseTime = sanitizedTime(matchedUpEvent.t)
+                                upFlags = matchedUpEvent.flags
+                                upOrdinal = matchedUpIndex
+                            } else {
+                                let fallback = fallbackRelease(forDownIndex: nextIndex)
+                                releaseTime = fallback.time
+                                upFlags = nextEvent.flags
+                                upOrdinal = fallback.ordinal
+                            }
+                            let upTime = max(
+                                localTime,
+                                elapsed(from: start, to: releaseTime)
+                            )
                             keystrokes.append(Keystroke(
                                 t: localTime,
                                 keyCode: nextEvent.keyCode,
                                 chars: nextEvent.chars,
-                                upT: adding(localTime, keyFallbackDuration),
+                                upT: upTime,
                                 downFlags: nextEvent.flags,
-                                upFlags: nextEvent.flags
+                                upFlags: upFlags,
+                                isRepeat: effectiveRepeat,
+                                downOrdinal: nextIndex,
+                                upOrdinal: upOrdinal
                             ))
-                            pendingByKeyCode[nextEvent.keyCode, default: []]
-                                .append(keystrokeIndex)
                             text += nextEvent.chars
-                            latestLocalTime = max(latestLocalTime, localTime)
-                            latestActionEnd = max(latestActionEnd, nextTime)
+                            latestLocalTime = max(latestLocalTime, localTime, upTime)
+                            latestActionEnd = max(latestActionEnd, releaseTime)
                             lastSubstantiveTime = max(lastSubstantiveTime, nextTime)
                             nextIndex += 1
 
                         case .keyUp:
-                            guard var pending = pendingByKeyCode[nextEvent.keyCode],
-                                  !pending.isEmpty else {
-                                nextIndex += 1
-                                continue
+                            if let owner = keyMatches.ownerDownIndexByUpIndex[nextIndex],
+                               pendingOwnerDownIndexes.remove(owner) != nil {
+                                let localTime = elapsed(from: start, to: nextTime)
+                                latestLocalTime = max(latestLocalTime, localTime)
+                                latestActionEnd = max(latestActionEnd, nextTime)
+                                lastSubstantiveTime = max(lastSubstantiveTime, nextTime)
                             }
-
-                            let keystrokeIndex = pending.removeFirst()
-                            if pending.isEmpty {
-                                pendingByKeyCode.removeValue(forKey: nextEvent.keyCode)
-                            } else {
-                                pendingByKeyCode[nextEvent.keyCode] = pending
-                            }
-
-                            let localTime = max(
-                                keystrokes[keystrokeIndex].t,
-                                elapsed(from: start, to: nextTime)
-                            )
-                            keystrokes[keystrokeIndex].upT = localTime
-                            keystrokes[keystrokeIndex].upFlags = nextEvent.flags
-                            latestLocalTime = max(latestLocalTime, localTime)
-                            latestActionEnd = max(latestActionEnd, nextTime)
-                            lastSubstantiveTime = max(lastSubstantiveTime, nextTime)
                             nextIndex += 1
 
                         default:
@@ -368,10 +395,10 @@ public enum EventGrouper {
 
                     let duration = max(
                         latestLocalTime,
-                        keystrokes.map(\.upT).max() ?? 0
+                        keystrokes.map { max($0.t, $0.upT) }.max() ?? 0
                     )
                     let fallbackEnd = keystrokes
-                        .map { adding(start, $0.upT) }
+                        .map { adding(start, max($0.t, $0.upT)) }
                         .max() ?? start
                     appendAction(
                         .typeText(TypeTextBlock(
@@ -395,36 +422,75 @@ public enum EventGrouper {
             to: sanitizedTime(capture.duration)
         )
         if trailingGap >= waitThreshold {
-            blocks.append(.wait(WaitBlock(duration: trailingGap)))
+            blocks.append(.wait(WaitBlock(
+                duration: trailingGap,
+                startOffset: previousActionEnd
+            )))
             return GroupedTimeline(blocks: blocks, trailingDelay: 0)
         }
         return GroupedTimeline(blocks: blocks, trailingDelay: trailingGap)
     }
 
-    private static func hasFutureMatchingKeyUp(
-        pendingByKeyCode: [UInt16: [Int]],
-        events: [RecordedEvent],
-        after index: Int
-    ) -> Bool {
-        guard !pendingByKeyCode.isEmpty else { return false }
+    private struct KeyMatches {
+        var upIndexByDownIndex: [Int: Int] = [:]
+        var ownerDownIndexByUpIndex: [Int: Int] = [:]
+        var ownerDownIndexByDownIndex: [Int: Int] = [:]
+        var lastDownIndexByOwner: [Int: Int] = [:]
+        var repeatDownIndexes: Set<Int> = []
+    }
 
-        var nextIndex = index + 1
-        while nextIndex < events.count {
-            let event = events[nextIndex]
+    /// 单次全流扫描；每个 down/up 只入队或出队一次。
+    private static func matchingKeys(in events: [RecordedEvent]) -> KeyMatches {
+        var pendingOwnersByKeyCode: [UInt16: [Int]] = [:]
+        var pendingHeadByKeyCode: [UInt16: Int] = [:]
+        var repeatIndexesByOwner: [Int: [Int]] = [:]
+        var result = KeyMatches()
+
+        for (index, event) in events.enumerated() {
             switch event.kind {
-            case .flagsChanged:
-                nextIndex += 1
             case .keyDown:
-                if isShortcut(event) { return false }
-                nextIndex += 1
+                let head = pendingHeadByKeyCode[event.keyCode] ?? 0
+                if event.isRepeat,
+                   let pending = pendingOwnersByKeyCode[event.keyCode],
+                   head < pending.count {
+                    let owner = pending[head]
+                    repeatIndexesByOwner[owner, default: []].append(index)
+                    result.repeatDownIndexes.insert(index)
+                    result.ownerDownIndexByDownIndex[index] = owner
+                    result.lastDownIndexByOwner[owner] = index
+                } else {
+                    pendingOwnersByKeyCode[event.keyCode, default: []].append(index)
+                    result.ownerDownIndexByDownIndex[index] = index
+                    result.lastDownIndexByOwner[index] = index
+                }
+
             case .keyUp:
-                if pendingByKeyCode[event.keyCode] != nil { return true }
-                nextIndex += 1
+                guard let pending = pendingOwnersByKeyCode[event.keyCode] else {
+                    continue
+                }
+                let head = pendingHeadByKeyCode[event.keyCode] ?? 0
+                guard head < pending.count else { continue }
+                let owner = pending[head]
+                result.upIndexByDownIndex[owner] = index
+                result.ownerDownIndexByUpIndex[index] = owner
+                for repeatIndex in repeatIndexesByOwner.removeValue(forKey: owner) ?? [] {
+                    result.upIndexByDownIndex[repeatIndex] = index
+                }
+
+                let nextHead = head + 1
+                if nextHead == pending.count {
+                    pendingOwnersByKeyCode.removeValue(forKey: event.keyCode)
+                    pendingHeadByKeyCode.removeValue(forKey: event.keyCode)
+                } else {
+                    pendingHeadByKeyCode[event.keyCode] = nextHead
+                }
+
             default:
-                return false
+                continue
             }
         }
-        return false
+
+        return result
     }
 
     private static func isShortcut(_ event: RecordedEvent) -> Bool {
@@ -434,8 +500,7 @@ public enum EventGrouper {
     }
 
     private static func sanitizedTime(_ time: TimeInterval) -> TimeInterval {
-        guard time.isFinite, time > 0 else { return 0 }
-        return min(time, maximumTimelineTime)
+        TimelineValue.time(time)
     }
 
     private static func elapsed(
@@ -449,13 +514,6 @@ public enum EventGrouper {
         _ lhs: TimeInterval,
         _ rhs: TimeInterval
     ) -> TimeInterval {
-        let left = sanitizedTime(lhs)
-        let right = sanitizedTime(rhs)
-        guard left < maximumTimelineTime,
-              right < maximumTimelineTime,
-              left <= maximumTimelineTime - right else {
-            return maximumTimelineTime
-        }
-        return left + right
+        TimelineValue.adding(lhs, rhs)
     }
 }

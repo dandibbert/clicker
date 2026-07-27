@@ -60,18 +60,8 @@ final class AppState: ObservableObject {
         s.name += " 副本"
         s.createdAt = Date()
         s.modifiedAt = Date()
-        // 块 ID 需要重新生成，避免与原脚本冲突
-        s.blocks = s.blocks.map { block in
-            switch block {
-            case .move(var b): b.id = UUID(); return .move(b)
-            case .click(var b): b.id = UUID(); return .click(b)
-            case .drag(var b): b.id = UUID(); return .drag(b)
-            case .scroll(var b): b.id = UUID(); return .scroll(b)
-            case .typeText(var b): b.id = UUID(); return .typeText(b)
-            case .shortcut(var b): b.id = UUID(); return .shortcut(b)
-            case .wait(var b): b.id = UUID(); return .wait(b)
-            }
-        }
+        // 块 ID 需要重新生成，避免与原脚本冲突；绝对时间轴保持不变。
+        s.blocks = s.blocks.map { $0.duplicated() }
         update(s)
         selectedScriptID = s.id
     }

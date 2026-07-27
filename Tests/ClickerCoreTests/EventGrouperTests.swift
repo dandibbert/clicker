@@ -144,7 +144,7 @@ final class EventGrouperTests: XCTestCase {
         XCTAssertEqual(wait.duration, 2.0, accuracy: 0.001)
     }
 
-    func testSmallGapHasNoVisibleWaitAndIsPreservedAsDelayBefore() {
+    func testSmallGapHasNoVisibleWaitAndIsPreservedByAbsoluteStart() {
         let blocks = EventGrouper.group([
             ev(0, .leftDown, x: 1, y: 1),
             ev(0.05, .leftUp, x: 1, y: 1),
@@ -158,7 +158,8 @@ final class EventGrouperTests: XCTestCase {
             return false
         })
         guard case .click(let secondClick) = blocks[1] else { return XCTFail() }
-        XCTAssertEqual(secondClick.delayBefore, 0.25, accuracy: 0.000_001)
+        XCTAssertEqual(secondClick.startOffset, 0.3, accuracy: 0.000_001)
+        XCTAssertEqual(secondClick.delayBefore, 0, accuracy: 0.000_001)
 
         let plan = BlockExpander.plan(blocks: blocks)
         let mouseDownTimes = plan.steps.compactMap { step -> TimeInterval? in
@@ -216,7 +217,7 @@ final class EventGrouperTests: XCTestCase {
         XCTAssertEqual(click.upClickCount, 2)
     }
 
-    func testInitialShortIdleBecomesFirstDelayBeforeAndPlanTiming() {
+    func testInitialShortIdleBecomesFirstAbsoluteStartAndPlanTiming() {
         let timeline = EventGrouper.group(RecordingCapture(
             events: [
                 ev(0.2, .leftDown, x: 1, y: 2),
@@ -228,7 +229,8 @@ final class EventGrouperTests: XCTestCase {
         XCTAssertEqual(timeline.blocks.count, 1)
         XCTAssertEqual(timeline.trailingDelay, 0, accuracy: 0.000_001)
         guard case .click(let click) = timeline.blocks[0] else { return XCTFail() }
-        XCTAssertEqual(click.delayBefore, 0.2, accuracy: 0.000_001)
+        XCTAssertEqual(click.startOffset, 0.2, accuracy: 0.000_001)
+        XCTAssertEqual(click.delayBefore, 0, accuracy: 0.000_001)
 
         let plan = BlockExpander.plan(
             blocks: timeline.blocks,
@@ -252,7 +254,9 @@ final class EventGrouperTests: XCTestCase {
               case .click(let click) = timeline.blocks[1] else {
             return XCTFail("got \(timeline.blocks)")
         }
+        XCTAssertEqual(wait.startOffset, 0, accuracy: 0.000_001)
         XCTAssertEqual(wait.duration, 2, accuracy: 0.000_001)
+        XCTAssertEqual(click.startOffset, 2, accuracy: 0.000_001)
         XCTAssertEqual(click.delayBefore, 0, accuracy: 0.000_001)
 
         let plan = BlockExpander.plan(blocks: timeline.blocks)
@@ -292,7 +296,8 @@ final class EventGrouperTests: XCTestCase {
         XCTAssertEqual(second.upClickCount, 5)
         XCTAssertEqual(second.downFlags, 21)
         XCTAssertEqual(second.upFlags, 22)
-        XCTAssertEqual(second.delayBefore, 0.3, accuracy: 0.000_001)
+        XCTAssertEqual(second.startOffset, 0.4, accuracy: 0.000_001)
+        XCTAssertEqual(second.delayBefore, 0, accuracy: 0.000_001)
         XCTAssertEqual(second.duration, 0.3, accuracy: 0.000_001)
 
         let plan = BlockExpander.plan(blocks: timeline.blocks)
@@ -364,7 +369,8 @@ final class EventGrouperTests: XCTestCase {
         ))
 
         guard case .move(let move) = timeline.blocks.last else { return XCTFail() }
-        XCTAssertEqual(move.delayBefore, 0.2, accuracy: 0.000_001)
+        XCTAssertEqual(move.startOffset, 0.2, accuracy: 0.000_001)
+        XCTAssertEqual(move.delayBefore, 0, accuracy: 0.000_001)
         XCTAssertEqual(move.duration, 0.25, accuracy: 0.000_001)
         XCTAssertEqual(move.points.count, 3)
         XCTAssertEqual(move.points.map(\.x), [1, 3, 5])
@@ -599,7 +605,8 @@ final class EventGrouperTests: XCTestCase {
         guard case .scroll(let scroll) = timeline.blocks.first else { return XCTFail() }
         XCTAssertEqual(scroll.x, 100)
         XCTAssertEqual(scroll.y, 200)
-        XCTAssertEqual(scroll.delayBefore, 0.25, accuracy: 0.000_001)
+        XCTAssertEqual(scroll.startOffset, 0.25, accuracy: 0.000_001)
+        XCTAssertEqual(scroll.delayBefore, 0, accuracy: 0.000_001)
         XCTAssertEqual(scroll.duration, 0.15, accuracy: 0.000_001)
         XCTAssertEqual(scroll.steps.count, 2)
         XCTAssertEqual(scroll.steps.map(\.dx), [1.5, -3.5])

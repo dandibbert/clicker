@@ -16,11 +16,18 @@ public struct PlaybackStep: Equatable, Sendable {
     public var t: TimeInterval
     public var action: StepAction
     public var blockID: UUID
+    public var ordinal: Int
 
-    public init(t: TimeInterval, action: StepAction, blockID: UUID) {
+    public init(
+        t: TimeInterval,
+        action: StepAction,
+        blockID: UUID,
+        ordinal: Int = 0
+    ) {
         self.t = t
         self.action = action
         self.blockID = blockID
+        self.ordinal = max(0, ordinal)
     }
 }
 

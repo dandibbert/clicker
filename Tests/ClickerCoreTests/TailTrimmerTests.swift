@@ -83,6 +83,126 @@ final class TailTrimmerTests: XCTestCase {
         XCTAssertEqual(trimmed.duration, 1.0, accuracy: 0.000_001)
     }
 
+    func testHotKeyCaptureTrimRemovesRepeatedStopDownsFromModifierSequenceStart() {
+        let stopFlags = KeyCodeMap.maskOption | KeyCodeMap.maskCommand
+        let keptEvents = [
+            ev(0, .leftDown, x: 1, y: 1),
+            ev(0.1, .leftUp, x: 1, y: 1),
+        ]
+        let capture = RecordingCapture(
+            events: keptEvents + [
+                ev(0.8, .flagsChanged, keyCode: 58, flags: KeyCodeMap.maskOption),
+                ev(0.9, .flagsChanged, keyCode: 55, flags: stopFlags),
+                ev(1.0, .keyDown, keyCode: 15, flags: stopFlags, chars: "r"),
+                ev(1.1, .flagsChanged, keyCode: 55, flags: stopFlags | KeyCodeMap.maskShift),
+                ev(1.2, .keyDown, keyCode: 15, flags: stopFlags | KeyCodeMap.maskShift,
+                   chars: "r"),
+                ev(1.3, .keyDown, keyCode: 15, flags: stopFlags, chars: "r"),
+                ev(1.4, .keyUp, keyCode: 15, flags: stopFlags),
+                ev(1.5, .flagsChanged, keyCode: 55, flags: KeyCodeMap.maskOption),
+                ev(1.6, .flagsChanged, keyCode: 58),
+            ],
+            duration: 1.6
+        )
+
+        let trimmed = TailTrimmer.trimHotKeyStop(
+            capture,
+            stopKeyCode: 15,
+            stopFlags: stopFlags
+        )
+
+        XCTAssertEqual(trimmed.events, keptEvents)
+        XCTAssertEqual(trimmed.duration, 0.8, accuracy: 0.000_001)
+    }
+
+    func testHotKeyCaptureTrimRemovesRepeatedCompleteStopPairsFromModifierStart() {
+        let stopFlags = KeyCodeMap.maskOption | KeyCodeMap.maskCommand
+        let keptEvents = [
+            ev(0, .leftDown, x: 1, y: 1),
+            ev(0.1, .leftUp, x: 1, y: 1),
+        ]
+        let capture = RecordingCapture(
+            events: keptEvents + [
+                ev(0.8, .flagsChanged, keyCode: 58, flags: KeyCodeMap.maskOption),
+                ev(0.9, .flagsChanged, keyCode: 55, flags: stopFlags),
+                ev(1.0, .keyDown, keyCode: 15, flags: stopFlags, chars: "r"),
+                ev(1.05, .keyUp, keyCode: 15, flags: stopFlags),
+                ev(1.1, .keyDown, keyCode: 15, flags: stopFlags, chars: "r"),
+                ev(1.15, .keyUp, keyCode: 15, flags: stopFlags),
+                ev(1.2, .flagsChanged, keyCode: 55, flags: KeyCodeMap.maskOption),
+                ev(1.3, .flagsChanged, keyCode: 58),
+            ],
+            duration: 1.3
+        )
+
+        let trimmed = TailTrimmer.trimHotKeyStop(
+            capture,
+            stopKeyCode: 15,
+            stopFlags: stopFlags
+        )
+
+        XCTAssertEqual(trimmed.events, keptEvents)
+        XCTAssertEqual(trimmed.duration, 0.8, accuracy: 0.000_001)
+    }
+
+    func testHotKeyTrimAcceptsModifierReleaseBeforeStopKeyUp() {
+        let stopFlags = KeyCodeMap.maskOption | KeyCodeMap.maskCommand
+        let keptEvents = [
+            ev(0, .leftDown, x: 1, y: 1),
+            ev(0.1, .leftUp, x: 1, y: 1),
+        ]
+        let capture = RecordingCapture(
+            events: keptEvents + [
+                ev(0.8, .flagsChanged, keyCode: 58, flags: KeyCodeMap.maskOption),
+                ev(0.9, .flagsChanged, keyCode: 55, flags: stopFlags),
+                ev(1.0, .keyDown, keyCode: 15, flags: stopFlags, chars: "r"),
+                ev(1.1, .flagsChanged, keyCode: 55, flags: KeyCodeMap.maskOption),
+                ev(1.2, .flagsChanged, keyCode: 58),
+                ev(1.3, .keyUp, keyCode: 15),
+            ],
+            duration: 1.3
+        )
+
+        let trimmed = TailTrimmer.trimHotKeyStop(
+            capture,
+            stopKeyCode: 15,
+            stopFlags: stopFlags
+        )
+
+        XCTAssertEqual(trimmed.events, keptEvents)
+        XCTAssertEqual(trimmed.duration, 0.8, accuracy: 0.000_001)
+    }
+
+    func testHotKeyTrimStopsAtReleasedEarlierModifierGesture() {
+        let stopFlags = KeyCodeMap.maskOption | KeyCodeMap.maskCommand
+        let keptEvents = [
+            ev(0, .leftDown, x: 1, y: 1),
+            ev(0.1, .leftUp, x: 1, y: 1),
+            ev(0.5, .flagsChanged, keyCode: 58, flags: KeyCodeMap.maskOption),
+            ev(0.6, .flagsChanged, keyCode: 58),
+        ]
+        let capture = RecordingCapture(
+            events: keptEvents + [
+                ev(0.8, .flagsChanged, keyCode: 58, flags: KeyCodeMap.maskOption),
+                ev(0.9, .flagsChanged, keyCode: 55, flags: stopFlags),
+                ev(1.0, .keyDown, keyCode: 15, flags: stopFlags, chars: "r"),
+                ev(1.1, .keyUp, keyCode: 15, flags: stopFlags),
+                ev(1.2, .flagsChanged, keyCode: 55, flags: KeyCodeMap.maskOption),
+                ev(1.3, .flagsChanged, keyCode: 58),
+            ],
+            duration: 1.3
+        )
+
+        let trimmed = TailTrimmer.trimHotKeyStop(
+            capture,
+            stopKeyCode: 15,
+            stopFlags: stopFlags
+        )
+
+        XCTAssertEqual(trimmed.events, keptEvents)
+        XCTAssertEqual(trimmed.duration, 0.8, accuracy: 0.000_001)
+    }
+
     func testHotKeyCaptureTrimWithoutMatchingChordIsUnchanged() {
         let stopFlags = KeyCodeMap.maskOption | KeyCodeMap.maskCommand
         let capture = RecordingCapture(

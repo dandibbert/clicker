@@ -2,7 +2,7 @@ import XCTest
 @testable import ClickerCore
 
 final class BlockExpanderTests: XCTestCase {
-    func testClickDelayHoldAndTrailingDelayProduceExactPlan() {
+    func testClickAbsoluteStartHoldAndTrailingDelayProduceExactPlan() {
         let id = UUID()
         let script = Script(
             name: "Click",
@@ -12,7 +12,7 @@ final class BlockExpanderTests: XCTestCase {
                 y: 20,
                 button: .left,
                 clickCount: 2,
-                delayBefore: 0.4,
+                startOffset: 0.4,
                 duration: 0.25,
                 upX: 30,
                 upY: 40,
@@ -83,7 +83,7 @@ final class BlockExpanderTests: XCTestCase {
                     upFlags: 202
                 ),
             ],
-            delayBefore: 0.3
+            startOffset: 0.3
         )
 
         let plan = BlockExpander.plan(blocks: [.typeText(block)], trailingDelay: 0)
@@ -122,14 +122,16 @@ final class BlockExpanderTests: XCTestCase {
                     TrackPoint(t: 0, x: 5, y: 6, flags: 21),
                     TrackPoint(t: 0.1, x: 7, y: 8, flags: 22),
                     TrackPoint(t: 0.3, x: 9, y: 10, flags: 23),
-                ]
+                ],
+                startOffset: 0.2
             )),
             .scroll(ScrollBlock(
                 id: scrollID,
                 x: 11,
                 y: 12,
                 duration: 0.1,
-                steps: [ScrollStep(t: 0, dx: 13, dy: -14, flags: 31)]
+                steps: [ScrollStep(t: 0, dx: 13, dy: -14, flags: 31)],
+                startOffset: 0.5
             )),
         ]
 
@@ -174,7 +176,7 @@ final class BlockExpanderTests: XCTestCase {
         let block = ShortcutBlock(
             keyCode: 8,
             flags: 41,
-            delayBefore: 0.4,
+            startOffset: 0.4,
             upFlags: 42,
             duration: 0.25
         )
@@ -189,7 +191,7 @@ final class BlockExpanderTests: XCTestCase {
         XCTAssertEqual(plan.duration, 0.65, accuracy: 0.000_001)
     }
 
-    func testExplicitWaitAndActionDelayBothAdvanceTimeline() {
+    func testExplicitWaitAndAbsoluteActionStartBothContributeToTimeline() {
         let blocks: [ActionBlock] = [
             .wait(WaitBlock(duration: 2)),
             .click(ClickBlock(
@@ -197,7 +199,7 @@ final class BlockExpanderTests: XCTestCase {
                 y: 1,
                 button: .left,
                 clickCount: 1,
-                delayBefore: 0.3
+                startOffset: 2.3
             )),
         ]
 
@@ -266,7 +268,7 @@ final class BlockExpanderTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(plan.duration, plan.steps.last?.t ?? 0)
     }
 
-    func testKeyUpBeforeDownIsClampedAndAdvancesFollowingBlock() throws {
+    func testKeyUpBeforeDownIsClampedWithoutShiftingFollowingAbsoluteBlock() throws {
         let textID = UUID()
         let clickID = UUID()
         let plan = BlockExpander.plan(blocks: [
@@ -281,7 +283,8 @@ final class BlockExpanderTests: XCTestCase {
                 x: 3,
                 y: 4,
                 button: .left,
-                clickCount: 1
+                clickCount: 1,
+                startOffset: 0.5
             )),
         ])
 
@@ -299,7 +302,8 @@ final class BlockExpanderTests: XCTestCase {
         })
 
         XCTAssertGreaterThanOrEqual(keyUp.t, keyDown.t)
-        XCTAssertGreaterThanOrEqual(followingClick.t, keyUp.t)
+        XCTAssertEqual(followingClick.t, 0.5, accuracy: 0.000_001)
+        XCTAssertLessThan(followingClick.t, keyDown.t)
         XCTAssertGreaterThanOrEqual(plan.duration, plan.steps.last?.t ?? 0)
     }
 
@@ -325,7 +329,7 @@ final class BlockExpanderTests: XCTestCase {
         XCTAssertEqual(plan.duration, 0)
     }
 
-    func testSampleBeyondDeclaredDurationAdvancesFollowingBlock() throws {
+    func testSampleBeyondDeclaredDurationExtendsPlanWithoutShiftingAnotherBlock() throws {
         let clickID = UUID()
         let plan = BlockExpander.plan(blocks: [
             .move(MoveBlock(
@@ -346,8 +350,8 @@ final class BlockExpanderTests: XCTestCase {
             return false
         })
 
-        XCTAssertEqual(clickDown.t, 3, accuracy: 0.000_001)
-        XCTAssertEqual(plan.duration, 3.03, accuracy: 0.000_001)
+        XCTAssertEqual(clickDown.t, 0, accuracy: 0.000_001)
+        XCTAssertEqual(plan.duration, 3, accuracy: 0.000_001)
         XCTAssertGreaterThanOrEqual(plan.duration, plan.steps.last?.t ?? 0)
     }
 
@@ -359,14 +363,14 @@ final class BlockExpanderTests: XCTestCase {
                 .move(MoveBlock(
                     duration: huge,
                     points: [TrackPoint(t: huge, x: 1, y: 2)],
-                    delayBefore: huge
+                    startOffset: huge
                 )),
                 .click(ClickBlock(
                     x: 3,
                     y: 4,
                     button: .left,
                     clickCount: 1,
-                    delayBefore: huge,
+                    startOffset: huge,
                     duration: huge
                 )),
             ],

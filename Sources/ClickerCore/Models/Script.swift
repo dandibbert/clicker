@@ -1,0 +1,113 @@
+import Foundation
+
+public struct Script: Codable, Equatable, Sendable, Identifiable {
+    public static let currentSchemaVersion = 4
+
+    public var id: UUID
+    public var name: String
+    public var createdAt: Date
+    public var modifiedAt: Date
+    public var blocks: [ActionBlock]
+    public var repeatCount: Int
+    public var repeatForever: Bool
+    public var repeatInterval: TimeInterval
+    public var schemaVersion: Int
+    public var trailingDelay: TimeInterval
+    public var targetBundleIdentifier: String?
+
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        createdAt: Date = Date(),
+        modifiedAt: Date = Date(),
+        blocks: [ActionBlock] = [],
+        repeatCount: Int = 1,
+        repeatForever: Bool = false,
+        repeatInterval: TimeInterval = 0,
+        schemaVersion _: Int = Script.currentSchemaVersion,
+        trailingDelay: TimeInterval = 0,
+        targetBundleIdentifier: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.modifiedAt = modifiedAt
+        self.blocks = blocks
+        self.repeatCount = repeatCount
+        self.repeatForever = repeatForever
+        self.repeatInterval = repeatInterval
+        schemaVersion = Self.currentSchemaVersion
+        self.trailingDelay = trailingDelay
+        self.targetBundleIdentifier = targetBundleIdentifier
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, createdAt, modifiedAt, blocks
+        case repeatCount, repeatForever, repeatInterval
+        case schemaVersion, trailingDelay, targetBundleIdentifier
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        guard (1...Self.currentSchemaVersion).contains(decodedVersion) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .schemaVersion,
+                in: container,
+                debugDescription: "Unsupported script schema version \(decodedVersion)"
+            )
+        }
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        modifiedAt = try container.decode(Date.self, forKey: .modifiedAt)
+        let decodedBlocks = try container.decode([ActionBlock].self, forKey: .blocks)
+        blocks = decodedVersion < Self.currentSchemaVersion
+            ? Self.migrateLegacyBlocks(decodedBlocks)
+            : decodedBlocks.map { $0.clearingLegacyTiming() }
+        repeatCount = try container.decode(Int.self, forKey: .repeatCount)
+        repeatForever = try container.decode(Bool.self, forKey: .repeatForever)
+        repeatInterval = try container.decode(TimeInterval.self, forKey: .repeatInterval)
+        schemaVersion = Self.currentSchemaVersion
+        trailingDelay = try container.decodeIfPresent(TimeInterval.self, forKey: .trailingDelay) ?? 0
+        targetBundleIdentifier = try container.decodeIfPresent(
+            String.self,
+            forKey: .targetBundleIdentifier
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(modifiedAt, forKey: .modifiedAt)
+        try container.encode(blocks, forKey: .blocks)
+        try container.encode(repeatCount, forKey: .repeatCount)
+        try container.encode(repeatForever, forKey: .repeatForever)
+        try container.encode(repeatInterval, forKey: .repeatInterval)
+        try container.encode(Self.currentSchemaVersion, forKey: .schemaVersion)
+        try container.encode(trailingDelay, forKey: .trailingDelay)
+        try container.encodeIfPresent(targetBundleIdentifier, forKey: .targetBundleIdentifier)
+    }
+
+    private static func migrateLegacyBlocks(_ legacyBlocks: [ActionBlock]) -> [ActionBlock] {
+        var clock: TimeInterval = 0
+        var nextOrdinal = 0
+        return legacyBlocks.map { legacy in
+            let start: TimeInterval
+            if case .wait = legacy {
+                start = clock
+                clock = TimelineValue.adding(clock, legacy.effectiveDuration)
+            } else {
+                clock = TimelineValue.adding(clock, legacy.delayBefore)
+                start = max(0, clock - TimelineValue.time(legacy.overlapBefore))
+                clock = max(clock, TimelineValue.adding(start, legacy.effectiveDuration))
+            }
+            return legacy
+                .withStartOffset(start)
+                .clearingLegacyTiming()
+                .assigningLegacyOrdinals(next: &nextOrdinal)
+        }
+    }
+}
