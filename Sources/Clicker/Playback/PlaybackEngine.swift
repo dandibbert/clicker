@@ -7,6 +7,8 @@ import ClickerCore
 final class PlaybackEngine {
     private var task: Task<Void, Never>?
     private var generation = 0
+    private var activeGeneration: Int?
+    private var pressedInputs = PressedInputTracker()
     private let timing: PlaybackTiming
     private let poster: PlaybackEventPosting
     private let stopMonitor: PlaybackStopMonitoring
@@ -39,6 +41,8 @@ final class PlaybackEngine {
         let gen = generation
         let plan = BlockExpander.plan(for: script)
         guard !plan.steps.isEmpty || plan.duration > 0 else { onFinish(); return }
+        activeGeneration = gen
+        pressedInputs = PressedInputTracker()
 
         stopMonitor.start { [weak self] in
             guard let self, self.isPlaying else { return }
@@ -72,6 +76,7 @@ final class PlaybackEngine {
                         lastBlockID = step.blockID
                         onBlock(step.blockID)
                     }
+                    pressedInputs.observe(step.action)
                     poster.post(step.action)
                     await timing.cooperativeYield()
                 }
@@ -96,8 +101,7 @@ final class PlaybackEngine {
             }
             let wasCancelled = Task.isCancelled
             guard gen == generation else { return }
-            stopMonitor.stop()
-            task = nil
+            cleanUpSession(expectedGeneration: gen)
             if !wasCancelled { onFinish() }
         }
     }
@@ -105,7 +109,18 @@ final class PlaybackEngine {
     func stop() {
         generation += 1  // 使旧会话的收尾逻辑失效
         task?.cancel()
+        cleanUpSession()
+    }
+
+    private func cleanUpSession(expectedGeneration: Int? = nil) {
+        if let expectedGeneration, activeGeneration != expectedGeneration { return }
+
         task = nil
         stopMonitor.stop()
+        guard activeGeneration != nil else { return }
+        activeGeneration = nil
+        for action in pressedInputs.releaseActions() {
+            poster.post(action)
+        }
     }
 }

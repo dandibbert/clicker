@@ -118,6 +118,163 @@ final class PlaybackEngineTests: XCTestCase {
         ])
         XCTAssertGreaterThanOrEqual(timing.yieldCount, 3)
     }
+
+    func testStopAfterKeyDownPostsOneCompensatingKeyUp() async {
+        let released = expectation(description: "held key released")
+        var engine: PlaybackEngine!
+        var didStop = false
+        let poster = RecordingPlaybackPoster { action in
+            switch action {
+            case .keyDown where !didStop:
+                didStop = true
+                engine.stop()
+            case .keyUp where didStop:
+                released.fulfill()
+            default:
+                break
+            }
+        }
+        engine = PlaybackEngine(
+            timing: TestPlaybackTiming(),
+            poster: poster,
+            stopMonitor: NoopPlaybackStopMonitor()
+        )
+        let script = Script(
+            name: "held key",
+            blocks: [
+                .shortcut(ShortcutBlock(
+                    keyCode: 4,
+                    flags: 11,
+                    upFlags: 12,
+                    duration: 1
+                )),
+            ],
+            repeatForever: true
+        )
+
+        engine.play(
+            script: script,
+            onIteration: { _ in },
+            onBlock: { _ in },
+            onFinish: {}
+        )
+        await fulfillment(of: [released], timeout: 1)
+
+        XCTAssertEqual(poster.actions, [
+            .keyDown(keyCode: 4, flags: 11, chars: ""),
+            .keyUp(keyCode: 4, flags: 11),
+        ])
+    }
+
+    func testStopAfterMouseDownPostsOneCompensatingMouseUp() async {
+        let released = expectation(description: "held mouse button released")
+        var engine: PlaybackEngine!
+        var didStop = false
+        let poster = RecordingPlaybackPoster { action in
+            switch action {
+            case .mouseDown where !didStop:
+                didStop = true
+                engine.stop()
+            case .mouseUp where didStop:
+                released.fulfill()
+            default:
+                break
+            }
+        }
+        engine = PlaybackEngine(
+            timing: TestPlaybackTiming(),
+            poster: poster,
+            stopMonitor: NoopPlaybackStopMonitor()
+        )
+        let script = Script(
+            name: "held mouse",
+            blocks: [
+                .click(ClickBlock(
+                    x: 10,
+                    y: 20,
+                    button: .left,
+                    clickCount: 2,
+                    duration: 1,
+                    upX: 30,
+                    upY: 40,
+                    downFlags: 21,
+                    upFlags: 22
+                )),
+            ]
+        )
+
+        engine.play(
+            script: script,
+            onIteration: { _ in },
+            onBlock: { _ in },
+            onFinish: {}
+        )
+        await fulfillment(of: [released], timeout: 1)
+
+        XCTAssertEqual(poster.actions, [
+            .mouseDown(x: 10, y: 20, button: .left, clickCount: 2, flags: 21),
+            .mouseUp(x: 10, y: 20, button: .left, clickCount: 2, flags: 21),
+        ])
+    }
+
+    func testReplacementReleasesOldSessionBeforePostingNewInputOnce() async {
+        let replacementFinished = expectation(description: "replacement finished")
+        var engine: PlaybackEngine!
+        var didReplace = false
+        let replacement = Script(
+            name: "replacement",
+            blocks: [
+                .shortcut(ShortcutBlock(
+                    keyCode: 5,
+                    flags: 21,
+                    upFlags: 22,
+                    duration: 0
+                )),
+            ]
+        )
+        let poster = RecordingPlaybackPoster { action in
+            guard case .keyDown(keyCode: 4, _, _) = action, !didReplace else { return }
+            didReplace = true
+            engine.play(
+                script: replacement,
+                onIteration: { _ in },
+                onBlock: { _ in },
+                onFinish: { replacementFinished.fulfill() }
+            )
+        }
+        engine = PlaybackEngine(
+            timing: TestPlaybackTiming(),
+            poster: poster,
+            stopMonitor: NoopPlaybackStopMonitor()
+        )
+        let original = Script(
+            name: "original",
+            blocks: [
+                .shortcut(ShortcutBlock(
+                    keyCode: 4,
+                    flags: 11,
+                    upFlags: 12,
+                    duration: 1
+                )),
+            ]
+        )
+
+        engine.play(
+            script: original,
+            onIteration: { _ in },
+            onBlock: { _ in },
+            onFinish: {}
+        )
+        await fulfillment(of: [replacementFinished], timeout: 1)
+        await Task.yield()
+
+        XCTAssertEqual(poster.actions, [
+            .keyDown(keyCode: 4, flags: 11, chars: ""),
+            .keyUp(keyCode: 4, flags: 11),
+            .keyDown(keyCode: 5, flags: 21, chars: ""),
+            .keyUp(keyCode: 5, flags: 22),
+        ])
+    }
 }
 
 @MainActor
@@ -141,9 +298,15 @@ private final class TestPlaybackTiming: PlaybackTiming {
 @MainActor
 private final class RecordingPlaybackPoster: PlaybackEventPosting {
     private(set) var actions: [StepAction] = []
+    private let onPost: (StepAction) -> Void
+
+    init(onPost: @escaping (StepAction) -> Void = { _ in }) {
+        self.onPost = onPost
+    }
 
     func post(_ action: StepAction) {
         actions.append(action)
+        onPost(action)
     }
 }
 
