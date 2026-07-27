@@ -6,11 +6,28 @@ import ClickerCore
 @MainActor
 final class PlaybackEngine {
     private var task: Task<Void, Never>?
-    private var escMonitor: Any?
-    private var localEscMonitor: Any?
     private var generation = 0
+    private let timing: PlaybackTiming
+    private let poster: PlaybackEventPosting
+    private let stopMonitor: PlaybackStopMonitoring
 
     var isPlaying: Bool { task != nil }
+
+    init() {
+        self.timing = SystemPlaybackTiming()
+        self.poster = SystemPlaybackEventPoster()
+        self.stopMonitor = SystemPlaybackStopMonitor()
+    }
+
+    init(
+        timing: PlaybackTiming,
+        poster: PlaybackEventPosting,
+        stopMonitor: PlaybackStopMonitoring
+    ) {
+        self.timing = timing
+        self.poster = poster
+        self.stopMonitor = stopMonitor
+    }
 
     /// onIteration(第几轮，从 1 计)、onBlock(当前块 ID)、onFinish 均在主线程回调。
     func play(script: Script,
@@ -20,70 +37,68 @@ final class PlaybackEngine {
         stop()
         generation += 1
         let gen = generation
-        let steps = BlockExpander.expand(script.blocks)
-        guard !steps.isEmpty else { onFinish(); return }
+        let plan = BlockExpander.plan(for: script)
+        guard !plan.steps.isEmpty || plan.duration > 0 else { onFinish(); return }
 
-        // Esc 紧急停止（全局监听按键；需辅助功能权限，与录制同权限）
-        escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {  // Esc
-                Task { @MainActor in
-                    guard let self, self.isPlaying else { return }
-                    self.stop()
-                    onFinish()
-                }
-            }
-        }
-
-        // 本地监听：Clicker 自身为前台时，全局监听收不到发给本 app 的按键
-        localEscMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {  // Esc
-                Task { @MainActor in
-                    guard let self, self.isPlaying else { return }
-                    self.stop()
-                    onFinish()
-                }
-                return nil  // 吞掉 Esc，不传给窗口
-            }
-            return event
+        stopMonitor.start { [weak self] in
+            guard let self, self.isPlaying else { return }
+            self.stop()
+            onFinish()
         }
 
         let repeatCount = script.repeatForever ? Int.max : max(1, script.repeatCount)
         let interval = max(0, script.repeatInterval)
 
         task = Task { [weak self] in
+            guard let self else { return }
             for iteration in 1...repeatCount {
-                await Task.yield()  // 全零时长 + 无限重复的脚本不至于饿死主线程
+                await timing.cooperativeYield()
                 if Task.isCancelled { break }
                 onIteration(iteration)
-                let start = ContinuousClock.now
+                let start = timing.now
                 var lastBlockID: UUID?
-                for step in steps {
+                for step in plan.steps {
                     if Task.isCancelled { break }
-                    // 睡到该步骤的绝对时刻，保证整体时间轴不漂移；乱序步骤直接投递
-                    let target = start.advanced(by: .seconds(step.t))
-                    if target > ContinuousClock.now {
-                        try? await Task.sleep(until: target, clock: .continuous)
+                    let target = start + step.t
+                    if target > timing.now {
+                        do {
+                            try await timing.sleep(until: target)
+                        } catch {
+                            break
+                        }
                     }
                     if Task.isCancelled { break }
                     if step.blockID != lastBlockID {
                         lastBlockID = step.blockID
                         onBlock(step.blockID)
                     }
-                    EventPoster.post(step.action)
+                    poster.post(step.action)
+                    await timing.cooperativeYield()
+                }
+                if Task.isCancelled { break }
+                let planEnd = start + plan.duration
+                if planEnd > timing.now {
+                    do {
+                        try await timing.sleep(until: planEnd)
+                    } catch {
+                        break
+                    }
                 }
                 if Task.isCancelled { break }
                 if iteration < repeatCount && interval > 0 {
                     onBlock(nil)
-                    try? await Task.sleep(for: .seconds(interval))
+                    do {
+                        try await timing.sleep(until: timing.now + interval)
+                    } catch {
+                        break
+                    }
                 }
             }
             let wasCancelled = Task.isCancelled
-            await MainActor.run { [weak self] in
-                guard let self, gen == self.generation else { return }
-                self.cleanUpMonitor()
-                self.task = nil
-                if !wasCancelled { onFinish() }
-            }
+            guard gen == generation else { return }
+            stopMonitor.stop()
+            task = nil
+            if !wasCancelled { onFinish() }
         }
     }
 
@@ -91,17 +106,6 @@ final class PlaybackEngine {
         generation += 1  // 使旧会话的收尾逻辑失效
         task?.cancel()
         task = nil
-        cleanUpMonitor()
-    }
-
-    private func cleanUpMonitor() {
-        if let m = escMonitor {
-            NSEvent.removeMonitor(m)
-            escMonitor = nil
-        }
-        if let m = localEscMonitor {
-            NSEvent.removeMonitor(m)
-            localEscMonitor = nil
-        }
+        stopMonitor.stop()
     }
 }
