@@ -51,7 +51,8 @@ final class ScriptStoreTests: XCTestCase {
         try Data("not json".utf8).write(to: tmpDir.appendingPathComponent("bad.json"))
         let result = store.loadAll()
 
-        XCTAssertEqual(result.scripts, [good])
+        XCTAssertEqual(result.scripts.map(\.id), [good.id])
+        XCTAssertEqual(result.scripts.map(\.name), [good.name])
         XCTAssertEqual(result.issues.count, 1)
         XCTAssertEqual(result.issues.first?.operation, .decode)
         XCTAssertEqual(result.issues.first?.fileName, "bad.json")
@@ -95,5 +96,80 @@ final class ScriptStoreTests: XCTestCase {
         let savedData = try Data(contentsOf: savedURL)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: savedData) as? [String: Any])
         XCTAssertEqual(object["schemaVersion"] as? Int, 4)
+    }
+
+    func testPartialTemporaryWriteDoesNotChangeExistingDestination() throws {
+        let fileSystem = StubScriptStoreFileSystem()
+        let store = ScriptStore(directory: tmpDir, fileSystem: fileSystem)
+        var script = Script(name: "original")
+        try store.save(script)
+        let destination = tmpDir.appendingPathComponent("\(script.id.uuidString).json")
+        let originalData = try XCTUnwrap(fileSystem.files[destination])
+        fileSystem.failTemporaryWrite = true
+        script.name = "updated"
+
+        XCTAssertThrowsError(try store.save(script)) { error in
+            XCTAssertEqual((error as? ScriptStoreIssue)?.operation, .temporaryWrite)
+        }
+        XCTAssertEqual(fileSystem.files[destination], originalData)
+    }
+
+    func testReplacementFailureDoesNotChangeExistingDestination() throws {
+        let fileSystem = StubScriptStoreFileSystem()
+        let store = ScriptStore(directory: tmpDir, fileSystem: fileSystem)
+        var script = Script(name: "original")
+        try store.save(script)
+        let destination = tmpDir.appendingPathComponent("\(script.id.uuidString).json")
+        let originalData = try XCTUnwrap(fileSystem.files[destination])
+        fileSystem.failReplacement = true
+        script.name = "updated"
+
+        XCTAssertThrowsError(try store.save(script)) { error in
+            XCTAssertEqual((error as? ScriptStoreIssue)?.operation, .replace)
+        }
+        XCTAssertEqual(fileSystem.files[destination], originalData)
+    }
+}
+
+private final class StubScriptStoreFileSystem: ScriptStoreFileSystem {
+    enum Failure: Error { case requested }
+
+    var files: [URL: Data] = [:]
+    var failTemporaryWrite = false
+    var failReplacement = false
+
+    func createDirectory(at _: URL) throws {}
+
+    func fileExists(at url: URL) -> Bool {
+        files[url] != nil
+    }
+
+    func contentsOfDirectory(at _: URL) throws -> [URL] {
+        Array(files.keys)
+    }
+
+    func read(at url: URL) throws -> Data {
+        try XCTUnwrap(files[url])
+    }
+
+    func write(_ data: Data, to url: URL) throws {
+        if failTemporaryWrite {
+            files[url] = Data(data.prefix(4))
+            throw Failure.requested
+        }
+        files[url] = data
+    }
+
+    func replaceItem(at destination: URL, with temporary: URL) throws {
+        if failReplacement { throw Failure.requested }
+        files[destination] = try XCTUnwrap(files.removeValue(forKey: temporary))
+    }
+
+    func moveItem(at source: URL, to destination: URL) throws {
+        files[destination] = try XCTUnwrap(files.removeValue(forKey: source))
+    }
+
+    func removeItem(at url: URL) throws {
+        files.removeValue(forKey: url)
     }
 }
