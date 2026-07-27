@@ -24,17 +24,20 @@ final class AppState: ObservableObject {
     private let recorder: EventRecording
     private let countdown: CountdownPresenting
     private let application: RecordingApplicationControlling
+    private let playbackEngine: PlaybackControlling
 
     init(
         store: ScriptStore = ScriptStore(directory: ScriptStore.defaultDirectory()),
         recorder: EventRecording = EventRecorder(),
         countdown: CountdownPresenting = CountdownWindow(),
-        application: RecordingApplicationControlling = SystemRecordingApplicationController()
+        application: RecordingApplicationControlling = SystemRecordingApplicationController(),
+        playbackEngine: PlaybackControlling? = nil
     ) {
         self.store = store
         self.recorder = recorder
         self.countdown = countdown
         self.application = application
+        self.playbackEngine = playbackEngine ?? PlaybackEngine()
         reload()
     }
 
@@ -99,6 +102,15 @@ final class AppState: ObservableObject {
         })
         observers.append(center.addObserver(forName: .togglePlay, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.togglePlay() }
+        })
+        observers.append(center.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.stopPlaybackIfNeeded()
+            }
         })
         recorder.onTapFailure = { [weak self] in
             Task { @MainActor in
@@ -179,36 +191,56 @@ final class AppState: ObservableObject {
 
     // MARK: - Playback
 
-    private let playbackEngine = PlaybackEngine()
+    private var playbackGeneration = 0
 
     func togglePlay() {
         switch phase {
         case .playing:
-            playbackEngine.stop()
-            phase = .idle
+            stopPlaybackIfNeeded()
         case .idle:
             guard hasPermission else {
                 Permissions.requestAccessibility()
                 refreshPermission()
                 return
             }
-            guard let script = selectedScript, !script.blocks.isEmpty else { return }
+            guard let script = selectedScript else { return }
+            let plan = BlockExpander.plan(for: script)
+            guard !plan.steps.isEmpty || plan.duration > 0 else { return }
+            playbackGeneration += 1
+            let generation = playbackGeneration
             phase = .playing(iteration: 1, currentBlockID: nil)
             playbackEngine.play(script: script) { [weak self] iteration in
                 Task { @MainActor in
-                    guard let self, case .playing = self.phase else { return }
+                    guard let self,
+                          self.playbackGeneration == generation,
+                          case .playing = self.phase else { return }
                     self.phase = .playing(iteration: iteration, currentBlockID: nil)
                 }
             } onBlock: { [weak self] blockID in
                 Task { @MainActor in
-                    guard let self, case .playing(let it, _) = self.phase else { return }
+                    guard let self,
+                          self.playbackGeneration == generation,
+                          case .playing(let it, _) = self.phase else { return }
                     self.phase = .playing(iteration: it, currentBlockID: blockID)
                 }
             } onFinish: { [weak self] in
-                Task { @MainActor in self?.phase = .idle }
+                Task { @MainActor in
+                    guard let self,
+                          self.playbackGeneration == generation,
+                          case .playing = self.phase else { return }
+                    self.playbackGeneration += 1
+                    self.phase = .idle
+                }
             }
         case .countdown, .recording:
             break
         }
+    }
+
+    private func stopPlaybackIfNeeded() {
+        guard case .playing = phase else { return }
+        playbackGeneration += 1
+        playbackEngine.stop()
+        phase = .idle
     }
 }

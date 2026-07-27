@@ -4,7 +4,7 @@ import ClickerCore
 
 /// 按时间轴投递回放步骤，支持重复与中断。
 @MainActor
-final class PlaybackEngine {
+final class PlaybackEngine: PlaybackControlling {
     private var task: Task<Void, Never>?
     private var generation = 0
     private var activeGeneration: Int?

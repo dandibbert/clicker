@@ -20,6 +20,17 @@ protocol PlaybackStopMonitoring: AnyObject {
 }
 
 @MainActor
+protocol PlaybackControlling: AnyObject {
+    func play(
+        script: Script,
+        onIteration: @escaping (Int) -> Void,
+        onBlock: @escaping (UUID?) -> Void,
+        onFinish: @escaping () -> Void
+    )
+    func stop()
+}
+
+@MainActor
 final class SystemPlaybackTiming: PlaybackTiming {
     var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
