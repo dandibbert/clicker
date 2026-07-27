@@ -8,5 +8,6 @@ let package = Package(
         .target(name: "ClickerCore"),
         .executableTarget(name: "Clicker", dependencies: ["ClickerCore"]),
         .testTarget(name: "ClickerCoreTests", dependencies: ["ClickerCore"]),
+        .testTarget(name: "ClickerTests", dependencies: ["Clicker"]),
     ]
 )

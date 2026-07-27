@@ -7,9 +7,22 @@ public enum BlockExpander {
     /// 编辑文本生成事件时，相邻字符按下的间隔。
     static let keyStride: TimeInterval = 0.06
 
-    private static func clampedDuration(_ duration: TimeInterval) -> TimeInterval {
-        guard duration.isFinite, duration > 0 else { return 0 }
-        return duration
+    /// 时间轴上限保留 1 秒余量，确保纳秒换算可安全落在 Int64 范围内。
+    static let maximumTimelineTime = Double(Int64.max) / 1_000_000_000 - 1
+
+    private static func sanitizedTime(_ time: TimeInterval) -> TimeInterval {
+        guard time.isFinite, time > 0 else { return 0 }
+        return min(time, maximumTimelineTime)
+    }
+
+    private static func adding(_ lhs: TimeInterval, _ rhs: TimeInterval) -> TimeInterval {
+        let left = sanitizedTime(lhs)
+        let right = sanitizedTime(rhs)
+        guard left < maximumTimelineTime, right < maximumTimelineTime,
+              left <= maximumTimelineTime - right else {
+            return maximumTimelineTime
+        }
+        return left + right
     }
 
     /// 兼容旧调用方，只返回投递步骤。
@@ -30,13 +43,24 @@ public enum BlockExpander {
 
         for block in blocks {
             if case .wait(let wait) = block {
-                clock += clampedDuration(wait.duration)
+                clock = adding(clock, wait.duration)
                 continue
             }
 
-            clock += clampedDuration(block.delayBefore)
+            clock = adding(clock, block.delayBefore)
             let start = clock
-            var effectiveDuration = clampedDuration(block.duration)
+            var effectiveDuration = sanitizedTime(block.duration)
+            var latestLocalStep: TimeInterval = 0
+
+            func appendStep(localTime: TimeInterval, action: StepAction, blockID: UUID) {
+                let time = sanitizedTime(localTime)
+                latestLocalStep = max(latestLocalStep, time)
+                steps.append(PlaybackStep(
+                    t: adding(start, time),
+                    action: action,
+                    blockID: blockID
+                ))
+            }
 
             switch block {
             case .wait:
@@ -44,16 +68,16 @@ public enum BlockExpander {
 
             case .move(let move):
                 for point in move.points {
-                    steps.append(PlaybackStep(
-                        t: start + point.t,
+                    appendStep(
+                        localTime: point.t,
                         action: .mouseMove(x: point.x, y: point.y, flags: point.flags),
                         blockID: move.id
-                    ))
+                    )
                 }
 
             case .click(let click):
-                steps.append(PlaybackStep(
-                    t: start,
+                appendStep(
+                    localTime: 0,
                     action: .mouseDown(
                         x: click.x,
                         y: click.y,
@@ -62,22 +86,24 @@ public enum BlockExpander {
                         flags: click.downFlags
                     ),
                     blockID: click.id
-                ))
-                steps.append(PlaybackStep(
-                    t: start + effectiveDuration,
+                )
+                appendStep(
+                    localTime: effectiveDuration,
                     action: .mouseUp(
                         x: click.upX,
                         y: click.upY,
                         button: click.button,
+                        clickCount: click.upClickCount,
                         flags: click.upFlags
                     ),
                     blockID: click.id
-                ))
+                )
 
             case .drag(let drag):
                 if let first = drag.points.first, let last = drag.points.last {
-                    steps.append(PlaybackStep(
-                        t: start + first.t,
+                    var time = sanitizedTime(first.t)
+                    appendStep(
+                        localTime: time,
                         action: .mouseDown(
                             x: first.x,
                             y: first.y,
@@ -86,10 +112,11 @@ public enum BlockExpander {
                             flags: first.flags
                         ),
                         blockID: drag.id
-                    ))
+                    )
                     for point in drag.points.dropFirst().dropLast() {
-                        steps.append(PlaybackStep(
-                            t: start + point.t,
+                        time = max(time, sanitizedTime(point.t))
+                        appendStep(
+                            localTime: time,
                             action: .mouseDrag(
                                 x: point.x,
                                 y: point.y,
@@ -97,24 +124,26 @@ public enum BlockExpander {
                                 flags: point.flags
                             ),
                             blockID: drag.id
-                        ))
+                        )
                     }
-                    steps.append(PlaybackStep(
-                        t: start + last.t,
+                    time = max(time, sanitizedTime(last.t))
+                    appendStep(
+                        localTime: time,
                         action: .mouseUp(
                             x: last.x,
                             y: last.y,
                             button: drag.button,
+                            clickCount: 1,
                             flags: last.flags
                         ),
                         blockID: drag.id
-                    ))
+                    )
                 }
 
             case .scroll(let scroll):
                 for step in scroll.steps {
-                    steps.append(PlaybackStep(
-                        t: start + step.t,
+                    appendStep(
+                        localTime: step.t,
                         action: .scroll(
                             x: scroll.x,
                             y: scroll.y,
@@ -123,76 +152,80 @@ public enum BlockExpander {
                             flags: step.flags
                         ),
                         blockID: scroll.id
-                    ))
+                    )
                 }
 
             case .typeText(let typeText):
                 let recordedText = typeText.keystrokes.map(\.chars).joined()
                 if recordedText == typeText.text, !typeText.keystrokes.isEmpty {
                     for keystroke in typeText.keystrokes {
-                        steps.append(PlaybackStep(
-                            t: start + keystroke.t,
+                        let downTime = sanitizedTime(keystroke.t)
+                        let upTime = max(downTime, sanitizedTime(keystroke.upT))
+                        appendStep(
+                            localTime: downTime,
                             action: .keyDown(
                                 keyCode: keystroke.keyCode,
                                 flags: keystroke.downFlags,
                                 chars: keystroke.chars
                             ),
                             blockID: typeText.id
-                        ))
-                        steps.append(PlaybackStep(
-                            t: start + keystroke.upT,
+                        )
+                        appendStep(
+                            localTime: upTime,
                             action: .keyUp(
                                 keyCode: keystroke.keyCode,
                                 flags: keystroke.upFlags
                             ),
                             blockID: typeText.id
-                        ))
+                        )
                     }
                 } else {
                     var offset: TimeInterval = 0
                     var generatedDuration: TimeInterval = 0
                     for character in typeText.text {
-                        steps.append(PlaybackStep(
-                            t: start + offset,
+                        let upTime = adding(offset, keyHold)
+                        appendStep(
+                            localTime: offset,
                             action: .keyDown(
                                 keyCode: 0,
                                 flags: 0,
                                 chars: String(character)
                             ),
                             blockID: typeText.id
-                        ))
-                        steps.append(PlaybackStep(
-                            t: start + offset + keyHold,
+                        )
+                        appendStep(
+                            localTime: upTime,
                             action: .keyUp(keyCode: 0, flags: 0),
                             blockID: typeText.id
-                        ))
-                        generatedDuration = offset + keyHold
-                        offset += keyStride
+                        )
+                        generatedDuration = max(generatedDuration, upTime)
+                        offset = adding(offset, keyStride)
                     }
                     effectiveDuration = max(effectiveDuration, generatedDuration)
                 }
 
             case .shortcut(let shortcut):
-                steps.append(PlaybackStep(
-                    t: start,
+                appendStep(
+                    localTime: 0,
                     action: .keyDown(
                         keyCode: shortcut.keyCode,
                         flags: shortcut.flags,
                         chars: ""
                     ),
                     blockID: shortcut.id
-                ))
-                steps.append(PlaybackStep(
-                    t: start + effectiveDuration,
+                )
+                appendStep(
+                    localTime: effectiveDuration,
                     action: .keyUp(
                         keyCode: shortcut.keyCode,
                         flags: shortcut.upFlags
                     ),
                     blockID: shortcut.id
-                ))
+                )
             }
 
-            clock += effectiveDuration
+            effectiveDuration = max(effectiveDuration, latestLocalStep)
+            clock = adding(clock, effectiveDuration)
         }
 
         let orderedSteps = steps.enumerated().sorted { lhs, rhs in
@@ -204,7 +237,7 @@ public enum BlockExpander {
 
         return PlaybackPlan(
             steps: orderedSteps,
-            duration: clock + clampedDuration(trailingDelay)
+            duration: adding(clock, trailingDelay)
         )
     }
 }

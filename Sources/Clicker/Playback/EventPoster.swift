@@ -3,6 +3,14 @@ import ClickerCore
 
 /// StepAction → CGEvent.post。所有事件带 syntheticMarker，避免被录制引擎捕获。
 enum EventPoster {
+    static func scrollDelta(_ value: Double) -> Int32 {
+        guard value.isFinite else { return 0 }
+        let truncated = value.rounded(.towardZero)
+        if truncated >= Double(Int32.max) { return Int32.max }
+        if truncated <= Double(Int32.min) { return Int32.min }
+        return Int32(truncated)
+    }
+
     private static func mark(_ e: CGEvent) {
         e.setIntegerValueField(.eventSourceUserData, value: EventRecorder.syntheticMarker)
     }
@@ -26,12 +34,13 @@ enum EventPoster {
             e.flags = CGEventFlags(rawValue: flags)
             mark(e); e.post(tap: .cghidEventTap)
 
-        case .mouseUp(let x, let y, let button, let flags):
+        case .mouseUp(let x, let y, let button, let clickCount, let flags):
             let type: CGEventType = button == .left ? .leftMouseUp : .rightMouseUp
             let cgButton: CGMouseButton = button == .left ? .left : .right
             guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                                   mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: cgButton)
             else { return }
+            e.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
             e.flags = CGEventFlags(rawValue: flags)
             mark(e); e.post(tap: .cghidEventTap)
 
@@ -65,7 +74,7 @@ enum EventPoster {
 
         case .scroll(let x, let y, let dx, let dy, let flags):
             guard let e = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
-                                  wheel1: Int32(dy), wheel2: Int32(dx), wheel3: 0)
+                                  wheel1: scrollDelta(dy), wheel2: scrollDelta(dx), wheel3: 0)
             else { return }
             e.location = CGPoint(x: x, y: y)
             e.flags = CGEventFlags(rawValue: flags)

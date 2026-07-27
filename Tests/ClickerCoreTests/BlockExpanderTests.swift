@@ -16,6 +16,7 @@ final class BlockExpanderTests: XCTestCase {
                 duration: 0.25,
                 upX: 30,
                 upY: 40,
+                upClickCount: 3,
                 downFlags: 11,
                 upFlags: 12
             ))],
@@ -39,6 +40,7 @@ final class BlockExpanderTests: XCTestCase {
             x: 30,
             y: 40,
             button: .left,
+            clickCount: 3,
             flags: 12
         ))
         XCTAssertEqual(plan.duration, 1.15, accuracy: 0.000_001)
@@ -143,7 +145,7 @@ final class BlockExpanderTests: XCTestCase {
         XCTAssertEqual(dragActions, [
             .mouseDown(x: 5, y: 6, button: .right, clickCount: 1, flags: 21),
             .mouseDrag(x: 7, y: 8, button: .right, flags: 22),
-            .mouseUp(x: 9, y: 10, button: .right, flags: 23),
+            .mouseUp(x: 9, y: 10, button: .right, clickCount: 1, flags: 23),
         ])
         XCTAssertEqual(scrollActions, [
             .scroll(x: 11, y: 12, dx: 13, dy: -14, flags: 31),
@@ -230,6 +232,152 @@ final class BlockExpanderTests: XCTestCase {
         XCTAssertEqual(plan.steps.map(\.t), [0, 0, 0, 0])
         XCTAssertEqual(plan.duration, 0, accuracy: 0.000_001)
         XCTAssertTrue(plan.steps.allSatisfy { $0.t.isFinite && $0.t >= 0 })
+    }
+
+    func testMalformedDragTimesKeepMouseUpAtOrAfterMouseDown() throws {
+        let dragID = UUID()
+        let plan = BlockExpander.plan(blocks: [
+            .drag(DragBlock(
+                id: dragID,
+                button: .left,
+                duration: 0.1,
+                points: [
+                    TrackPoint(t: 2, x: 1, y: 1),
+                    TrackPoint(t: 1, x: 2, y: 2),
+                    TrackPoint(t: 0.5, x: 3, y: 3),
+                ]
+            )),
+        ])
+
+        let down = try XCTUnwrap(plan.steps.first { step in
+            guard step.blockID == dragID else { return false }
+            if case .mouseDown = step.action { return true }
+            return false
+        })
+        let up = try XCTUnwrap(plan.steps.first { step in
+            guard step.blockID == dragID else { return false }
+            if case .mouseUp = step.action { return true }
+            return false
+        })
+
+        XCTAssertGreaterThanOrEqual(up.t, down.t)
+        XCTAssertEqual(plan.steps.map(\.t), plan.steps.map(\.t).sorted())
+        XCTAssertTrue(plan.steps.allSatisfy { $0.t.isFinite && $0.t >= 0 })
+        XCTAssertGreaterThanOrEqual(plan.duration, plan.steps.last?.t ?? 0)
+    }
+
+    func testKeyUpBeforeDownIsClampedAndAdvancesFollowingBlock() throws {
+        let textID = UUID()
+        let clickID = UUID()
+        let plan = BlockExpander.plan(blocks: [
+            .typeText(TypeTextBlock(
+                id: textID,
+                text: "a",
+                keystrokes: [Keystroke(t: 2, keyCode: 4, chars: "a", upT: 1)],
+                duration: 0.1
+            )),
+            .click(ClickBlock(
+                id: clickID,
+                x: 3,
+                y: 4,
+                button: .left,
+                clickCount: 1
+            )),
+        ])
+
+        let keyDown = try XCTUnwrap(plan.steps.first { step in
+            if case .keyDown = step.action { return step.blockID == textID }
+            return false
+        })
+        let keyUp = try XCTUnwrap(plan.steps.first { step in
+            if case .keyUp = step.action { return step.blockID == textID }
+            return false
+        })
+        let followingClick = try XCTUnwrap(plan.steps.first { step in
+            if case .mouseDown = step.action { return step.blockID == clickID }
+            return false
+        })
+
+        XCTAssertGreaterThanOrEqual(keyUp.t, keyDown.t)
+        XCTAssertGreaterThanOrEqual(followingClick.t, keyUp.t)
+        XCTAssertGreaterThanOrEqual(plan.duration, plan.steps.last?.t ?? 0)
+    }
+
+    func testNonFiniteAndNegativeSampleTimesBecomeZero() {
+        let plan = BlockExpander.plan(blocks: [
+            .move(MoveBlock(
+                duration: 0,
+                points: [
+                    TrackPoint(t: .nan, x: 1, y: 2),
+                    TrackPoint(t: -1, x: 3, y: 4),
+                ]
+            )),
+            .scroll(ScrollBlock(
+                x: 5,
+                y: 6,
+                duration: 0,
+                steps: [ScrollStep(t: .infinity, dx: 1, dy: -1)]
+            )),
+        ])
+
+        XCTAssertEqual(plan.steps.map(\.t), [0, 0, 0])
+        XCTAssertTrue(plan.steps.allSatisfy { $0.t.isFinite && $0.t >= 0 })
+        XCTAssertEqual(plan.duration, 0)
+    }
+
+    func testSampleBeyondDeclaredDurationAdvancesFollowingBlock() throws {
+        let clickID = UUID()
+        let plan = BlockExpander.plan(blocks: [
+            .move(MoveBlock(
+                duration: 0.1,
+                points: [TrackPoint(t: 3, x: 1, y: 2)]
+            )),
+            .click(ClickBlock(
+                id: clickID,
+                x: 3,
+                y: 4,
+                button: .left,
+                clickCount: 1
+            )),
+        ])
+
+        let clickDown = try XCTUnwrap(plan.steps.first { step in
+            if case .mouseDown = step.action { return step.blockID == clickID }
+            return false
+        })
+
+        XCTAssertEqual(clickDown.t, 3, accuracy: 0.000_001)
+        XCTAssertEqual(plan.duration, 3.03, accuracy: 0.000_001)
+        XCTAssertGreaterThanOrEqual(plan.duration, plan.steps.last?.t ?? 0)
+    }
+
+    func testHugeFiniteTimelineValuesClampWithoutOverflow() {
+        let safeMaximum = Double(Int64.max) / 1_000_000_000 - 1
+        let huge = Double.greatestFiniteMagnitude
+        let plan = BlockExpander.plan(
+            blocks: [
+                .move(MoveBlock(
+                    duration: huge,
+                    points: [TrackPoint(t: huge, x: 1, y: 2)],
+                    delayBefore: huge
+                )),
+                .click(ClickBlock(
+                    x: 3,
+                    y: 4,
+                    button: .left,
+                    clickCount: 1,
+                    delayBefore: huge,
+                    duration: huge
+                )),
+            ],
+            trailingDelay: huge
+        )
+
+        XCTAssertEqual(plan.duration, safeMaximum, accuracy: 0.000_001)
+        XCTAssertTrue(plan.steps.allSatisfy {
+            $0.t.isFinite && $0.t >= 0 && $0.t <= safeMaximum
+        })
+        XCTAssertGreaterThanOrEqual(plan.duration, plan.steps.last?.t ?? 0)
     }
 
     func testCompatibilityExpandReturnsPlanSteps() {

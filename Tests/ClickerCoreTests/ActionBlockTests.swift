@@ -112,6 +112,7 @@ final class ActionBlockTests: XCTestCase {
         XCTAssertEqual(click.duration, 0.03, accuracy: 0.000_001)
         XCTAssertEqual(click.upX, click.x)
         XCTAssertEqual(click.upY, click.y)
+        XCTAssertEqual(click.upClickCount, click.clickCount)
         XCTAssertEqual(click.downFlags, 0)
         XCTAssertEqual(click.upFlags, 0)
 
@@ -134,6 +135,21 @@ final class ActionBlockTests: XCTestCase {
         XCTAssertEqual(shortcut.delayBefore, 0)
         XCTAssertEqual(shortcut.duration, 0.02, accuracy: 0.000_001)
         XCTAssertEqual(shortcut.upFlags, shortcut.flags)
+    }
+
+    func testRejectsUnsupportedAndInvalidSchemaVersions() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .millisecondsSince1970
+
+        for schemaVersion in [0, 99] {
+            var object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: legacyV1ScriptData) as? [String: Any]
+            )
+            object["schemaVersion"] = schemaVersion
+            let data = try JSONSerialization.data(withJSONObject: object)
+
+            XCTAssertThrowsError(try decoder.decode(Script.self, from: data))
+        }
     }
 
     func testV2RoundTripPreservesLosslessTimelineFields() throws {
@@ -159,6 +175,7 @@ final class ActionBlockTests: XCTestCase {
                     duration: 0.25,
                     upX: 5,
                     upY: 6,
+                    upClickCount: 3,
                     downFlags: 12,
                     upFlags: 13
                 )),

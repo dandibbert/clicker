@@ -124,6 +124,7 @@ public struct ClickBlock: Codable, Equatable, Sendable, Identifiable {
     public var y: Double
     public var button: MouseButton
     public var clickCount: Int
+    public var upClickCount: Int
     public var delayBefore: TimeInterval
     public var duration: TimeInterval
     public var upX: Double
@@ -133,13 +134,14 @@ public struct ClickBlock: Codable, Equatable, Sendable, Identifiable {
 
     public init(id: UUID = UUID(), x: Double, y: Double, button: MouseButton, clickCount: Int,
                 delayBefore: TimeInterval = 0, duration: TimeInterval = 0.03,
-                upX: Double? = nil, upY: Double? = nil,
+                upX: Double? = nil, upY: Double? = nil, upClickCount: Int? = nil,
                 downFlags: UInt64 = 0, upFlags: UInt64 = 0) {
         self.id = id
         self.x = x
         self.y = y
         self.button = button
         self.clickCount = clickCount
+        self.upClickCount = upClickCount ?? clickCount
         self.delayBefore = delayBefore
         self.duration = duration
         self.upX = upX ?? x
@@ -149,7 +151,7 @@ public struct ClickBlock: Codable, Equatable, Sendable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, x, y, button, clickCount, delayBefore, duration
+        case id, x, y, button, clickCount, upClickCount, delayBefore, duration
         case upX, upY, downFlags, upFlags
     }
 
@@ -160,6 +162,7 @@ public struct ClickBlock: Codable, Equatable, Sendable, Identifiable {
         y = try container.decode(Double.self, forKey: .y)
         button = try container.decode(MouseButton.self, forKey: .button)
         clickCount = try container.decode(Int.self, forKey: .clickCount)
+        upClickCount = try container.decodeIfPresent(Int.self, forKey: .upClickCount) ?? clickCount
         delayBefore = try container.decodeIfPresent(TimeInterval.self, forKey: .delayBefore) ?? 0
         duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0.03
         upX = try container.decodeIfPresent(Double.self, forKey: .upX) ?? x
@@ -432,6 +435,14 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedSchemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        guard (1...Self.currentSchemaVersion).contains(decodedSchemaVersion) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .schemaVersion,
+                in: container,
+                debugDescription: "Unsupported script schema version \(decodedSchemaVersion)"
+            )
+        }
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
@@ -440,7 +451,7 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         repeatCount = try container.decode(Int.self, forKey: .repeatCount)
         repeatForever = try container.decode(Bool.self, forKey: .repeatForever)
         repeatInterval = try container.decode(TimeInterval.self, forKey: .repeatInterval)
-        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        schemaVersion = decodedSchemaVersion
         trailingDelay = try container.decodeIfPresent(TimeInterval.self, forKey: .trailingDelay) ?? 0
         targetBundleIdentifier = try container.decodeIfPresent(
             String.self,

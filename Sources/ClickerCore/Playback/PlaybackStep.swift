@@ -4,7 +4,7 @@ import Foundation
 public enum StepAction: Equatable, Sendable {
     case mouseMove(x: Double, y: Double, flags: UInt64)
     case mouseDown(x: Double, y: Double, button: MouseButton, clickCount: Int, flags: UInt64)
-    case mouseUp(x: Double, y: Double, button: MouseButton, flags: UInt64)
+    case mouseUp(x: Double, y: Double, button: MouseButton, clickCount: Int, flags: UInt64)
     case mouseDrag(x: Double, y: Double, button: MouseButton, flags: UInt64)
     case keyDown(keyCode: UInt16, flags: UInt64, chars: String)
     case keyUp(keyCode: UInt16, flags: UInt64)
