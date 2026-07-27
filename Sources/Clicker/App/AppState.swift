@@ -102,7 +102,8 @@ final class AppState: ObservableObject {
         })
         recorder.onTapFailure = { [weak self] in
             Task { @MainActor in
-                self?.finishRecording(source: .failure)
+                guard let self, self.phase == .recording else { return }
+                self.finishRecording(source: .failure)
             }
         }
     }

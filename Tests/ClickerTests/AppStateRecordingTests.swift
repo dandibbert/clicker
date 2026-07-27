@@ -85,6 +85,34 @@ final class AppStateRecordingTests: XCTestCase {
             accuracy: 0.000_001
         )
     }
+
+    func testDelayedTapFailureAfterRecordingStoppedDoesNotSaveAgain() async {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Clicker-AppStateTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let recorder = StubEventRecorder(capture: RecordingCapture(
+            events: [
+                RecordedEvent(t: 0.1, kind: .leftDown),
+                RecordedEvent(t: 0.2, kind: .leftUp),
+            ],
+            duration: 0.2
+        ))
+        let state = AppState(
+            store: ScriptStore(directory: directory),
+            recorder: recorder,
+            countdown: ImmediateCountdown(),
+            application: StubRecordingApplication(targetBundleIdentifier: nil)
+        )
+        state.setUp()
+        state.phase = .idle
+
+        recorder.onTapFailure?()
+        await Task.yield()
+
+        XCTAssertEqual(recorder.stopCallCount, 0)
+        XCTAssertTrue(state.scripts.isEmpty)
+    }
 }
 
 private final class StubEventRecorder: EventRecording {
@@ -92,6 +120,7 @@ private final class StubEventRecorder: EventRecording {
     private let capture: RecordingCapture
     private let cutoffValue: RecordingCutoff
     private(set) var cutoffTimestamps: [CGEventTimestamp] = []
+    private(set) var stopCallCount = 0
 
     init(
         capture: RecordingCapture,
@@ -102,7 +131,10 @@ private final class StubEventRecorder: EventRecording {
     }
 
     func start() -> Bool { true }
-    func stop() -> RecordingCapture { capture }
+    func stop() -> RecordingCapture {
+        stopCallCount += 1
+        return capture
+    }
 
     func cutoff(at timestamp: CGEventTimestamp) -> RecordingCutoff {
         cutoffTimestamps.append(timestamp)
