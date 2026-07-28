@@ -27,15 +27,16 @@ struct MainView: View {
                 dismissButton: .default(Text("好"))
             )
         }
-        .alert(item: $state.hotKeyRegistrationIssue) { issue in
-            Alert(
-                title: Text("全局快捷键注册失败"),
-                message: Text(
-                    "\(issue.shortcut.displayName) 无法注册（OSStatus \(issue.status)）。" +
-                    "你仍可使用窗口和菜单栏控制。"
-                ),
-                dismissButton: .default(Text("好"))
+        .alert(
+            "全局快捷键注册失败",
+            isPresented: Binding(
+                get: { !state.hotKeyRegistrationIssues.isEmpty },
+                set: { if !$0 { state.hotKeyRegistrationIssues = [] } }
             )
+        ) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(hotKeyIssueMessage)
         }
     }
 
@@ -55,6 +56,13 @@ struct MainView: View {
             return "\(fileName)\n\(issue.message)"
         }
         return issue.message
+    }
+
+    private var hotKeyIssueMessage: String {
+        let failures = state.hotKeyRegistrationIssues.map { issue in
+            "\(issue.shortcut.displayName)：OSStatus \(issue.status)"
+        }
+        return failures.joined(separator: "\n") + "\n你仍可使用窗口和菜单栏控制。"
     }
 }
 

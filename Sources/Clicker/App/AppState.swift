@@ -20,7 +20,7 @@ final class AppState: ObservableObject {
     @Published var hasPermission = Permissions.hasAccessibility
     @Published var corruptFileNames: [String] = []
     @Published var persistenceIssue: ScriptStoreIssue?
-    @Published var hotKeyRegistrationIssue: HotKeyRegistrationIssue?
+    @Published var hotKeyRegistrationIssues: [HotKeyRegistrationIssue] = []
 
     let store: ScriptPersisting
     private let recorder: EventRecording
@@ -130,7 +130,7 @@ final class AppState: ObservableObject {
     }
 
     func reportHotKeyRegistrationIssues(_ issues: [HotKeyRegistrationIssue]) {
-        hotKeyRegistrationIssue = issues.first
+        hotKeyRegistrationIssues = issues
     }
 
     // MARK: - Recording

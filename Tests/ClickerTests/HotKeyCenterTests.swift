@@ -45,7 +45,7 @@ final class HotKeyCenterTests: XCTestCase {
     }
 
     @MainActor
-    func testAppStatePublishesFirstRegistrationFailureForPresentation() {
+    func testAppStatePublishesEveryRegistrationFailureForPresentation() {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Clicker-HotKeyIssue-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -57,6 +57,6 @@ final class HotKeyCenterTests: XCTestCase {
 
         state.reportHotKeyRegistrationIssues(issues)
 
-        XCTAssertEqual(state.hotKeyRegistrationIssue, issues[0])
+        XCTAssertEqual(state.hotKeyRegistrationIssues, issues)
     }
 }
