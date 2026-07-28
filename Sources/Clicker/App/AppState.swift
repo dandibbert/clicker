@@ -58,6 +58,10 @@ final class AppState: ObservableObject {
         phase == .idle
     }
 
+    var canStartRecording: Bool {
+        phase == .idle
+    }
+
     @discardableResult
     func create(_ script: Script) -> Bool {
         guard canEditScripts else { return false }

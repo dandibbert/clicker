@@ -16,9 +16,22 @@ struct ScriptListView: View {
         .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         .overlay {
             if state.scripts.isEmpty {
-                ContentUnavailableView("暂无脚本",
-                    systemImage: "cursorarrow.click.badge.clock",
-                    description: Text("点击右上角「录制」开始"))
+                ContentUnavailableView {
+                    Label("暂无脚本", systemImage: "cursorarrow.click.badge.clock")
+                } description: {
+                    Text("录制一段操作来创建第一个脚本")
+                } actions: {
+                    Button {
+                        NotificationCenter.default.post(
+                            name: .toggleRecord,
+                            object: ["source": "ui"]
+                        )
+                    } label: {
+                        Label("开始录制", systemImage: "record.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!state.canStartRecording)
+                }
             }
         }
         .alert("重命名脚本", isPresented: Binding(

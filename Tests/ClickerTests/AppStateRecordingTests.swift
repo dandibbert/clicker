@@ -5,6 +5,27 @@ import ClickerCore
 
 @MainActor
 final class AppStateRecordingTests: XCTestCase {
+    func testRecordingEntryAvailabilityFollowsPhase() {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Clicker-RecordingAvailability-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let state = AppState(
+            store: ScriptStore(directory: directory),
+            recorder: StubEventRecorder(capture: RecordingCapture(events: [], duration: 0)),
+            countdown: ImmediateCountdown(),
+            application: StubRecordingApplication(targetBundleIdentifier: nil)
+        )
+
+        state.phase = .idle
+        XCTAssertTrue(state.canStartRecording)
+        state.phase = .countdown(3)
+        XCTAssertFalse(state.canStartRecording)
+        state.phase = .recording
+        XCTAssertFalse(state.canStartRecording)
+        state.phase = .playing(iteration: 1, currentBlockID: nil)
+        XCTAssertFalse(state.canStartRecording)
+    }
+
     func testTargetIsCapturedBeforeHideAndUIStopSavesTrailingOnlyRecording() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Clicker-AppStateTests-\(UUID().uuidString)")
