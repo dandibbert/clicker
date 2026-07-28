@@ -27,6 +27,16 @@ struct MainView: View {
                 dismissButton: .default(Text("好"))
             )
         }
+        .alert(item: $state.hotKeyRegistrationIssue) { issue in
+            Alert(
+                title: Text("全局快捷键注册失败"),
+                message: Text(
+                    "\(issue.shortcut.displayName) 无法注册（OSStatus \(issue.status)）。" +
+                    "你仍可使用窗口和菜单栏控制。"
+                ),
+                dismissButton: .default(Text("好"))
+            )
+        }
     }
 
     private func issueTitle(_ operation: ScriptStoreIssue.Operation) -> String {

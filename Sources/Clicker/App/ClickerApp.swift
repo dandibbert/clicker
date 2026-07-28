@@ -11,7 +11,7 @@ struct ClickerApp: App {
         _state = StateObject(wrappedValue: s)
         statusItem = StatusItemController(state: s)
         s.setUp()
-        hotKeys.register()
+        s.reportHotKeyRegistrationIssues(hotKeys.register())
     }
 
     var body: some Scene {
