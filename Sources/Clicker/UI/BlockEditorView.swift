@@ -136,142 +136,26 @@ struct BlockEditorView: View {
         }
     }
 
-    private func rescaledPoints(
-        _ points: [TrackPoint],
-        fromDuration oldDuration: Double,
-        toDuration newDuration: Double
-    ) -> [TrackPoint] {
-        let clampedDuration = max(0, newDuration)
-        if oldDuration > 0 {
-            let ratio = clampedDuration / oldDuration
-            return points.map {
-                TrackPoint(
-                    t: $0.t * ratio,
-                    x: $0.x,
-                    y: $0.y,
-                    flags: $0.flags,
-                    ordinal: $0.ordinal
-                )
-            }
-        }
-        if points.count > 1, clampedDuration > 0 {
-            let lastIndex = Double(points.count - 1)
-            return points.enumerated().map { index, point in
-                TrackPoint(
-                    t: clampedDuration * Double(index) / lastIndex,
-                    x: point.x,
-                    y: point.y,
-                    flags: point.flags,
-                    ordinal: point.ordinal
-                )
-            }
-        }
-        return points.map {
-            TrackPoint(
-                t: 0,
-                x: $0.x,
-                y: $0.y,
-                flags: $0.flags,
-                ordinal: $0.ordinal
-            )
-        }
-    }
-
     private func save() {
-        var updated = block
-        switch block {
-        case .click(var b):
-            b.x = x; b.y = y; b.button = button; b.clickCount = clickCount
-            updated = .click(b)
-        case .move(var b):
-            if let last = b.points.last {
-                let dx = endX - last.x, dy = endY - last.y
-                b.points = b.points.map {
-                    TrackPoint(
-                        t: $0.t,
-                        x: $0.x + dx,
-                        y: $0.y + dy,
-                        flags: $0.flags,
-                        ordinal: $0.ordinal
-                    )
-                }
-            }
-            let newDuration = max(0, duration)
-            if newDuration != b.duration {
-                b.points = rescaledPoints(
-                    b.points,
-                    fromDuration: b.duration,
-                    toDuration: newDuration
-                )
-            }
-            b.duration = newDuration
-            updated = .move(b)
-        case .drag(var b):
-            if let first = b.points.first, let last = b.points.last,
-               b.points.count >= 2 {
-                let oldSpanX = last.x - first.x, oldSpanY = last.y - first.y
-                let newSpanX = endX - x, newSpanY = endY - y
-                let timeSpan = last.t - first.t
-                let pointCount = b.points.count
-                b.points = b.points.enumerated().map { index, p in
-                    let fallbackProgress: Double
-                    if index == 0 {
-                        fallbackProgress = 0
-                    } else if index == pointCount - 1 {
-                        fallbackProgress = 1
-                    } else if timeSpan > 0 {
-                        fallbackProgress = (p.t - first.t) / timeSpan
-                    } else {
-                        fallbackProgress = Double(index) / Double(pointCount - 1)
-                    }
-                    let fx = oldSpanX == 0 ? fallbackProgress : (p.x - first.x) / oldSpanX
-                    let fy = oldSpanY == 0 ? fallbackProgress : (p.y - first.y) / oldSpanY
-                    return TrackPoint(
-                        t: p.t,
-                        x: x + fx * newSpanX,
-                        y: y + fy * newSpanY,
-                        flags: p.flags,
-                        ordinal: p.ordinal
-                    )
-                }
-            }
-            let newDuration = max(0, duration)
-            if newDuration != b.duration {
-                b.points = rescaledPoints(
-                    b.points,
-                    fromDuration: b.duration,
-                    toDuration: newDuration
-                )
-            }
-            b.duration = newDuration
-            updated = .drag(b)
-        case .scroll(var b):
-            b.steps = [ScrollStep(
-                t: 0,
-                x: b.x,
-                y: b.y,
-                dx: 0,
-                dy: y,
-                ordinal: b.steps.first?.ordinal ?? 0
-            )]
-            b.duration = 0
-            updated = .scroll(b)
-        case .typeText(var b):
-            b.text = text
-            updated = .typeText(b)
-        case .shortcut(var b):
-            b.keyCode = keyCode
-            var flags: UInt64 = 0
-            if useCommand { flags |= KeyCodeMap.maskCommand }
-            if useOption { flags |= KeyCodeMap.maskOption }
-            if useControl { flags |= KeyCodeMap.maskControl }
-            if useShift { flags |= KeyCodeMap.maskShift }
-            b.flags = flags
-            updated = .shortcut(b)
-        case .wait(var b):
-            b.duration = max(0, duration)
-            updated = .wait(b)
-        }
+        var shortcutFlags: UInt64 = 0
+        if useCommand { shortcutFlags |= KeyCodeMap.maskCommand }
+        if useOption { shortcutFlags |= KeyCodeMap.maskOption }
+        if useControl { shortcutFlags |= KeyCodeMap.maskControl }
+        if useShift { shortcutFlags |= KeyCodeMap.maskShift }
+        let values = ActionBlockEditValues(
+            x: x,
+            y: y,
+            endX: endX,
+            endY: endY,
+            duration: duration,
+            text: text,
+            button: button,
+            clickCount: clickCount,
+            keyCode: keyCode,
+            shortcutFlags: shortcutFlags,
+            scrollDeltaY: y
+        )
+        let updated = ActionBlockEditor.edit(block, values: values)
         onSave(updated)
         dismiss()
     }

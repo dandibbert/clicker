@@ -1,7 +1,91 @@
 import Foundation
 
+public struct ActionBlockEditValues: Equatable, Sendable {
+    public var x: Double
+    public var y: Double
+    public var endX: Double
+    public var endY: Double
+    public var duration: TimeInterval
+    public var text: String
+    public var button: MouseButton
+    public var clickCount: Int
+    public var keyCode: UInt16
+    public var shortcutFlags: UInt64
+    public var scrollDeltaY: Double
+
+    public init(
+        x: Double,
+        y: Double,
+        endX: Double,
+        endY: Double,
+        duration: TimeInterval,
+        text: String,
+        button: MouseButton,
+        clickCount: Int,
+        keyCode: UInt16,
+        shortcutFlags: UInt64,
+        scrollDeltaY: Double
+    ) {
+        self.x = x
+        self.y = y
+        self.endX = endX
+        self.endY = endY
+        self.duration = duration
+        self.text = text
+        self.button = button
+        self.clickCount = clickCount
+        self.keyCode = keyCode
+        self.shortcutFlags = shortcutFlags
+        self.scrollDeltaY = scrollDeltaY
+    }
+}
+
 /// 动作块编辑的纯值重建入口。每次编辑都返回一个完整的新 payload。
 public enum ActionBlockEditor {
+    public static func edit(
+        _ block: ActionBlock,
+        values: ActionBlockEditValues
+    ) -> ActionBlock {
+        switch block {
+        case .move(let payload):
+            .move(move(
+                payload,
+                endX: values.endX,
+                endY: values.endY,
+                duration: values.duration
+            ))
+        case .click(let payload):
+            .click(click(
+                payload,
+                x: values.x,
+                y: values.y,
+                button: values.button,
+                clickCount: values.clickCount
+            ))
+        case .drag(let payload):
+            .drag(drag(
+                payload,
+                startX: values.x,
+                startY: values.y,
+                endX: values.endX,
+                endY: values.endY,
+                duration: values.duration
+            ))
+        case .scroll(let payload):
+            .scroll(scroll(payload, totalDeltaY: values.scrollDeltaY))
+        case .typeText(let payload):
+            .typeText(typeText(payload, text: values.text))
+        case .shortcut(let payload):
+            .shortcut(shortcut(
+                payload,
+                keyCode: values.keyCode,
+                flags: values.shortcutFlags
+            ))
+        case .wait(let payload):
+            .wait(wait(payload, duration: values.duration))
+        }
+    }
+
     public static func move(
         _ original: MoveBlock,
         endX: Double,
@@ -80,6 +164,20 @@ public enum ActionBlockEditor {
             isRepeat: original.isRepeat,
             downOrdinal: original.downOrdinal,
             upOrdinal: original.upOrdinal
+        )
+    }
+
+    public static func typeText(
+        _ original: TypeTextBlock,
+        text: String
+    ) -> TypeTextBlock {
+        TypeTextBlock(
+            id: original.id,
+            text: text,
+            keystrokes: original.keystrokes,
+            delayBefore: original.delayBefore,
+            startOffset: original.startOffset,
+            duration: original.duration
         )
     }
 

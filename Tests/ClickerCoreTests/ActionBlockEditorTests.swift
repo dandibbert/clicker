@@ -204,4 +204,65 @@ final class ActionBlockEditorTests: XCTestCase {
         XCTAssertTrue(edited.duration.isFinite)
         XCTAssertEqual(edited.startOffset, 6)
     }
+
+    func testEditDispatchesFormValuesToTheMatchingBlockKind() {
+        let click = ActionBlock.click(ClickBlock(
+            x: 1,
+            y: 2,
+            button: .left,
+            clickCount: 1,
+            upX: 3,
+            upY: 4
+        ))
+        let values = ActionBlockEditValues(
+            x: 10,
+            y: 20,
+            endX: 30,
+            endY: 40,
+            duration: 2,
+            text: "edited",
+            button: .right,
+            clickCount: 2,
+            keyCode: 9,
+            shortcutFlags: 12,
+            scrollDeltaY: -6
+        )
+
+        guard case .click(let editedClick) = ActionBlockEditor.edit(click, values: values) else {
+            return XCTFail("expected click")
+        }
+        XCTAssertEqual(editedClick.x, 10)
+        XCTAssertEqual(editedClick.y, 20)
+        XCTAssertEqual(editedClick.upX, 10)
+        XCTAssertEqual(editedClick.upY, 20)
+        XCTAssertEqual(editedClick.button, .right)
+        XCTAssertEqual(editedClick.clickCount, 2)
+
+        let scroll = ActionBlock.scroll(ScrollBlock(
+            x: 5,
+            y: 6,
+            duration: 0.1,
+            steps: [
+                ScrollStep(t: 0, x: 5, y: 6, dx: 0, dy: -1, ordinal: 3),
+                ScrollStep(t: 0.1, x: 5, y: 6, dx: 0, dy: -2, ordinal: 4),
+            ]
+        ))
+        guard case .scroll(let editedScroll) = ActionBlockEditor.edit(scroll, values: values) else {
+            return XCTFail("expected scroll")
+        }
+        XCTAssertEqual(editedScroll.steps.map(\.dy), [-2, -4])
+        XCTAssertEqual(editedScroll.steps.map(\.ordinal), [3, 4])
+
+        let drag = ActionBlock.drag(DragBlock(
+            button: .left,
+            duration: 1,
+            points: [TrackPoint(t: 0, x: 0, y: 0, ordinal: 5)]
+        ))
+        guard case .drag(let editedDrag) = ActionBlockEditor.edit(drag, values: values) else {
+            return XCTFail("expected drag")
+        }
+        XCTAssertEqual(editedDrag.points.map(\.x), [10, 30])
+        XCTAssertEqual(editedDrag.points.map(\.y), [20, 40])
+        XCTAssertEqual(editedDrag.duration, 2)
+    }
 }
