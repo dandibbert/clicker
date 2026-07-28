@@ -264,5 +264,61 @@ final class ActionBlockEditorTests: XCTestCase {
         XCTAssertEqual(editedDrag.points.map(\.x), [10, 30])
         XCTAssertEqual(editedDrag.points.map(\.y), [20, 40])
         XCTAssertEqual(editedDrag.duration, 2)
+
+        let move = ActionBlock.move(MoveBlock(
+            duration: 1,
+            points: [
+                TrackPoint(t: 0, x: 0, y: 0, ordinal: 6),
+                TrackPoint(t: 1, x: 10, y: 10, ordinal: 7),
+            ]
+        ))
+        guard case .move(let editedMove) = ActionBlockEditor.edit(move, values: values) else {
+            return XCTFail("expected move")
+        }
+        XCTAssertEqual(editedMove.points.map(\.x), [20, 30])
+        XCTAssertEqual(editedMove.points.map(\.y), [30, 40])
+        XCTAssertEqual(editedMove.points.map(\.t), [0, 2])
+
+        let typeText = ActionBlock.typeText(TypeTextBlock(
+            text: "old",
+            keystrokes: [],
+            startOffset: 3,
+            duration: 0.5
+        ))
+        guard case .typeText(let editedText) = ActionBlockEditor.edit(
+            typeText,
+            values: values
+        ) else {
+            return XCTFail("expected typeText")
+        }
+        XCTAssertEqual(editedText.text, "edited")
+        XCTAssertEqual(editedText.startOffset, 3)
+        XCTAssertEqual(editedText.duration, 0.5)
+
+        let shortcut = ActionBlock.shortcut(ShortcutBlock(
+            keyCode: 8,
+            flags: 1,
+            upFlags: 2,
+            downOrdinal: 10,
+            upOrdinal: 11
+        ))
+        guard case .shortcut(let editedShortcut) = ActionBlockEditor.edit(
+            shortcut,
+            values: values
+        ) else {
+            return XCTFail("expected shortcut")
+        }
+        XCTAssertEqual(editedShortcut.keyCode, 9)
+        XCTAssertEqual(editedShortcut.flags, 12)
+        XCTAssertEqual(editedShortcut.upFlags, 12)
+        XCTAssertEqual(editedShortcut.downOrdinal, 10)
+        XCTAssertEqual(editedShortcut.upOrdinal, 11)
+
+        let wait = ActionBlock.wait(WaitBlock(duration: 1, startOffset: 4))
+        guard case .wait(let editedWait) = ActionBlockEditor.edit(wait, values: values) else {
+            return XCTFail("expected wait")
+        }
+        XCTAssertEqual(editedWait.duration, 2)
+        XCTAssertEqual(editedWait.startOffset, 4)
     }
 }
