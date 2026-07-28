@@ -3,15 +3,13 @@ import SwiftUI
 @main
 struct ClickerApp: App {
     @StateObject private var state: AppState
-    private let hotKeys = HotKeyCenter()
-    private let statusItem: StatusItemController
+    private let applicationServices: ApplicationServiceCoordinator
 
     init() {
         let s = AppState()
         _state = StateObject(wrappedValue: s)
-        statusItem = StatusItemController(state: s)
+        applicationServices = ApplicationServiceCoordinator(state: s)
         s.setUp()
-        s.reportHotKeyRegistrationIssues(hotKeys.register())
     }
 
     var body: some Scene {
@@ -19,6 +17,7 @@ struct ClickerApp: App {
             MainView()
                 .environmentObject(state)
                 .frame(minWidth: 760, minHeight: 480)
+                .onAppear { applicationServices.start() }
         }
     }
 }
