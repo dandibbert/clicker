@@ -15,12 +15,11 @@ struct ClickerApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        Window("Clicker", id: "main") {
             MainView()
                 .environmentObject(state)
                 .frame(minWidth: 760, minHeight: 480)
         }
-
     }
 }
 
