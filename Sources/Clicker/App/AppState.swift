@@ -54,8 +54,13 @@ final class AppState: ObservableObject {
         scripts.first { $0.id == selectedScriptID }
     }
 
+    var canEditScripts: Bool {
+        phase == .idle
+    }
+
     @discardableResult
     func create(_ script: Script) -> Bool {
+        guard canEditScripts else { return false }
         guard !scripts.contains(where: { $0.id == script.id }) else { return false }
         do {
             try store.save(script)
@@ -71,6 +76,7 @@ final class AppState: ObservableObject {
     /// 只修改仍存在的脚本，并在持久化成功后提交到内存。
     @discardableResult
     func update(_ script: Script) -> Bool {
+        guard canEditScripts else { return false }
         guard scripts.contains(where: { $0.id == script.id }) else { return false }
         var s = script
         s.modifiedAt = Date()
@@ -87,6 +93,7 @@ final class AppState: ObservableObject {
     }
 
     func deleteScript(id: UUID) {
+        guard canEditScripts else { return }
         guard scripts.contains(where: { $0.id == id }) else { return }
         do {
             try store.delete(id: id)
@@ -100,6 +107,7 @@ final class AppState: ObservableObject {
     }
 
     func duplicateScript(id: UUID) {
+        guard canEditScripts else { return }
         guard var s = scripts.first(where: { $0.id == id }) else { return }
         s.id = UUID()
         s.name += " 副本"

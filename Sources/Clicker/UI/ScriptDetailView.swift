@@ -3,7 +3,7 @@ import ClickerCore
 
 struct ScriptDetailView: View {
     @EnvironmentObject var state: AppState
-    @State private var editingBlockIndex: Int?
+    @State private var editingBlockID: UUID?
 
     var body: some View {
         if let script = state.selectedScript {
@@ -27,21 +27,27 @@ struct ScriptDetailView: View {
             }
         }
         .sheet(item: Binding(
-            get: { editingBlockIndex.map { EditTarget(index: $0) } },
-            set: { editingBlockIndex = $0?.index })) { target in
-            if script.blocks.indices.contains(target.index) {
-                BlockEditorView(block: script.blocks[target.index]) { updated in
-                    var s = script
-                    s.blocks[target.index] = updated
-                    state.update(s)
+            get: { editingBlockID.map(EditTarget.init(id:)) },
+            set: { editingBlockID = $0?.id })) { target in
+            if let block = script.blocks.first(where: { $0.id == target.id }) {
+                BlockEditorView(block: block) { updated in
+                    guard state.canEditScripts,
+                          var current = state.scripts.first(where: { $0.id == script.id }),
+                          let index = current.blocks.firstIndex(where: { $0.id == target.id }) else {
+                        return
+                    }
+                    current.blocks[index] = updated
+                    state.update(current)
                 }
             }
+        }
+        .onChange(of: state.canEditScripts) { _, canEdit in
+            if !canEdit { editingBlockID = nil }
         }
     }
 
     private struct EditTarget: Identifiable {
-        let index: Int
-        var id: Int { index }
+        let id: UUID
     }
 
     // MARK: 控制栏：重复次数 + 间隔
@@ -63,6 +69,7 @@ struct ScriptDetailView: View {
                     set: { var s = script; s.repeatForever = $0; state.update(s) }))
                     .toggleStyle(.checkbox)
             }
+            .disabled(!state.canEditScripts)
             HStack(spacing: 6) {
                 Text("间隔")
                 TextField("秒", value: Binding(
@@ -72,6 +79,7 @@ struct ScriptDetailView: View {
                     .frame(width: 50)
                 Text("秒")
             }
+            .disabled(!state.canEditScripts)
             Spacer()
             if case .playing(let iteration, _) = state.phase {
                 Label(script.repeatForever ? "第 \(iteration) 轮" : "第 \(iteration)/\(script.repeatCount) 轮",
@@ -97,9 +105,14 @@ struct ScriptDetailView: View {
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
                     .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { editingBlockIndex = index }
+                    .onTapGesture(count: 2) {
+                        if state.canEditScripts { editingBlockID = block.id }
+                    }
+                    .moveDisabled(!state.canEditScripts)
+                    .deleteDisabled(!state.canEditScripts)
                     .contextMenu {
-                        Button("编辑…") { editingBlockIndex = index }
+                        Button("编辑…") { editingBlockID = block.id }
+                            .disabled(!state.canEditScripts)
                         Button("复制") {
                             var s = script
                             s.blocks = TimelineMutation.duplicating(
@@ -108,6 +121,7 @@ struct ScriptDetailView: View {
                             )
                             state.update(s)
                         }
+                        .disabled(!state.canEditScripts)
                         Divider()
                         Button("删除", role: .destructive) {
                             var s = script
@@ -117,6 +131,7 @@ struct ScriptDetailView: View {
                             )
                             state.update(s)
                         }
+                        .disabled(!state.canEditScripts)
                     }
             }
             .onMove { from, to in
@@ -152,6 +167,7 @@ struct ScriptDetailView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .disabled(!state.canEditScripts)
                 Spacer()
             }
             .padding(10)
@@ -160,6 +176,7 @@ struct ScriptDetailView: View {
     }
 
     private func append(_ block: ActionBlock, to script: Script) {
+        guard state.canEditScripts else { return }
         var s = script
         s.blocks = TimelineMutation.inserting(
             block,

@@ -49,9 +49,12 @@ struct ScriptListView: View {
                 renameText = script.name
                 renamingID = script.id
             }
+            .disabled(!state.canEditScripts)
             Button("复制") { state.duplicateScript(id: script.id) }
+                .disabled(!state.canEditScripts)
             Divider()
             Button("删除", role: .destructive) { state.deleteScript(id: script.id) }
+                .disabled(!state.canEditScripts)
         }
     }
 }

@@ -59,6 +59,42 @@ final class AppStatePlaybackTests: XCTestCase {
         XCTAssertEqual(context.state.phase, .playing(iteration: 1, currentBlockID: nil))
     }
 
+    func testPlaybackRejectsLibraryMutationsAndKeepsItsStartingSnapshot() {
+        let script = Script(
+            name: "original",
+            blocks: [.wait(WaitBlock(duration: 1))]
+        )
+        let store = PlaybackStubScriptStore(scripts: [script])
+        let playback = StubPlaybackEngine()
+        let state = AppState(
+            store: store,
+            recorder: NoopEventRecorder(),
+            countdown: NoopCountdown(),
+            application: NoopRecordingApplication(),
+            playbackEngine: playback
+        )
+        state.hasPermission = true
+        state.selectedScriptID = script.id
+
+        state.togglePlay()
+        var renamed = script
+        renamed.name = "changed"
+        XCTAssertFalse(state.update(renamed))
+        XCTAssertFalse(state.create(Script(name: "new")))
+        state.duplicateScript(id: script.id)
+        state.deleteScript(id: script.id)
+
+        XCTAssertFalse(state.canEditScripts)
+        XCTAssertEqual(state.scripts, [script])
+        XCTAssertTrue(store.savedScripts.isEmpty)
+        XCTAssertTrue(store.deletedIDs.isEmpty)
+        XCTAssertEqual(playback.playedScripts, [script])
+
+        state.togglePlay()
+
+        XCTAssertTrue(state.canEditScripts)
+    }
+
     private func makeContext() -> (
         state: AppState,
         playback: StubPlaybackEngine,
@@ -76,6 +112,28 @@ final class AppStatePlaybackTests: XCTestCase {
         )
         state.hasPermission = true
         return (state, playback, directory)
+    }
+}
+
+private final class PlaybackStubScriptStore: ScriptPersisting {
+    private let scripts: [Script]
+    private(set) var savedScripts: [Script] = []
+    private(set) var deletedIDs: [UUID] = []
+
+    init(scripts: [Script]) {
+        self.scripts = scripts
+    }
+
+    func loadAll() -> ScriptStoreLoadResult {
+        ScriptStoreLoadResult(scripts: scripts, issues: [])
+    }
+
+    func save(_ script: Script) throws {
+        savedScripts.append(script)
+    }
+
+    func delete(id: UUID) throws {
+        deletedIDs.append(id)
     }
 }
 
