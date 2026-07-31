@@ -134,10 +134,37 @@ final class AppStateRecordingTests: XCTestCase {
         XCTAssertEqual(recorder.stopCallCount, 0)
         XCTAssertTrue(state.scripts.isEmpty)
     }
+
+    func testEscapeStopRequestFinishesActiveRecordingAndRestoresClicker() async {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Clicker-EscapeStop-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let recorder = StubEventRecorder(
+            capture: RecordingCapture(events: [], duration: 0.2)
+        )
+        let application = StubRecordingApplication(targetBundleIdentifier: nil)
+        let state = AppState(
+            store: ScriptStore(directory: directory),
+            recorder: recorder,
+            countdown: ImmediateCountdown(),
+            application: application
+        )
+        state.setUp()
+        state.phase = .recording
+
+        recorder.onStopRequest?()
+        await Task.yield()
+
+        XCTAssertEqual(recorder.stopCallCount, 1)
+        XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(application.calls, ["restore"])
+        XCTAssertEqual(state.scripts.first?.trailingDelay, 0.2)
+    }
 }
 
 private final class StubEventRecorder: EventRecording {
     var onTapFailure: (() -> Void)?
+    var onStopRequest: (() -> Void)?
     private let capture: RecordingCapture
     private let cutoffValue: RecordingCutoff
     private(set) var cutoffTimestamps: [CGEventTimestamp] = []

@@ -166,6 +166,12 @@ final class AppState: ObservableObject {
                 self.finishRecording(source: .failure)
             }
         }
+        recorder.onStopRequest = { [weak self] in
+            Task { @MainActor in
+                guard let self, self.phase == .recording else { return }
+                self.finishRecording(source: .ui)
+            }
+        }
     }
 
     func toggleRecord(source: RecordingStopSource) {

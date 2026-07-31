@@ -164,6 +164,7 @@ private final class StubPlaybackEngine: PlaybackControlling {
 
 private final class NoopEventRecorder: EventRecording {
     var onTapFailure: (() -> Void)?
+    var onStopRequest: (() -> Void)?
 
     func start() -> Bool { true }
     func stop() -> RecordingCapture { RecordingCapture(events: [], duration: 0) }

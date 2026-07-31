@@ -8,9 +8,12 @@ final class EventRecorder: EventRecording {
     private let timestampNow: () -> CGEventTimestamp
     private let timestampInterval: (CGEventTimestamp, CGEventTimestamp) -> TimeInterval
     private var startTimestamp: CGEventTimestamp?
+    private var stopRequested = false
     private(set) var events: [RecordedEvent] = []
     /// tap 被系统禁用且重建失败时回调（主线程）。
     var onTapFailure: (() -> Void)?
+    /// 用户按下 Esc 时请求结束当前录制（主线程）。
+    var onStopRequest: (() -> Void)?
 
     var isRunning: Bool { eventTap.isRunning }
 
@@ -35,6 +38,7 @@ final class EventRecorder: EventRecording {
 
     func start() -> Bool {
         events = []
+        stopRequested = false
         let start = timestampNow()
         guard eventTap.start(handler: { [weak self] type, event in
             self?.handle(type: type, cgEvent: event)
@@ -74,6 +78,15 @@ final class EventRecorder: EventRecording {
         }
         // 跳过回放引擎发出的合成事件
         if cgEvent.getIntegerValueField(.eventSourceUserData) == Self.syntheticMarker { return }
+        if stopRequested { return }
+        if (type == .keyDown || type == .keyUp),
+           cgEvent.getIntegerValueField(.keyboardEventKeycode) == 53 {
+            if type == .keyDown {
+                stopRequested = true
+                DispatchQueue.main.async { [weak self] in self?.onStopRequest?() }
+            }
+            return
+        }
 
         let t = elapsedTime(at: cgEvent.timestamp)
         let loc = cgEvent.location

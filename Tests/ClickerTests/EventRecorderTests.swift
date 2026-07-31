@@ -101,6 +101,46 @@ final class EventRecorderTests: XCTestCase {
         XCTAssertEqual(cutoff.duration, 0.3, accuracy: 0.000_001)
     }
 
+    func testHardwareEscapeIsControlInputInsteadOfRecordedContent() throws {
+        let eventTap = StubEventTapSession()
+        let recorder = EventRecorder(eventTap: eventTap)
+        XCTAssertTrue(recorder.start())
+        let escape = try XCTUnwrap(CGEvent(
+            keyboardEventSource: nil,
+            virtualKey: 53,
+            keyDown: true
+        ))
+        let escapeUp = try XCTUnwrap(CGEvent(
+            keyboardEventSource: nil,
+            virtualKey: 53,
+            keyDown: false
+        ))
+
+        eventTap.emit(type: .keyDown, event: escape)
+        eventTap.emit(type: .keyUp, event: escapeUp)
+
+        XCTAssertTrue(recorder.stop().events.isEmpty)
+    }
+
+    func testHardwareEscapeRequestsRecordingStop() async throws {
+        let eventTap = StubEventTapSession()
+        let recorder = EventRecorder(eventTap: eventTap)
+        let stopRequested = expectation(description: "Escape requests recording stop")
+        stopRequested.assertForOverFulfill = true
+        recorder.onStopRequest = { stopRequested.fulfill() }
+        XCTAssertTrue(recorder.start())
+        let escape = try XCTUnwrap(CGEvent(
+            keyboardEventSource: nil,
+            virtualKey: 53,
+            keyDown: true
+        ))
+
+        eventTap.emit(type: .keyDown, event: escape)
+        eventTap.emit(type: .keyDown, event: escape)
+
+        await fulfillment(of: [stopRequested], timeout: 1)
+    }
+
     private func mouseEvent(
         timestamp: CGEventTimestamp,
         type: CGEventType = .mouseMoved
