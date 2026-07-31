@@ -206,7 +206,6 @@ final class AppState: ObservableObject {
             return
         }
         recordingTargetBundleIdentifier = application.frontmostApplicationBundleIdentifier()
-        application.hideClicker()
         phase = .countdown(3)
         countdown.show(seconds: 3) { [weak self] remaining in
             Task { @MainActor in self?.phase = .countdown(remaining) }
@@ -222,6 +221,7 @@ final class AppState: ObservableObject {
                 }
             }
         }
+        application.hideClicker()
     }
 
     private func finishRecording(source: RecordingStopSource) {

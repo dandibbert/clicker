@@ -26,6 +26,36 @@ final class AppStateRecordingTests: XCTestCase {
         XCTAssertFalse(state.canStartRecording)
     }
 
+    func testCountdownPanelIsShownBeforeLastMainWindowIsHidden() {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Clicker-CountdownOrder-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var calls: [String] = []
+        let countdown = ImmediateCountdown(onShow: {
+            calls.append("showCountdown")
+        })
+        let application = StubRecordingApplication(
+            targetBundleIdentifier: "com.example.target",
+            onCall: { calls.append($0) }
+        )
+        let state = AppState(
+            store: ScriptStore(directory: directory),
+            recorder: StubEventRecorder(
+                capture: RecordingCapture(events: [], duration: 0)
+            ),
+            countdown: countdown,
+            application: application
+        )
+        state.hasPermission = true
+
+        state.toggleRecord(source: .ui)
+
+        XCTAssertEqual(
+            calls,
+            ["frontmostApplication", "showCountdown", "hide"]
+        )
+    }
+
     func testTargetIsCapturedBeforeHideAndUIStopSavesTrailingOnlyRecording() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Clicker-AppStateTests-\(UUID().uuidString)")
@@ -191,11 +221,18 @@ private final class StubEventRecorder: EventRecording {
 }
 
 private final class ImmediateCountdown: CountdownPresenting {
+    private let onShow: () -> Void
+
+    init(onShow: @escaping () -> Void = {}) {
+        self.onShow = onShow
+    }
+
     func show(
         seconds _: Int,
         onTick _: @escaping (Int) -> Void,
         onFinish: @escaping () -> Void
     ) {
+        onShow()
         onFinish()
     }
 
@@ -204,22 +241,30 @@ private final class ImmediateCountdown: CountdownPresenting {
 
 private final class StubRecordingApplication: RecordingApplicationControlling {
     private let targetBundleIdentifier: String?
+    private let onCall: (String) -> Void
     private(set) var calls: [String] = []
 
-    init(targetBundleIdentifier: String?) {
+    init(
+        targetBundleIdentifier: String?,
+        onCall: @escaping (String) -> Void = { _ in }
+    ) {
         self.targetBundleIdentifier = targetBundleIdentifier
+        self.onCall = onCall
     }
 
     func frontmostApplicationBundleIdentifier() -> String? {
         calls.append("frontmostApplication")
+        onCall("frontmostApplication")
         return targetBundleIdentifier
     }
 
     func hideClicker() {
         calls.append("hide")
+        onCall("hide")
     }
 
     func restoreClicker() {
         calls.append("restore")
+        onCall("restore")
     }
 }
