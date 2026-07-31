@@ -18,6 +18,7 @@ final class CountdownWindow: CountdownPresenting {
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
         panel.level = .screenSaver
+        panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.ignoresMouseEvents = true
