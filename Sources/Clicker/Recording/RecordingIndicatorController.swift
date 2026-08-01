@@ -7,6 +7,12 @@ struct ScreenDescriptor: Equatable {
     let isMain: Bool
 }
 
+struct RecordingIndicatorPanelConfiguration: Equatable {
+    let showsHint: Bool
+    let ignoresMouseEvents: Bool
+    let becomesKey: Bool
+}
+
 @MainActor
 protocol RecordingIndicatorPanel: AnyObject {
     func orderFrontRegardless()
@@ -16,7 +22,11 @@ protocol RecordingIndicatorPanel: AnyObject {
 @MainActor
 final class RecordingIndicatorController: RecordingIndicatorPresenting {
     typealias ScreenProvider = @MainActor () -> [ScreenDescriptor]
-    typealias PanelFactory = @MainActor (ScreenDescriptor, Bool, RecordingStopShortcut) -> RecordingIndicatorPanel
+    typealias PanelFactory = @MainActor (
+        ScreenDescriptor,
+        RecordingIndicatorPanelConfiguration,
+        RecordingStopShortcut
+    ) -> RecordingIndicatorPanel
 
     private let screens: ScreenProvider
     private let makePanel: PanelFactory
@@ -35,7 +45,12 @@ final class RecordingIndicatorController: RecordingIndicatorPresenting {
     func show(shortcut: RecordingStopShortcut) {
         close()
         panels = screens().map { descriptor in
-            let panel = makePanel(descriptor, descriptor.isMain, shortcut)
+            let configuration = RecordingIndicatorPanelConfiguration(
+                showsHint: descriptor.isMain,
+                ignoresMouseEvents: true,
+                becomesKey: false
+            )
+            let panel = makePanel(descriptor, configuration, shortcut)
             panel.orderFrontRegardless()
             return panel
         }
@@ -59,12 +74,12 @@ final class RecordingIndicatorController: RecordingIndicatorPresenting {
 
     private static func makePanel(
         descriptor: ScreenDescriptor,
-        showsHint: Bool,
+        configuration: RecordingIndicatorPanelConfiguration,
         shortcut: RecordingStopShortcut
     ) -> RecordingIndicatorPanel {
         AppKitRecordingIndicatorPanel(
             frame: descriptor.frame,
-            showsHint: showsHint,
+            configuration: configuration,
             shortcut: shortcut
         )
     }
@@ -72,9 +87,16 @@ final class RecordingIndicatorController: RecordingIndicatorPresenting {
 
 @MainActor
 private final class AppKitRecordingIndicatorPanel: NSPanel, RecordingIndicatorPanel {
-    override var canBecomeKey: Bool { false }
+    private let becomesKey: Bool
 
-    init(frame: CGRect, showsHint: Bool, shortcut: RecordingStopShortcut) {
+    override var canBecomeKey: Bool { becomesKey }
+
+    init(
+        frame: CGRect,
+        configuration: RecordingIndicatorPanelConfiguration,
+        shortcut: RecordingStopShortcut
+    ) {
+        becomesKey = configuration.becomesKey
         super.init(
             contentRect: frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -85,10 +107,13 @@ private final class AppKitRecordingIndicatorPanel: NSPanel, RecordingIndicatorPa
         hidesOnDeactivate = false
         isOpaque = false
         backgroundColor = .clear
-        ignoresMouseEvents = true
+        ignoresMouseEvents = configuration.ignoresMouseEvents
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         contentView = NSHostingView(
-            rootView: RecordingIndicatorView(shortcut: shortcut, showsHint: showsHint)
+            rootView: RecordingIndicatorView(
+                shortcut: shortcut,
+                showsHint: configuration.showsHint
+            )
         )
     }
 

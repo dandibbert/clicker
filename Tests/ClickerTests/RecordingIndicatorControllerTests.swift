@@ -7,7 +7,7 @@ final class RecordingIndicatorControllerTests: XCTestCase {
     private let mainFrame = CGRect(x: 0, y: 0, width: 1440, height: 900)
     private let sideFrame = CGRect(x: 1440, y: 0, width: 1024, height: 768)
 
-    func testShowCreatesOnePanelPerScreenAndMainScreenGetsHint() {
+    func testShowCreatesOneNonInteractivePanelPerScreenAndMainScreenGetsHint() {
         let screens = [
             ScreenDescriptor(id: "main", frame: mainFrame, isMain: true),
             ScreenDescriptor(id: "side", frame: sideFrame, isMain: false)
@@ -19,6 +19,8 @@ final class RecordingIndicatorControllerTests: XCTestCase {
 
         XCTAssertEqual(panels.created.map(\.descriptor.id), ["main", "side"])
         XCTAssertEqual(panels.created.map(\.showsHint), [true, false])
+        XCTAssertEqual(panels.created.map(\.ignoresMouseEvents), [true, true])
+        XCTAssertEqual(panels.created.map(\.becomesKey), [false, false])
         XCTAssertEqual(panels.created.map(\.orderFrontCount), [1, 1])
     }
 
@@ -42,13 +44,16 @@ final class RecordingIndicatorControllerTests: XCTestCase {
 @MainActor
 private final class PanelSpy: RecordingIndicatorPanel {
     let descriptor: ScreenDescriptor
-    let showsHint: Bool
+    let configuration: RecordingIndicatorPanelConfiguration
+    var showsHint: Bool { configuration.showsHint }
+    var ignoresMouseEvents: Bool { configuration.ignoresMouseEvents }
+    var becomesKey: Bool { configuration.becomesKey }
     private(set) var orderFrontCount = 0
     private(set) var orderOutCount = 0
 
-    init(descriptor: ScreenDescriptor, showsHint: Bool) {
+    init(descriptor: ScreenDescriptor, configuration: RecordingIndicatorPanelConfiguration) {
         self.descriptor = descriptor
-        self.showsHint = showsHint
+        self.configuration = configuration
     }
 
     func orderFrontRegardless() {
@@ -65,10 +70,10 @@ private final class PanelSpy: RecordingIndicatorPanel {
 
         func make(
             descriptor: ScreenDescriptor,
-            showsHint: Bool,
+            configuration: RecordingIndicatorPanelConfiguration,
             shortcut _: RecordingStopShortcut
         ) -> RecordingIndicatorPanel {
-            let panel = PanelSpy(descriptor: descriptor, showsHint: showsHint)
+            let panel = PanelSpy(descriptor: descriptor, configuration: configuration)
             created.append(panel)
             return panel
         }
