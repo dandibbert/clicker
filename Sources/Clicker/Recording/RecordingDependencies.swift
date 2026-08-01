@@ -20,6 +20,12 @@ protocol CountdownPresenting: AnyObject {
     func close()
 }
 
+@MainActor
+protocol RecordingIndicatorPresenting: AnyObject {
+    func show(shortcut: RecordingStopShortcut)
+    func close()
+}
+
 protocol RecordingApplicationControlling: AnyObject {
     func frontmostApplicationBundleIdentifier() -> String?
     func hideClicker()
