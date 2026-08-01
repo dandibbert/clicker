@@ -290,6 +290,7 @@ final class AppState: ObservableObject {
     // MARK: - Playback
 
     private var playbackGeneration = 0
+    private var playbackFocusGeneration: Int?
 
     func togglePlay() {
         switch phase {
@@ -304,8 +305,15 @@ final class AppState: ObservableObject {
             guard let script = selectedScript else { return }
             let plan = BlockExpander.plan(for: script)
             guard !plan.steps.isEmpty || plan.duration > 0 else { return }
+            let fallback = externalApplicationTracker.mostRecentExternalBundleIdentifier
+            application.hideClicker()
+            activatePlaybackTarget(
+                saved: script.targetBundleIdentifier,
+                fallback: fallback
+            )
             playbackGeneration += 1
             let generation = playbackGeneration
+            playbackFocusGeneration = generation
             phase = .playing(iteration: 1, currentBlockID: nil)
             playbackEngine.play(script: script) { [weak self] iteration in
                 Task { @MainActor in
@@ -328,6 +336,7 @@ final class AppState: ObservableObject {
                           case .playing = self.phase else { return }
                     self.playbackGeneration += 1
                     self.phase = .idle
+                    self.restorePlaybackFocus(ownedBy: generation)
                 }
             }
         case .countdown, .recording:
@@ -337,9 +346,30 @@ final class AppState: ObservableObject {
 
     private func stopPlaybackIfNeeded() {
         guard case .playing = phase else { return }
+        let generation = playbackGeneration
         playbackGeneration += 1
         playbackEngine.stop()
         phase = .idle
+        restorePlaybackFocus(ownedBy: generation)
+    }
+
+    private func activatePlaybackTarget(saved: String?, fallback: String?) {
+        var attemptedIdentifiers: Set<String> = []
+        for identifier in [saved, fallback] {
+            guard let identifier,
+                  !identifier.isEmpty,
+                  identifier != "local.rayscripts.clicker",
+                  attemptedIdentifiers.insert(identifier).inserted else { continue }
+            if application.activateExternalApplication(bundleIdentifier: identifier) {
+                return
+            }
+        }
+    }
+
+    private func restorePlaybackFocus(ownedBy generation: Int) {
+        guard playbackFocusGeneration == generation else { return }
+        playbackFocusGeneration = nil
+        application.restoreClicker()
     }
 
     private func makePersistenceIssue(

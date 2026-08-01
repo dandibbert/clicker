@@ -1,5 +1,4 @@
 import Foundation
-import AppKit
 import ClickerCore
 
 /// 按时间轴投递回放步骤，支持重复与中断。
@@ -9,11 +8,9 @@ final class PlaybackEngine: PlaybackControlling {
     private var generation = 0
     private var activeGeneration: Int?
     private var pressedInputs = PressedInputTracker()
-    private var applicationSession: PlaybackApplicationSession?
     private let timing: PlaybackTiming
     private let poster: PlaybackEventPosting
     private let stopMonitor: PlaybackStopMonitoring
-    private let applicationController: PlaybackApplicationControlling
 
     var isPlaying: Bool { task != nil }
 
@@ -21,7 +18,6 @@ final class PlaybackEngine: PlaybackControlling {
         self.timing = SystemPlaybackTiming()
         self.poster = SystemPlaybackEventPoster()
         self.stopMonitor = SystemPlaybackStopMonitor()
-        self.applicationController = SystemPlaybackApplicationController()
     }
 
     init(
@@ -32,19 +28,6 @@ final class PlaybackEngine: PlaybackControlling {
         self.timing = timing
         self.poster = poster
         self.stopMonitor = stopMonitor
-        self.applicationController = SystemPlaybackApplicationController()
-    }
-
-    init(
-        timing: PlaybackTiming,
-        poster: PlaybackEventPosting,
-        stopMonitor: PlaybackStopMonitoring,
-        applicationController: PlaybackApplicationControlling
-    ) {
-        self.timing = timing
-        self.poster = poster
-        self.stopMonitor = stopMonitor
-        self.applicationController = applicationController
     }
 
     /// onIteration(第几轮，从 1 计)、onBlock(当前块 ID)、onFinish 均在主线程回调。
@@ -59,9 +42,6 @@ final class PlaybackEngine: PlaybackControlling {
         guard !plan.steps.isEmpty || plan.duration > 0 else { onFinish(); return }
         activeGeneration = gen
         pressedInputs = PressedInputTracker()
-        applicationSession = applicationController.captureAndActivate(
-            target: script.targetBundleIdentifier
-        )
 
         stopMonitor.start { [weak self] in
             guard let self, self.isPlaying else { return }
@@ -139,11 +119,8 @@ final class PlaybackEngine: PlaybackControlling {
         guard activeGeneration != nil else { return }
         activeGeneration = nil
         let releaseActions = pressedInputs.releaseActions()
-        let session = applicationSession
-        applicationSession = nil
         for action in releaseActions {
             poster.post(action)
         }
-        session?.restore()
     }
 }
