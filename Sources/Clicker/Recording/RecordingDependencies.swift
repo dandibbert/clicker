@@ -32,8 +32,9 @@ final class SystemRecordingApplicationController: RecordingApplicationControllin
     typealias WindowAction = (WindowHandle) -> Void
 
     private let visibleWindows: WindowList
-    private let orderOut: WindowAction
-    private let orderFront: WindowAction
+    private let conceal: WindowAction
+    private let reveal: WindowAction
+    private let deactivateClicker: () -> Void
     private let activateClicker: () -> Void
     private var hiddenWindows: [WindowHandle] = []
 
@@ -44,22 +45,38 @@ final class SystemRecordingApplicationController: RecordingApplicationControllin
                     window.isVisible && !(window is NSPanel)
                 }
             },
-            orderOut: { ($0 as? NSWindow)?.orderOut(nil) },
-            orderFront: { ($0 as? NSWindow)?.orderFront(nil) },
+            conceal: Self.conceal,
+            reveal: Self.reveal,
+            deactivateClicker: { NSApp.deactivate() },
             activateClicker: { NSApp.activate(ignoringOtherApps: true) }
         )
     }
 
     init(
         visibleWindows: @escaping WindowList,
-        orderOut: @escaping WindowAction,
-        orderFront: @escaping WindowAction,
+        conceal: @escaping WindowAction,
+        reveal: @escaping WindowAction,
+        deactivateClicker: @escaping () -> Void,
         activateClicker: @escaping () -> Void
     ) {
         self.visibleWindows = visibleWindows
-        self.orderOut = orderOut
-        self.orderFront = orderFront
+        self.conceal = conceal
+        self.reveal = reveal
+        self.deactivateClicker = deactivateClicker
         self.activateClicker = activateClicker
+    }
+
+    static func conceal(_ handle: WindowHandle) {
+        guard let window = handle as? NSWindow else { return }
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+    }
+
+    static func reveal(_ handle: WindowHandle) {
+        guard let window = handle as? NSWindow else { return }
+        window.alphaValue = 1
+        window.ignoresMouseEvents = false
+        window.orderFront(nil)
     }
 
     func frontmostApplicationBundleIdentifier() -> String? {
@@ -68,11 +85,12 @@ final class SystemRecordingApplicationController: RecordingApplicationControllin
 
     func hideClicker() {
         hiddenWindows = visibleWindows()
-        hiddenWindows.forEach(orderOut)
+        hiddenWindows.forEach(conceal)
+        deactivateClicker()
     }
 
     func restoreClicker() {
-        hiddenWindows.forEach(orderFront)
+        hiddenWindows.forEach(reveal)
         hiddenWindows = []
         activateClicker()
     }
