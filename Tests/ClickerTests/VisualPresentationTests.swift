@@ -1,8 +1,69 @@
 import AppKit
+import ClickerCore
 import XCTest
 @testable import Clicker
 
 final class VisualPresentationTests: XCTestCase {
+    func testScriptRowIncludesActionCountAndModifiedMetadata() {
+        let modifiedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let script = Script(
+            name: "网页发布",
+            modifiedAt: modifiedAt,
+            blocks: [.wait(WaitBlock(duration: 1))]
+        )
+
+        let model = ScriptRowPresentation(script: script, now: modifiedAt)
+
+        XCTAssertEqual(model.name, "网页发布")
+        XCTAssertEqual(model.actionCountText, "1 个动作")
+        XCTAssertEqual(model.modifiedText, "刚刚修改")
+        XCTAssertEqual(model.metadataText, "1 个动作 · 刚刚修改")
+        XCTAssertTrue(model.accessibilityLabel.contains("网页发布"))
+        XCTAssertTrue(model.accessibilityLabel.contains("1 个动作"))
+        XCTAssertTrue(model.accessibilityLabel.contains("刚刚修改"))
+    }
+
+    func testScriptRowPluralActionCountUsesFixedRelativeModificationTime() {
+        let modifiedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let now = modifiedAt.addingTimeInterval(2 * 60 * 60)
+        let script = Script(
+            name: "整理文件",
+            modifiedAt: modifiedAt,
+            blocks: [
+                .wait(WaitBlock(duration: 1)),
+                .wait(WaitBlock(duration: 2)),
+            ]
+        )
+
+        let model = ScriptRowPresentation(script: script, now: now)
+
+        XCTAssertEqual(model.actionCountText, "2 个动作")
+        XCTAssertEqual(model.modifiedText, "2 小时前修改")
+    }
+
+    func testEmptyLibraryOffersRecordingAction() {
+        let model = ClickerEmptyStatePresentation(kind: .emptyLibrary)
+
+        XCTAssertEqual(model.title, "还没有脚本")
+        XCTAssertEqual(model.actionTitle, "开始录制")
+    }
+
+    func testNoSelectionExplainsHowToOpenAScriptWithoutAnAction() {
+        let model = ClickerEmptyStatePresentation(kind: .noSelection)
+
+        XCTAssertEqual(model.title, "选择一个脚本")
+        XCTAssertTrue(model.description.contains("左侧脚本库"))
+        XCTAssertNil(model.actionTitle)
+    }
+
+    func testEmptyScriptInvitesTheFirstRecordedAction() {
+        let model = ClickerEmptyStatePresentation(kind: .emptyScript)
+
+        XCTAssertEqual(model.title, "这个脚本还没有动作")
+        XCTAssertTrue(model.description.contains("添加第一个动作"))
+        XCTAssertEqual(model.actionTitle, "开始录制")
+    }
+
     func testIdlePrimaryActionsHaveEqualRecordAndPlaybackEntries() {
         let pair = PrimaryActionPresentation.pair(phase: .idle, hasPlayableScript: true)
 

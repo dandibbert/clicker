@@ -10,8 +10,15 @@ struct MainView: View {
             if state.hasPermission {
                 NavigationSplitView {
                     ScriptListView()
+                        .navigationSplitViewColumnWidth(min: 210, ideal: 240)
                 } detail: {
-                    ScriptDetailView()
+                    if state.selectedScript == nil {
+                        ClickerEmptyStateView(kind: .noSelection)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(ClickerVisualTheme.canvas)
+                    } else {
+                        ScriptDetailView()
+                    }
                 }
             } else {
                 PermissionGuideView()
