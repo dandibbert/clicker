@@ -144,6 +144,7 @@ final class AppState: ObservableObject {
     private var observers: [NSObjectProtocol] = []
     private var recordingTargetBundleIdentifier: String?
     private var activeStopShortcut: RecordingStopShortcut?
+    private var recordingCountdownGeneration = 0
 
     /// ClickerApp 启动时调用一次。
     func setUp() {
@@ -186,6 +187,7 @@ final class AppState: ObservableObject {
         case .idle:
             startCountdown()
         case .countdown:
+            recordingCountdownGeneration += 1
             closeRecordingIndicator()
             countdown.close()
             phase = .idle
@@ -213,14 +215,22 @@ final class AppState: ObservableObject {
             refreshPermission()
             return
         }
+        recordingCountdownGeneration += 1
+        let generation = recordingCountdownGeneration
         activeStopShortcut = stopShortcutStore.shortcut
         recordingTargetBundleIdentifier = application.frontmostApplicationBundleIdentifier()
         phase = .countdown(3)
         countdown.show(seconds: 3) { [weak self] remaining in
-            Task { @MainActor in self?.phase = .countdown(remaining) }
+            Task { @MainActor in
+                guard let self,
+                      self.recordingCountdownGeneration == generation,
+                      case .countdown = self.phase else { return }
+                self.phase = .countdown(remaining)
+            }
         } onFinish: { [weak self] in
             Task { @MainActor in
                 guard let self,
+                      self.recordingCountdownGeneration == generation,
                       case .countdown = self.phase,
                       let stopShortcut = self.activeStopShortcut else { return }
                 if self.recorder.start(stopShortcut: stopShortcut) {

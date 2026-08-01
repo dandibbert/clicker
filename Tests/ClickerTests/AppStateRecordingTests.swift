@@ -64,6 +64,38 @@ final class AppStateRecordingTests: XCTestCase {
         XCTAssertEqual(indicator.closeCallCount, 1)
     }
 
+    func testCancelledCountdownCallbacksCannotBorrowReplacementCountdownState() async {
+        let recorder = StubEventRecorder(capture: .init(events: [], duration: 0))
+        let countdown = ControlledCountdown()
+        let indicator = StubRecordingIndicator()
+        let state = makeState(
+            recorder: recorder,
+            countdown: countdown,
+            indicator: indicator
+        )
+        state.hasPermission = true
+
+        state.toggleRecord(source: .ui)
+        state.toggleRecord(source: .ui)
+        state.toggleRecord(source: .ui)
+
+        countdown.tick(remaining: 1, at: 0)
+        await Task.yield()
+        XCTAssertEqual(state.phase, .countdown(3))
+
+        countdown.finish(at: 0)
+        await Task.yield()
+        XCTAssertTrue(recorder.startShortcuts.isEmpty)
+        XCTAssertTrue(indicator.shownShortcuts.isEmpty)
+        XCTAssertEqual(state.phase, .countdown(3))
+
+        countdown.finish(at: 1)
+        await Task.yield()
+        XCTAssertEqual(recorder.startShortcuts, [.defaultValue])
+        XCTAssertEqual(indicator.shownShortcuts, [.defaultValue])
+        XCTAssertEqual(state.phase, .recording)
+    }
+
     func testUIStopClosesIndicator() async {
         let indicator = StubRecordingIndicator()
         let state = makeState(
@@ -386,20 +418,26 @@ private final class StubRecordingIndicator: RecordingIndicatorPresenting {
 }
 
 private final class ControlledCountdown: CountdownPresenting {
-    private var onFinish: (() -> Void)?
+    private var onTicks: [(Int) -> Void] = []
+    private var onFinishes: [() -> Void] = []
 
     func show(
         seconds _: Int,
-        onTick _: @escaping (Int) -> Void,
+        onTick: @escaping (Int) -> Void,
         onFinish: @escaping () -> Void
     ) {
-        self.onFinish = onFinish
+        onTicks.append(onTick)
+        onFinishes.append(onFinish)
     }
 
     func close() {}
 
-    func finish() {
-        onFinish?()
+    func tick(remaining: Int, at index: Int) {
+        onTicks[index](remaining)
+    }
+
+    func finish(at index: Int = 0) {
+        onFinishes[index]()
     }
 }
 
