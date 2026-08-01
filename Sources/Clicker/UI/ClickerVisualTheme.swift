@@ -10,7 +10,6 @@ enum ClickerVisualTheme {
         case secondaryText
         case separator
         case selection
-        case accent
         case recordFill
         case playbackFill
         case activeTrail
@@ -23,7 +22,6 @@ enum ClickerVisualTheme {
     static let secondaryText = color(for: .secondaryText)
     static let separator = color(for: .separator)
     static let selection = color(for: .selection)
-    static let accent = color(for: .accent)
     static let recordFill = color(for: .recordFill)
     static let playbackFill = color(for: .playbackFill)
     static let activeTrail = color(for: .activeTrail)
@@ -42,11 +40,14 @@ enum ClickerVisualTheme {
         return (isDarkAppearance(appearance) ? palette.dark : palette.light).nsColor
     }
 
-    private static func color(for role: ColorRole) -> Color {
-        let dynamicColor = NSColor(name: NSColor.Name("clicker.\(role.rawValue)")) { appearance in
+    static func dynamicNSColor(for role: ColorRole) -> NSColor {
+        NSColor(name: NSColor.Name("clicker.\(role.rawValue)")) { appearance in
             resolvedColor(for: role, appearance: appearance)
         }
-        return Color(nsColor: dynamicColor)
+    }
+
+    private static func color(for role: ColorRole) -> Color {
+        Color(nsColor: dynamicNSColor(for: role))
     }
 
     private static func palette(for role: ColorRole) -> (light: RGB, dark: RGB) {
@@ -59,7 +60,7 @@ enum ClickerVisualTheme {
             (.inkBlack, .warmWhite)
         case .secondaryText, .separator:
             (.warmGray, .warmGray)
-        case .accent, .recordFill, .activeTrail:
+        case .recordFill, .activeTrail:
             (.trailRed, .trailRed)
         case .playbackFill:
             (.inkBlack, .warmWhite)
