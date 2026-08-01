@@ -2,17 +2,31 @@ import AppKit
 import SwiftUI
 
 enum ClickerVisualTheme {
-    static let canvas = dynamicColor(light: "F1EADC", dark: "151418", name: "clicker.canvas")
-    static let cardSurface = dynamicColor(light: "FAF4E8", dark: "232126", name: "clicker.cardSurface")
-    static let elevatedSurface = dynamicColor(light: "FFFFFF", dark: "2C292E", name: "clicker.elevatedSurface")
-    static let primaryText = dynamicColor(light: "171619", dark: "F1EADC", name: "clicker.primaryText")
-    static let secondaryText = dynamicColor(light: "8B847A", dark: "B8B1A8", name: "clicker.secondaryText")
-    static let separator = dynamicColor(light: "D2CBC0", dark: "403C42", name: "clicker.separator")
-    static let selection = dynamicColor(light: "E7DDD0", dark: "302D32", name: "clicker.selection")
-    static let accent = dynamicColor(light: "E73836", dark: "E73836", name: "clicker.accent")
-    static let recordFill = dynamicColor(light: "E73836", dark: "E73836", name: "clicker.recordFill")
-    static let playbackFill = dynamicColor(light: "171619", dark: "F1EADC", name: "clicker.playbackFill")
-    static let activeTrail = dynamicColor(light: "E73836", dark: "E73836", name: "clicker.activeTrail")
+    enum ColorRole: String, CaseIterable {
+        case canvas
+        case cardSurface
+        case elevatedSurface
+        case primaryText
+        case secondaryText
+        case separator
+        case selection
+        case accent
+        case recordFill
+        case playbackFill
+        case activeTrail
+    }
+
+    static let canvas = color(for: .canvas)
+    static let cardSurface = color(for: .cardSurface)
+    static let elevatedSurface = color(for: .elevatedSurface)
+    static let primaryText = color(for: .primaryText)
+    static let secondaryText = color(for: .secondaryText)
+    static let separator = color(for: .separator)
+    static let selection = color(for: .selection)
+    static let accent = color(for: .accent)
+    static let recordFill = color(for: .recordFill)
+    static let playbackFill = color(for: .playbackFill)
+    static let activeTrail = color(for: .activeTrail)
 
     static let spacing4: CGFloat = 4
     static let spacing8: CGFloat = 8
@@ -23,22 +37,58 @@ enum ClickerVisualTheme {
     static let panelCornerRadius: CGFloat = 14
     static let primaryControlHeight: CGFloat = 34
 
-    private static func dynamicColor(light: String, dark: String, name: String) -> Color {
-        let lightColor = nsColor(hex: light)
-        let darkColor = nsColor(hex: dark)
-        let dynamicColor = NSColor(name: NSColor.Name(name)) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? darkColor : lightColor
+    static func resolvedColor(for role: ColorRole, appearance: NSAppearance) -> NSColor {
+        let palette = palette(for: role)
+        return (isDarkAppearance(appearance) ? palette.dark : palette.light).nsColor
+    }
+
+    private static func color(for role: ColorRole) -> Color {
+        let dynamicColor = NSColor(name: NSColor.Name("clicker.\(role.rawValue)")) { appearance in
+            resolvedColor(for: role, appearance: appearance)
         }
         return Color(nsColor: dynamicColor)
     }
 
-    private static func nsColor(hex: String) -> NSColor {
-        let value = UInt64(hex, radix: 16) ?? 0
-        return NSColor(
-            red: CGFloat((value >> 16) & 0xFF) / 255,
-            green: CGFloat((value >> 8) & 0xFF) / 255,
-            blue: CGFloat(value & 0xFF) / 255,
-            alpha: 1
-        )
+    private static func palette(for role: ColorRole) -> (light: RGB, dark: RGB) {
+        switch role {
+        case .canvas:
+            (.warmWhite, .darkCanvas)
+        case .cardSurface, .elevatedSurface, .selection:
+            (.warmWhite, .darkCard)
+        case .primaryText:
+            (.inkBlack, .warmWhite)
+        case .secondaryText, .separator:
+            (.warmGray, .warmGray)
+        case .accent, .recordFill, .activeTrail:
+            (.trailRed, .trailRed)
+        case .playbackFill:
+            (.inkBlack, .warmWhite)
+        }
+    }
+
+    private static func isDarkAppearance(_ appearance: NSAppearance) -> Bool {
+        switch appearance.name {
+        case .darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua:
+            true
+        default:
+            false
+        }
+    }
+
+    private struct RGB {
+        let red: CGFloat
+        let green: CGFloat
+        let blue: CGFloat
+
+        var nsColor: NSColor {
+            NSColor(red: red, green: green, blue: blue, alpha: 1)
+        }
+
+        static let warmWhite = RGB(red: 0xF1 / 255, green: 0xEA / 255, blue: 0xDC / 255)
+        static let inkBlack = RGB(red: 0x17 / 255, green: 0x16 / 255, blue: 0x19 / 255)
+        static let trailRed = RGB(red: 0xE7 / 255, green: 0x38 / 255, blue: 0x36 / 255)
+        static let warmGray = RGB(red: 0x8B / 255, green: 0x84 / 255, blue: 0x7A / 255)
+        static let darkCanvas = RGB(red: 0x15 / 255, green: 0x14 / 255, blue: 0x18 / 255)
+        static let darkCard = RGB(red: 0x23 / 255, green: 0x21 / 255, blue: 0x26 / 255)
     }
 }
