@@ -34,6 +34,7 @@ final class ApplicationServiceCoordinator {
     func start() {
         guard !hasStarted else { return }
         hasStarted = true
+        state.externalApplicationTracker.start()
         retainedStatusItem = makeStatusItem()
         state.reportHotKeyRegistrationIssues(registerHotKeys())
     }

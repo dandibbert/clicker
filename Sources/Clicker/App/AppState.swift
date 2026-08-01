@@ -26,6 +26,7 @@ final class AppState: ObservableObject {
     private let recorder: EventRecording
     private let countdown: CountdownPresenting
     private let application: ApplicationControlling
+    let externalApplicationTracker: ExternalApplicationTracking
     private let playbackEngine: PlaybackControlling
     private let stopShortcutStore: RecordingStopShortcutProviding
     private let recordingIndicator: RecordingIndicatorPresenting
@@ -35,6 +36,7 @@ final class AppState: ObservableObject {
         recorder: EventRecording = EventRecorder(),
         countdown: CountdownPresenting = CountdownWindow(),
         application: ApplicationControlling? = nil,
+        externalApplicationTracker: ExternalApplicationTracking = SystemExternalApplicationTracker(),
         stopShortcutStore: RecordingStopShortcutProviding = RecordingStopShortcutStore(),
         recordingIndicator: RecordingIndicatorPresenting? = nil,
         playbackEngine: PlaybackControlling? = nil
@@ -43,6 +45,7 @@ final class AppState: ObservableObject {
         self.recorder = recorder
         self.countdown = countdown
         self.application = application ?? SystemApplicationController()
+        self.externalApplicationTracker = externalApplicationTracker
         self.stopShortcutStore = stopShortcutStore
         self.recordingIndicator = recordingIndicator ?? RecordingIndicatorController()
         self.playbackEngine = playbackEngine ?? PlaybackEngine()

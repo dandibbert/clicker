@@ -4,6 +4,24 @@ import ClickerCore
 
 @MainActor
 final class ApplicationServicesTests: XCTestCase {
+    func testSystemServicesStartTrackerOnlyOnce() {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Clicker-ApplicationServices-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let tracker = StubExternalApplicationTracker()
+        let state = AppState(store: ScriptStore(directory: directory), externalApplicationTracker: tracker)
+        let services = ApplicationServiceCoordinator(
+            state: state,
+            makeStatusItem: { NSObject() },
+            registerHotKeys: { [] }
+        )
+
+        services.start()
+        services.start()
+
+        XCTAssertEqual(tracker.startCallCount, 1)
+    }
+
     func testSystemServicesAreDeferredUntilStartAndStartedOnlyOnce() {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Clicker-ApplicationServices-\(UUID().uuidString)")
@@ -35,5 +53,14 @@ final class ApplicationServicesTests: XCTestCase {
         XCTAssertEqual(statusItemCreationCount, 1)
         XCTAssertEqual(hotKeyRegistrationCount, 1)
         XCTAssertEqual(state.hotKeyRegistrationIssues, [issue])
+    }
+}
+
+private final class StubExternalApplicationTracker: ExternalApplicationTracking {
+    var mostRecentExternalBundleIdentifier: String?
+    private(set) var startCallCount = 0
+
+    func start() {
+        startCallCount += 1
     }
 }
