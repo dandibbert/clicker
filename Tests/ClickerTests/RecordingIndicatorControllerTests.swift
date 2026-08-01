@@ -9,8 +9,8 @@ final class RecordingIndicatorControllerTests: XCTestCase {
 
     func testShowCreatesOneNonInteractivePanelPerScreenAndMainScreenGetsHint() {
         let screens = [
-            ScreenDescriptor(id: "main", frame: mainFrame, isMain: true),
-            ScreenDescriptor(id: "side", frame: sideFrame, isMain: false)
+            ScreenDescriptor(id: "main", frame: mainFrame, isMain: true, safeAreaTop: 48),
+            ScreenDescriptor(id: "side", frame: sideFrame, isMain: false, safeAreaTop: 24)
         ]
         let panels = PanelSpy.factory()
         let controller = RecordingIndicatorController(screens: { screens }, makePanel: panels.make)
@@ -19,6 +19,7 @@ final class RecordingIndicatorControllerTests: XCTestCase {
 
         XCTAssertEqual(panels.created.map(\.descriptor.id), ["main", "side"])
         XCTAssertEqual(panels.created.map(\.showsHint), [true, false])
+        XCTAssertEqual(panels.created.map(\.hintTopPadding), [76, 0])
         XCTAssertEqual(panels.created.map(\.ignoresMouseEvents), [true, true])
         XCTAssertEqual(panels.created.map(\.becomesKey), [false, false])
         XCTAssertEqual(panels.created.map(\.orderFrontCount), [1, 1])
@@ -26,8 +27,8 @@ final class RecordingIndicatorControllerTests: XCTestCase {
 
     func testCloseOrdersOutEveryPanelOnceAndCanRepeat() {
         let screens = [
-            ScreenDescriptor(id: "main", frame: mainFrame, isMain: true),
-            ScreenDescriptor(id: "side", frame: sideFrame, isMain: false)
+            ScreenDescriptor(id: "main", frame: mainFrame, isMain: true, safeAreaTop: 48),
+            ScreenDescriptor(id: "side", frame: sideFrame, isMain: false, safeAreaTop: 24)
         ]
         let panels = PanelSpy.factory()
         let controller = RecordingIndicatorController(screens: { screens }, makePanel: panels.make)
@@ -46,6 +47,7 @@ private final class PanelSpy: RecordingIndicatorPanel {
     let descriptor: ScreenDescriptor
     let configuration: RecordingIndicatorPanelConfiguration
     var showsHint: Bool { configuration.showsHint }
+    var hintTopPadding: CGFloat { configuration.hintTopPadding }
     var ignoresMouseEvents: Bool { configuration.ignoresMouseEvents }
     var becomesKey: Bool { configuration.becomesKey }
     private(set) var orderFrontCount = 0

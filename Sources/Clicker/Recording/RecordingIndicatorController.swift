@@ -5,10 +5,12 @@ struct ScreenDescriptor: Equatable {
     let id: String
     let frame: CGRect
     let isMain: Bool
+    let safeAreaTop: CGFloat
 }
 
 struct RecordingIndicatorPanelConfiguration: Equatable {
     let showsHint: Bool
+    let hintTopPadding: CGFloat
     let ignoresMouseEvents: Bool
     let becomesKey: Bool
 }
@@ -47,6 +49,7 @@ final class RecordingIndicatorController: RecordingIndicatorPresenting {
         panels = screens().map { descriptor in
             let configuration = RecordingIndicatorPanelConfiguration(
                 showsHint: descriptor.isMain,
+                hintTopPadding: descriptor.isMain ? descriptor.safeAreaTop + 28 : 0,
                 ignoresMouseEvents: true,
                 becomesKey: false
             )
@@ -67,7 +70,8 @@ final class RecordingIndicatorController: RecordingIndicatorPresenting {
             ScreenDescriptor(
                 id: String(ObjectIdentifier(screen).hashValue),
                 frame: screen.frame,
-                isMain: screen === mainScreen
+                isMain: screen === mainScreen,
+                safeAreaTop: screen.safeAreaInsets.top
             )
         }
     }
@@ -112,7 +116,8 @@ private final class AppKitRecordingIndicatorPanel: NSPanel, RecordingIndicatorPa
         contentView = NSHostingView(
             rootView: RecordingIndicatorView(
                 shortcut: shortcut,
-                showsHint: configuration.showsHint
+                showsHint: configuration.showsHint,
+                hintTopPadding: configuration.hintTopPadding
             )
         )
     }

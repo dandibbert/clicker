@@ -3,6 +3,7 @@ import SwiftUI
 struct RecordingIndicatorView: View {
     let shortcut: RecordingStopShortcut
     let showsHint: Bool
+    let hintTopPadding: CGFloat
 
     @State private var isPulsing = false
 
@@ -28,7 +29,7 @@ struct RecordingIndicatorView: View {
                         .padding(.vertical, 9)
                         .background(.ultraThinMaterial, in: Capsule())
                         .environment(\.colorScheme, .dark)
-                        .padding(.top, 28)
+                        .padding(.top, hintTopPadding)
                     Spacer()
                 }
             }
