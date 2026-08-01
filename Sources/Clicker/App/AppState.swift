@@ -199,6 +199,7 @@ final class AppState: ObservableObject {
             closeRecordingIndicator()
             countdown.close()
             phase = .idle
+            recordingTargetBundleIdentifier = nil
             application.restoreClicker()
         case .recording:
             finishRecording(source: source)
@@ -225,8 +226,9 @@ final class AppState: ObservableObject {
         }
         recordingCountdownGeneration += 1
         let generation = recordingCountdownGeneration
+        let target = externalApplicationTracker.mostRecentExternalBundleIdentifier
+        recordingTargetBundleIdentifier = target
         activeStopShortcut = stopShortcutStore.shortcut
-        recordingTargetBundleIdentifier = application.frontmostApplicationBundleIdentifier()
         phase = .countdown(3)
         countdown.show(seconds: 3) { [weak self] remaining in
             Task { @MainActor in
@@ -247,12 +249,16 @@ final class AppState: ObservableObject {
                 } else {
                     self.closeRecordingIndicator()
                     self.phase = .idle
+                    self.recordingTargetBundleIdentifier = nil
                     self.refreshPermission()
                     self.application.restoreClicker()
                 }
             }
         }
         application.hideClicker()
+        if let target {
+            _ = application.activateExternalApplication(bundleIdentifier: target)
+        }
     }
 
     private func finishRecording(source: RecordingStopSource) {

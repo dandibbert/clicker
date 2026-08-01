@@ -2,7 +2,6 @@ import AppKit
 
 @MainActor
 protocol ApplicationControlling: AnyObject {
-    func frontmostApplicationBundleIdentifier() -> String?
     func activateExternalApplication(bundleIdentifier: String) -> Bool
     func hideClicker()
     func restoreClicker()
@@ -71,10 +70,6 @@ final class SystemApplicationController: ApplicationControlling {
         window.alphaValue = 1
         window.ignoresMouseEvents = false
         window.orderFront(nil)
-    }
-
-    func frontmostApplicationBundleIdentifier() -> String? {
-        NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     }
 
     func activateExternalApplication(bundleIdentifier: String) -> Bool {

@@ -37,9 +37,11 @@ final class AppStateRecordingTests: XCTestCase {
             startResult: false
         )
         let indicator = StubRecordingIndicator()
+        let application = StubApplicationController()
         let state = makeState(
             recorder: recorder,
             countdown: ImmediateCountdown(),
+            application: application,
             indicator: indicator
         )
         state.hasPermission = true
@@ -49,12 +51,18 @@ final class AppStateRecordingTests: XCTestCase {
 
         XCTAssertTrue(indicator.shownShortcuts.isEmpty)
         XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(application.restoreCallCount, 1)
     }
 
     func testCountdownCancellationDoesNotShowAndClosesIndicator() {
         let countdown = ControlledCountdown()
         let indicator = StubRecordingIndicator()
-        let state = makeState(countdown: countdown, indicator: indicator)
+        let application = StubApplicationController()
+        let state = makeState(
+            countdown: countdown,
+            application: application,
+            indicator: indicator
+        )
         state.hasPermission = true
 
         state.toggleRecord(source: .ui)
@@ -62,6 +70,7 @@ final class AppStateRecordingTests: XCTestCase {
 
         XCTAssertTrue(indicator.shownShortcuts.isEmpty)
         XCTAssertEqual(indicator.closeCallCount, 1)
+        XCTAssertEqual(application.restoreCallCount, 1)
     }
 
     func testCancelledCountdownCallbacksCannotBorrowReplacementCountdownState() async {
@@ -98,8 +107,10 @@ final class AppStateRecordingTests: XCTestCase {
 
     func testUIStopClosesIndicator() async {
         let indicator = StubRecordingIndicator()
+        let application = StubApplicationController()
         let state = makeState(
             countdown: ImmediateCountdown(),
+            application: application,
             indicator: indicator
         )
         state.hasPermission = true
@@ -109,11 +120,13 @@ final class AppStateRecordingTests: XCTestCase {
         state.toggleRecord(source: .ui)
 
         XCTAssertEqual(indicator.closeCallCount, 1)
+        XCTAssertEqual(application.restoreCallCount, 1)
     }
 
     func testMenuBarStopClosesIndicator() {
         let indicator = StubRecordingIndicator()
-        let state = makeState(indicator: indicator)
+        let application = StubApplicationController()
+        let state = makeState(application: application, indicator: indicator)
         state.phase = .recording
 
         state.stopRecordingFromMenuBar(
@@ -121,12 +134,18 @@ final class AppStateRecordingTests: XCTestCase {
         )
 
         XCTAssertEqual(indicator.closeCallCount, 1)
+        XCTAssertEqual(application.restoreCallCount, 1)
     }
 
     func testStopRequestClosesIndicator() async {
         let recorder = StubEventRecorder(capture: .init(events: [], duration: 0))
         let indicator = StubRecordingIndicator()
-        let state = makeState(recorder: recorder, indicator: indicator)
+        let application = StubApplicationController()
+        let state = makeState(
+            recorder: recorder,
+            application: application,
+            indicator: indicator
+        )
         state.setUp()
         state.phase = .recording
 
@@ -134,12 +153,18 @@ final class AppStateRecordingTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(indicator.closeCallCount, 1)
+        XCTAssertEqual(application.restoreCallCount, 1)
     }
 
     func testTapFailureClosesIndicator() async {
         let recorder = StubEventRecorder(capture: .init(events: [], duration: 0))
         let indicator = StubRecordingIndicator()
-        let state = makeState(recorder: recorder, indicator: indicator)
+        let application = StubApplicationController()
+        let state = makeState(
+            recorder: recorder,
+            application: application,
+            indicator: indicator
+        )
         state.setUp()
         state.phase = .recording
 
@@ -147,6 +172,7 @@ final class AppStateRecordingTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(indicator.closeCallCount, 1)
+        XCTAssertEqual(application.restoreCallCount, 1)
     }
 
     func testRecordingEntryAvailabilityFollowsPhase() {
@@ -157,7 +183,7 @@ final class AppStateRecordingTests: XCTestCase {
             store: ScriptStore(directory: directory),
             recorder: StubEventRecorder(capture: RecordingCapture(events: [], duration: 0)),
             countdown: ImmediateCountdown(),
-            application: StubRecordingApplication(targetBundleIdentifier: nil)
+            application: StubApplicationController()
         )
 
         state.phase = .idle
@@ -170,16 +196,24 @@ final class AppStateRecordingTests: XCTestCase {
         XCTAssertFalse(state.canStartRecording)
     }
 
-    func testCountdownPanelIsShownBeforeLastMainWindowIsHidden() {
+    func testRecordingSnapshotsTargetThenShowsHidesAndActivatesInOrder() {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Clicker-CountdownOrder-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         var calls: [String] = []
+        let tracker = StubExternalApplicationTracker(
+            mostRecentExternalBundleIdentifier: "com.example.target",
+            onRead: { calls.append("targetSnapshot") }
+        )
+        let stopStore = StubStopShortcutStore(
+            shortcut: .defaultValue,
+            onRead: { calls.append("shortcutSnapshot") }
+        )
         let countdown = ImmediateCountdown(onShow: {
             calls.append("showCountdown")
         })
-        let application = StubRecordingApplication(
-            targetBundleIdentifier: "com.example.target",
+        let application = StubApplicationController(
+            activationResult: true,
             onCall: { calls.append($0) }
         )
         let state = AppState(
@@ -188,7 +222,9 @@ final class AppStateRecordingTests: XCTestCase {
                 capture: RecordingCapture(events: [], duration: 0)
             ),
             countdown: countdown,
-            application: application
+            application: application,
+            externalApplicationTracker: tracker,
+            stopShortcutStore: stopStore
         )
         state.hasPermission = true
 
@@ -196,11 +232,57 @@ final class AppStateRecordingTests: XCTestCase {
 
         XCTAssertEqual(
             calls,
-            ["frontmostApplication", "showCountdown", "hide"]
+            [
+                "targetSnapshot",
+                "shortcutSnapshot",
+                "showCountdown",
+                "hide",
+                "activate:com.example.target",
+            ]
         )
     }
 
-    func testTargetIsCapturedBeforeHideAndUIStopSavesTrailingOnlyRecording() async throws {
+    func testRecordingWithoutRecentTargetHidesWithoutActivatingApplication() {
+        let application = StubApplicationController()
+        let state = makeState(
+            application: application,
+            tracker: StubExternalApplicationTracker(
+                mostRecentExternalBundleIdentifier: nil
+            )
+        )
+        state.hasPermission = true
+
+        state.toggleRecord(source: .ui)
+
+        XCTAssertEqual(application.calls, ["hide"])
+        XCTAssertTrue(application.activatedBundleIdentifiers.isEmpty)
+        XCTAssertEqual(state.phase, .countdown(3))
+    }
+
+    func testFailedTargetActivationDoesNotPreventCountdownFromStartingRecorder() async {
+        let recorder = StubEventRecorder(capture: .init(events: [], duration: 0))
+        let countdown = ControlledCountdown()
+        let application = StubApplicationController(activationResult: false)
+        let state = makeState(
+            recorder: recorder,
+            countdown: countdown,
+            application: application,
+            tracker: StubExternalApplicationTracker(
+                mostRecentExternalBundleIdentifier: "com.example.missing"
+            )
+        )
+        state.hasPermission = true
+
+        state.toggleRecord(source: .ui)
+        countdown.finish()
+        await Task.yield()
+
+        XCTAssertEqual(application.activatedBundleIdentifiers, ["com.example.missing"])
+        XCTAssertEqual(recorder.startShortcuts, [.defaultValue])
+        XCTAssertEqual(state.phase, .recording)
+    }
+
+    func testTrackerMutationDuringCountdownDoesNotChangeSavedRecordingTarget() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Clicker-AppStateTests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -208,31 +290,33 @@ final class AppStateRecordingTests: XCTestCase {
         let recorder = StubEventRecorder(
             capture: RecordingCapture(events: [], duration: 0.2)
         )
-        let countdown = ImmediateCountdown()
-        let application = StubRecordingApplication(
-            targetBundleIdentifier: "com.example.target"
+        let countdown = ControlledCountdown()
+        let tracker = StubExternalApplicationTracker(
+            mostRecentExternalBundleIdentifier: "com.example.original"
         )
+        let application = StubApplicationController()
         let state = AppState(
             store: ScriptStore(directory: directory),
             recorder: recorder,
             countdown: countdown,
-            application: application
+            application: application,
+            externalApplicationTracker: tracker
         )
         state.hasPermission = true
 
         state.toggleRecord(source: .ui)
+        tracker.mostRecentExternalBundleIdentifier = "com.example.replacement"
+        countdown.finish()
         await Task.yield()
 
-        XCTAssertEqual(application.calls, ["frontmostApplication", "hide"])
         XCTAssertEqual(state.phase, .recording)
-        XCTAssertEqual(recorder.startShortcuts, [.defaultValue])
 
         state.toggleRecord(source: .ui)
 
         let script = try XCTUnwrap(state.scripts.first)
         XCTAssertTrue(script.blocks.isEmpty)
         XCTAssertEqual(script.trailingDelay, 0.2, accuracy: 0.000_001)
-        XCTAssertEqual(script.targetBundleIdentifier, "com.example.target")
+        XCTAssertEqual(script.targetBundleIdentifier, "com.example.original")
     }
 
     func testMenuBarStopUsesTimestampCutoffBeforeBuildingScript() throws {
@@ -255,7 +339,7 @@ final class AppStateRecordingTests: XCTestCase {
             store: ScriptStore(directory: directory),
             recorder: recorder,
             countdown: ImmediateCountdown(),
-            application: StubRecordingApplication(targetBundleIdentifier: nil)
+            application: StubApplicationController()
         )
         state.phase = .recording
 
@@ -298,7 +382,7 @@ final class AppStateRecordingTests: XCTestCase {
             store: ScriptStore(directory: directory),
             recorder: recorder,
             countdown: ImmediateCountdown(),
-            application: StubRecordingApplication(targetBundleIdentifier: nil)
+            application: StubApplicationController()
         )
         state.setUp()
         state.phase = .idle
@@ -317,7 +401,7 @@ final class AppStateRecordingTests: XCTestCase {
         let recorder = StubEventRecorder(
             capture: RecordingCapture(events: [], duration: 0.2)
         )
-        let application = StubRecordingApplication(targetBundleIdentifier: nil)
+        let application = StubApplicationController()
         let state = AppState(
             store: ScriptStore(directory: directory),
             recorder: recorder,
@@ -341,6 +425,10 @@ final class AppStateRecordingTests: XCTestCase {
             capture: .init(events: [], duration: 0)
         ),
         countdown: CountdownPresenting = ControlledCountdown(),
+        application: StubApplicationController? = nil,
+        tracker: StubExternalApplicationTracker = StubExternalApplicationTracker(
+            mostRecentExternalBundleIdentifier: nil
+        ),
         stopStore: RecordingStopShortcutProviding = StubStopShortcutStore(
             shortcut: .defaultValue
         ),
@@ -353,7 +441,8 @@ final class AppStateRecordingTests: XCTestCase {
             store: ScriptStore(directory: directory),
             recorder: recorder,
             countdown: countdown,
-            application: StubRecordingApplication(targetBundleIdentifier: nil),
+            application: application ?? StubApplicationController(),
+            externalApplicationTracker: tracker,
             stopShortcutStore: stopStore,
             recordingIndicator: indicator ?? StubRecordingIndicator()
         )
@@ -397,10 +486,22 @@ private final class StubEventRecorder: EventRecording {
 }
 
 private final class StubStopShortcutStore: RecordingStopShortcutProviding {
-    var shortcut: RecordingStopShortcut
+    var shortcut: RecordingStopShortcut {
+        get {
+            onRead()
+            return storedShortcut
+        }
+        set {
+            storedShortcut = newValue
+        }
+    }
 
-    init(shortcut: RecordingStopShortcut) {
-        self.shortcut = shortcut
+    private var storedShortcut: RecordingStopShortcut
+    private let onRead: () -> Void
+
+    init(shortcut: RecordingStopShortcut, onRead: @escaping () -> Void = {}) {
+        storedShortcut = shortcut
+        self.onRead = onRead
     }
 }
 
@@ -418,14 +519,20 @@ private final class StubRecordingIndicator: RecordingIndicatorPresenting {
 }
 
 private final class ControlledCountdown: CountdownPresenting {
+    private let onShow: () -> Void
     private var onTicks: [(Int) -> Void] = []
     private var onFinishes: [() -> Void] = []
+
+    init(onShow: @escaping () -> Void = {}) {
+        self.onShow = onShow
+    }
 
     func show(
         seconds _: Int,
         onTick: @escaping (Int) -> Void,
         onFinish: @escaping () -> Void
     ) {
+        onShow()
         onTicks.append(onTick)
         onFinishes.append(onFinish)
     }
@@ -461,31 +568,24 @@ private final class ImmediateCountdown: CountdownPresenting {
 }
 
 @MainActor
-private final class StubRecordingApplication: ApplicationControlling {
-    private let targetBundleIdentifier: String?
+private final class StubApplicationController: ApplicationControlling {
     private let activationResult: Bool
     private let onCall: (String) -> Void
     private(set) var calls: [String] = []
     private(set) var activatedBundleIdentifiers: [String] = []
+    private(set) var restoreCallCount = 0
 
     init(
-        targetBundleIdentifier: String?,
         activationResult: Bool = false,
         onCall: @escaping (String) -> Void = { _ in }
     ) {
-        self.targetBundleIdentifier = targetBundleIdentifier
         self.activationResult = activationResult
         self.onCall = onCall
     }
 
-    func frontmostApplicationBundleIdentifier() -> String? {
-        calls.append("frontmostApplication")
-        onCall("frontmostApplication")
-        return targetBundleIdentifier
-    }
-
     func activateExternalApplication(bundleIdentifier: String) -> Bool {
         activatedBundleIdentifiers.append(bundleIdentifier)
+        onCall("activate:\(bundleIdentifier)")
         return activationResult
     }
 
@@ -495,7 +595,33 @@ private final class StubRecordingApplication: ApplicationControlling {
     }
 
     func restoreClicker() {
+        restoreCallCount += 1
         calls.append("restore")
         onCall("restore")
     }
+}
+
+private final class StubExternalApplicationTracker: ExternalApplicationTracking {
+    var mostRecentExternalBundleIdentifier: String? {
+        get {
+            onRead()
+            return storedBundleIdentifier
+        }
+        set {
+            storedBundleIdentifier = newValue
+        }
+    }
+
+    private var storedBundleIdentifier: String?
+    private let onRead: () -> Void
+
+    init(
+        mostRecentExternalBundleIdentifier: String?,
+        onRead: @escaping () -> Void = {}
+    ) {
+        storedBundleIdentifier = mostRecentExternalBundleIdentifier
+        self.onRead = onRead
+    }
+
+    func start() {}
 }
