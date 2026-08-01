@@ -129,8 +129,16 @@ private final class PersistenceNoopCountdown: CountdownPresenting {
     func close() {}
 }
 
-private final class PersistenceNoopApplication: RecordingApplicationControlling {
+@MainActor
+private final class PersistenceNoopApplication: ApplicationControlling {
+    var activationResult = false
+    private(set) var activatedBundleIdentifiers: [String] = []
+
     func frontmostApplicationBundleIdentifier() -> String? { nil }
+    func activateExternalApplication(bundleIdentifier: String) -> Bool {
+        activatedBundleIdentifiers.append(bundleIdentifier)
+        return activationResult
+    }
     func hideClicker() {}
     func restoreClicker() {}
 }

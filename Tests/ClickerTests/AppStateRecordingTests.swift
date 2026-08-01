@@ -460,16 +460,21 @@ private final class ImmediateCountdown: CountdownPresenting {
     func close() {}
 }
 
-private final class StubRecordingApplication: RecordingApplicationControlling {
+@MainActor
+private final class StubRecordingApplication: ApplicationControlling {
     private let targetBundleIdentifier: String?
+    private let activationResult: Bool
     private let onCall: (String) -> Void
     private(set) var calls: [String] = []
+    private(set) var activatedBundleIdentifiers: [String] = []
 
     init(
         targetBundleIdentifier: String?,
+        activationResult: Bool = false,
         onCall: @escaping (String) -> Void = { _ in }
     ) {
         self.targetBundleIdentifier = targetBundleIdentifier
+        self.activationResult = activationResult
         self.onCall = onCall
     }
 
@@ -477,6 +482,11 @@ private final class StubRecordingApplication: RecordingApplicationControlling {
         calls.append("frontmostApplication")
         onCall("frontmostApplication")
         return targetBundleIdentifier
+    }
+
+    func activateExternalApplication(bundleIdentifier: String) -> Bool {
+        activatedBundleIdentifiers.append(bundleIdentifier)
+        return activationResult
     }
 
     func hideClicker() {

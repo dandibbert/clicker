@@ -25,7 +25,7 @@ final class AppState: ObservableObject {
     let store: ScriptPersisting
     private let recorder: EventRecording
     private let countdown: CountdownPresenting
-    private let application: RecordingApplicationControlling
+    private let application: ApplicationControlling
     private let playbackEngine: PlaybackControlling
     private let stopShortcutStore: RecordingStopShortcutProviding
     private let recordingIndicator: RecordingIndicatorPresenting
@@ -34,7 +34,7 @@ final class AppState: ObservableObject {
         store: ScriptPersisting = ScriptStore(directory: ScriptStore.defaultDirectory()),
         recorder: EventRecording = EventRecorder(),
         countdown: CountdownPresenting = CountdownWindow(),
-        application: RecordingApplicationControlling = SystemRecordingApplicationController(),
+        application: ApplicationControlling? = nil,
         stopShortcutStore: RecordingStopShortcutProviding = RecordingStopShortcutStore(),
         recordingIndicator: RecordingIndicatorPresenting? = nil,
         playbackEngine: PlaybackControlling? = nil
@@ -42,7 +42,7 @@ final class AppState: ObservableObject {
         self.store = store
         self.recorder = recorder
         self.countdown = countdown
-        self.application = application
+        self.application = application ?? SystemApplicationController()
         self.stopShortcutStore = stopShortcutStore
         self.recordingIndicator = recordingIndicator ?? RecordingIndicatorController()
         self.playbackEngine = playbackEngine ?? PlaybackEngine()

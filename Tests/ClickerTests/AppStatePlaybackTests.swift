@@ -183,8 +183,16 @@ private final class NoopCountdown: CountdownPresenting {
     func close() {}
 }
 
-private final class NoopRecordingApplication: RecordingApplicationControlling {
+@MainActor
+private final class NoopRecordingApplication: ApplicationControlling {
+    var activationResult = false
+    private(set) var activatedBundleIdentifiers: [String] = []
+
     func frontmostApplicationBundleIdentifier() -> String? { nil }
+    func activateExternalApplication(bundleIdentifier: String) -> Bool {
+        activatedBundleIdentifiers.append(bundleIdentifier)
+        return activationResult
+    }
     func hideClicker() {}
     func restoreClicker() {}
 }
