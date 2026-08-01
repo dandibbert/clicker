@@ -81,6 +81,7 @@ final class AppStateRecordingTests: XCTestCase {
 
         XCTAssertEqual(application.calls, ["frontmostApplication", "hide"])
         XCTAssertEqual(state.phase, .recording)
+        XCTAssertEqual(recorder.startShortcuts, [.defaultValue])
 
         state.toggleRecord(source: .ui)
 
@@ -198,6 +199,7 @@ private final class StubEventRecorder: EventRecording {
     private let capture: RecordingCapture
     private let cutoffValue: RecordingCutoff
     private(set) var cutoffTimestamps: [CGEventTimestamp] = []
+    private(set) var startShortcuts: [RecordingStopShortcut] = []
     private(set) var stopCallCount = 0
 
     init(
@@ -208,7 +210,10 @@ private final class StubEventRecorder: EventRecording {
         cutoffValue = cutoff
     }
 
-    func start() -> Bool { true }
+    func start(stopShortcut: RecordingStopShortcut) -> Bool {
+        startShortcuts.append(stopShortcut)
+        return true
+    }
     func stop() -> RecordingCapture {
         stopCallCount += 1
         return capture

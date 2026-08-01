@@ -12,7 +12,7 @@ final class EventRecorderTests: XCTestCase {
             timestampNow: { now }
         )
 
-        XCTAssertTrue(recorder.start())
+        XCTAssertTrue(recorder.start(stopShortcut: .defaultValue))
         now = 3_250_000_000
 
         let capture: RecordingCapture = recorder.stop()
@@ -28,7 +28,7 @@ final class EventRecorderTests: XCTestCase {
             eventTap: eventTap,
             timestampNow: { now }
         )
-        XCTAssertTrue(recorder.start())
+        XCTAssertTrue(recorder.start(stopShortcut: .defaultValue))
 
         let event = try XCTUnwrap(CGEvent(
             mouseEventSource: nil,
@@ -58,7 +58,7 @@ final class EventRecorderTests: XCTestCase {
                 TimeInterval(end - start) / 100
             }
         )
-        XCTAssertTrue(recorder.start())
+        XCTAssertTrue(recorder.start(stopShortcut: .defaultValue))
 
         let event = try XCTUnwrap(CGEvent(
             mouseEventSource: nil,
@@ -83,7 +83,7 @@ final class EventRecorderTests: XCTestCase {
             eventTap: eventTap,
             timestampNow: { now }
         )
-        XCTAssertTrue(recorder.start())
+        XCTAssertTrue(recorder.start(stopShortcut: .defaultValue))
 
         eventTap.emit(
             type: .mouseMoved,
@@ -101,44 +101,50 @@ final class EventRecorderTests: XCTestCase {
         XCTAssertEqual(cutoff.duration, 0.3, accuracy: 0.000_001)
     }
 
-    func testHardwareEscapeIsControlInputInsteadOfRecordedContent() throws {
+    func testDefaultEscapeRequestsStopOnceAndIsNotRecorded() async throws {
         let eventTap = StubEventTapSession()
         let recorder = EventRecorder(eventTap: eventTap)
-        XCTAssertTrue(recorder.start())
-        let escape = try XCTUnwrap(CGEvent(
-            keyboardEventSource: nil,
-            virtualKey: 53,
-            keyDown: true
-        ))
-        let escapeUp = try XCTUnwrap(CGEvent(
-            keyboardEventSource: nil,
-            virtualKey: 53,
-            keyDown: false
-        ))
+        let requested = expectation(description: "default shortcut requests stop")
+        requested.assertForOverFulfill = true
+        recorder.onStopRequest = { requested.fulfill() }
+        XCTAssertTrue(recorder.start(stopShortcut: .defaultValue))
 
-        eventTap.emit(type: .keyDown, event: escape)
-        eventTap.emit(type: .keyUp, event: escapeUp)
+        eventTap.emit(type: .keyDown, event: try keyEvent(keyCode: 53))
+        eventTap.emit(type: .keyDown, event: try keyEvent(keyCode: 53))
+        eventTap.emit(type: .keyUp, event: try keyEvent(keyCode: 53, keyDown: false))
 
+        await fulfillment(of: [requested], timeout: 1)
         XCTAssertTrue(recorder.stop().events.isEmpty)
     }
 
-    func testHardwareEscapeRequestsRecordingStop() async throws {
+    func testCustomCombinationRequiresExactSupportedModifiersAndIsNotRecorded() async throws {
         let eventTap = StubEventTapSession()
         let recorder = EventRecorder(eventTap: eventTap)
-        let stopRequested = expectation(description: "Escape requests recording stop")
-        stopRequested.assertForOverFulfill = true
-        recorder.onStopRequest = { stopRequested.fulfill() }
-        XCTAssertTrue(recorder.start())
-        let escape = try XCTUnwrap(CGEvent(
-            keyboardEventSource: nil,
-            virtualKey: 53,
-            keyDown: true
-        ))
+        let requested = expectation(description: "custom shortcut requests stop")
+        requested.assertForOverFulfill = true
+        recorder.onStopRequest = { requested.fulfill() }
+        let shortcut = RecordingStopShortcut(
+            keyCode: 1,
+            modifierFlags: KeyCodeMap.maskOption | KeyCodeMap.maskCommand
+        )
+        XCTAssertTrue(recorder.start(stopShortcut: shortcut))
 
-        eventTap.emit(type: .keyDown, event: escape)
-        eventTap.emit(type: .keyDown, event: escape)
+        eventTap.emit(type: .keyDown, event: try keyEvent(keyCode: 1, flags: [.maskAlternate]))
+        eventTap.emit(
+            type: .keyDown,
+            event: try keyEvent(keyCode: 1, flags: [.maskAlternate, .maskCommand])
+        )
+        eventTap.emit(
+            type: .keyUp,
+            event: try keyEvent(
+                keyCode: 1,
+                keyDown: false,
+                flags: [.maskAlternate, .maskCommand]
+            )
+        )
 
-        await fulfillment(of: [stopRequested], timeout: 1)
+        await fulfillment(of: [requested], timeout: 1)
+        XCTAssertEqual(recorder.stop().events.count, 1)
     }
 
     private func mouseEvent(
@@ -152,6 +158,20 @@ final class EventRecorderTests: XCTestCase {
             mouseButton: .left
         ))
         event.timestamp = timestamp
+        return event
+    }
+
+    private func keyEvent(
+        keyCode: CGKeyCode,
+        keyDown: Bool = true,
+        flags: CGEventFlags = []
+    ) throws -> CGEvent {
+        let event = try XCTUnwrap(CGEvent(
+            keyboardEventSource: nil,
+            virtualKey: keyCode,
+            keyDown: keyDown
+        ))
+        event.flags = flags
         return event
     }
 }

@@ -6,7 +6,7 @@ protocol EventRecording: AnyObject {
     var onTapFailure: (() -> Void)? { get set }
     var onStopRequest: (() -> Void)? { get set }
 
-    func start() -> Bool
+    func start(stopShortcut: RecordingStopShortcut) -> Bool
     func stop() -> RecordingCapture
     func cutoff(at timestamp: CGEventTimestamp) -> RecordingCutoff
 }

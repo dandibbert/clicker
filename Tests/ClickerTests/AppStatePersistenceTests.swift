@@ -113,7 +113,7 @@ private final class StubScriptStore: ScriptPersisting {
 private final class PersistenceNoopRecorder: EventRecording {
     var onTapFailure: (() -> Void)?
     var onStopRequest: (() -> Void)?
-    func start() -> Bool { true }
+    func start(stopShortcut _: RecordingStopShortcut) -> Bool { true }
     func stop() -> RecordingCapture { RecordingCapture(events: [], duration: 0) }
     func cutoff(at _: CGEventTimestamp) -> RecordingCutoff {
         RecordingCutoff(eventCount: 0, duration: 0)

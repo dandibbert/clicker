@@ -212,7 +212,7 @@ final class AppState: ObservableObject {
         } onFinish: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                if self.recorder.start() {
+                if self.recorder.start(stopShortcut: .defaultValue) {
                     self.phase = .recording
                 } else {
                     self.phase = .idle
