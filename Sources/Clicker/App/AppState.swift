@@ -27,18 +27,24 @@ final class AppState: ObservableObject {
     private let countdown: CountdownPresenting
     private let application: RecordingApplicationControlling
     private let playbackEngine: PlaybackControlling
+    private let stopShortcutStore: RecordingStopShortcutProviding
+    private let recordingIndicator: RecordingIndicatorPresenting
 
     init(
         store: ScriptPersisting = ScriptStore(directory: ScriptStore.defaultDirectory()),
         recorder: EventRecording = EventRecorder(),
         countdown: CountdownPresenting = CountdownWindow(),
         application: RecordingApplicationControlling = SystemRecordingApplicationController(),
+        stopShortcutStore: RecordingStopShortcutProviding = RecordingStopShortcutStore(),
+        recordingIndicator: RecordingIndicatorPresenting? = nil,
         playbackEngine: PlaybackControlling? = nil
     ) {
         self.store = store
         self.recorder = recorder
         self.countdown = countdown
         self.application = application
+        self.stopShortcutStore = stopShortcutStore
+        self.recordingIndicator = recordingIndicator ?? RecordingIndicatorController()
         self.playbackEngine = playbackEngine ?? PlaybackEngine()
         reload()
     }
@@ -137,6 +143,7 @@ final class AppState: ObservableObject {
 
     private var observers: [NSObjectProtocol] = []
     private var recordingTargetBundleIdentifier: String?
+    private var activeStopShortcut: RecordingStopShortcut?
 
     /// ClickerApp 启动时调用一次。
     func setUp() {
@@ -179,6 +186,7 @@ final class AppState: ObservableObject {
         case .idle:
             startCountdown()
         case .countdown:
+            closeRecordingIndicator()
             countdown.close()
             phase = .idle
             application.restoreClicker()
@@ -205,16 +213,21 @@ final class AppState: ObservableObject {
             refreshPermission()
             return
         }
+        activeStopShortcut = stopShortcutStore.shortcut
         recordingTargetBundleIdentifier = application.frontmostApplicationBundleIdentifier()
         phase = .countdown(3)
         countdown.show(seconds: 3) { [weak self] remaining in
             Task { @MainActor in self?.phase = .countdown(remaining) }
         } onFinish: { [weak self] in
             Task { @MainActor in
-                guard let self else { return }
-                if self.recorder.start(stopShortcut: .defaultValue) {
+                guard let self,
+                      case .countdown = self.phase,
+                      let stopShortcut = self.activeStopShortcut else { return }
+                if self.recorder.start(stopShortcut: stopShortcut) {
                     self.phase = .recording
+                    self.recordingIndicator.show(shortcut: stopShortcut)
                 } else {
+                    self.closeRecordingIndicator()
                     self.phase = .idle
                     self.refreshPermission()
                     self.application.restoreClicker()
@@ -225,6 +238,7 @@ final class AppState: ObservableObject {
     }
 
     private func finishRecording(source: RecordingStopSource) {
+        closeRecordingIndicator()
         let capture = recorder.stop()
         phase = .idle
         let script = RecordingScriptFactory.makeScript(
@@ -242,6 +256,11 @@ final class AppState: ObservableObject {
             selectedScriptID = script.id
         }
         application.restoreClicker()
+    }
+
+    private func closeRecordingIndicator() {
+        recordingIndicator.close()
+        activeStopShortcut = nil
     }
 
     // MARK: - Playback

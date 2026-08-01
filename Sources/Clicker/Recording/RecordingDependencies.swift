@@ -26,6 +26,12 @@ protocol RecordingIndicatorPresenting: AnyObject {
     func close()
 }
 
+protocol RecordingStopShortcutProviding: AnyObject {
+    var shortcut: RecordingStopShortcut { get set }
+}
+
+extension RecordingStopShortcutStore: RecordingStopShortcutProviding {}
+
 protocol RecordingApplicationControlling: AnyObject {
     func frontmostApplicationBundleIdentifier() -> String?
     func hideClicker()

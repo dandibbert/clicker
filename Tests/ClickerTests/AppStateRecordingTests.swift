@@ -5,6 +5,118 @@ import ClickerCore
 
 @MainActor
 final class AppStateRecordingTests: XCTestCase {
+    func testSuccessfulRecorderStartShowsIndicatorWithCountdownShortcutSnapshot() async {
+        let custom = RecordingStopShortcut(
+            keyCode: 100,
+            modifierFlags: KeyCodeMap.maskControl
+        )
+        let store = StubStopShortcutStore(shortcut: custom)
+        let recorder = StubEventRecorder(capture: .init(events: [], duration: 0))
+        let countdown = ControlledCountdown()
+        let indicator = StubRecordingIndicator()
+        let state = makeState(
+            recorder: recorder,
+            countdown: countdown,
+            stopStore: store,
+            indicator: indicator
+        )
+        state.hasPermission = true
+
+        state.toggleRecord(source: .ui)
+        store.shortcut = .defaultValue
+        countdown.finish()
+        await Task.yield()
+
+        XCTAssertEqual(recorder.startShortcuts, [custom])
+        XCTAssertEqual(indicator.shownShortcuts, [custom])
+    }
+
+    func testRecorderStartFailureDoesNotShowIndicator() async {
+        let recorder = StubEventRecorder(
+            capture: .init(events: [], duration: 0),
+            startResult: false
+        )
+        let indicator = StubRecordingIndicator()
+        let state = makeState(
+            recorder: recorder,
+            countdown: ImmediateCountdown(),
+            indicator: indicator
+        )
+        state.hasPermission = true
+
+        state.toggleRecord(source: .ui)
+        await Task.yield()
+
+        XCTAssertTrue(indicator.shownShortcuts.isEmpty)
+        XCTAssertEqual(state.phase, .idle)
+    }
+
+    func testCountdownCancellationDoesNotShowAndClosesIndicator() {
+        let countdown = ControlledCountdown()
+        let indicator = StubRecordingIndicator()
+        let state = makeState(countdown: countdown, indicator: indicator)
+        state.hasPermission = true
+
+        state.toggleRecord(source: .ui)
+        state.toggleRecord(source: .ui)
+
+        XCTAssertTrue(indicator.shownShortcuts.isEmpty)
+        XCTAssertEqual(indicator.closeCallCount, 1)
+    }
+
+    func testUIStopClosesIndicator() async {
+        let indicator = StubRecordingIndicator()
+        let state = makeState(
+            countdown: ImmediateCountdown(),
+            indicator: indicator
+        )
+        state.hasPermission = true
+        state.toggleRecord(source: .ui)
+        await Task.yield()
+
+        state.toggleRecord(source: .ui)
+
+        XCTAssertEqual(indicator.closeCallCount, 1)
+    }
+
+    func testMenuBarStopClosesIndicator() {
+        let indicator = StubRecordingIndicator()
+        let state = makeState(indicator: indicator)
+        state.phase = .recording
+
+        state.stopRecordingFromMenuBar(
+            cutoff: RecordingCutoff(eventCount: 0, duration: 0)
+        )
+
+        XCTAssertEqual(indicator.closeCallCount, 1)
+    }
+
+    func testStopRequestClosesIndicator() async {
+        let recorder = StubEventRecorder(capture: .init(events: [], duration: 0))
+        let indicator = StubRecordingIndicator()
+        let state = makeState(recorder: recorder, indicator: indicator)
+        state.setUp()
+        state.phase = .recording
+
+        recorder.onStopRequest?()
+        await Task.yield()
+
+        XCTAssertEqual(indicator.closeCallCount, 1)
+    }
+
+    func testTapFailureClosesIndicator() async {
+        let recorder = StubEventRecorder(capture: .init(events: [], duration: 0))
+        let indicator = StubRecordingIndicator()
+        let state = makeState(recorder: recorder, indicator: indicator)
+        state.setUp()
+        state.phase = .recording
+
+        recorder.onTapFailure?()
+        await Task.yield()
+
+        XCTAssertEqual(indicator.closeCallCount, 1)
+    }
+
     func testRecordingEntryAvailabilityFollowsPhase() {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Clicker-RecordingAvailability-\(UUID().uuidString)")
@@ -191,6 +303,29 @@ final class AppStateRecordingTests: XCTestCase {
         XCTAssertEqual(application.calls, ["restore"])
         XCTAssertEqual(state.scripts.first?.trailingDelay, 0.2)
     }
+
+    private func makeState(
+        recorder: StubEventRecorder = StubEventRecorder(
+            capture: .init(events: [], duration: 0)
+        ),
+        countdown: CountdownPresenting = ControlledCountdown(),
+        stopStore: RecordingStopShortcutProviding = StubStopShortcutStore(
+            shortcut: .defaultValue
+        ),
+        indicator: StubRecordingIndicator? = nil
+    ) -> AppState {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Clicker-IndicatorLifecycle-\(UUID().uuidString)")
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return AppState(
+            store: ScriptStore(directory: directory),
+            recorder: recorder,
+            countdown: countdown,
+            application: StubRecordingApplication(targetBundleIdentifier: nil),
+            stopShortcutStore: stopStore,
+            recordingIndicator: indicator ?? StubRecordingIndicator()
+        )
+    }
 }
 
 private final class StubEventRecorder: EventRecording {
@@ -204,15 +339,19 @@ private final class StubEventRecorder: EventRecording {
 
     init(
         capture: RecordingCapture,
-        cutoff: RecordingCutoff = RecordingCutoff(eventCount: 0, duration: 0)
+        cutoff: RecordingCutoff = RecordingCutoff(eventCount: 0, duration: 0),
+        startResult: Bool = true
     ) {
         self.capture = capture
         cutoffValue = cutoff
+        self.startResult = startResult
     }
+
+    private let startResult: Bool
 
     func start(stopShortcut: RecordingStopShortcut) -> Bool {
         startShortcuts.append(stopShortcut)
-        return true
+        return startResult
     }
     func stop() -> RecordingCapture {
         stopCallCount += 1
@@ -222,6 +361,45 @@ private final class StubEventRecorder: EventRecording {
     func cutoff(at timestamp: CGEventTimestamp) -> RecordingCutoff {
         cutoffTimestamps.append(timestamp)
         return cutoffValue
+    }
+}
+
+private final class StubStopShortcutStore: RecordingStopShortcutProviding {
+    var shortcut: RecordingStopShortcut
+
+    init(shortcut: RecordingStopShortcut) {
+        self.shortcut = shortcut
+    }
+}
+
+private final class StubRecordingIndicator: RecordingIndicatorPresenting {
+    private(set) var shownShortcuts: [RecordingStopShortcut] = []
+    private(set) var closeCallCount = 0
+
+    func show(shortcut: RecordingStopShortcut) {
+        shownShortcuts.append(shortcut)
+    }
+
+    func close() {
+        closeCallCount += 1
+    }
+}
+
+private final class ControlledCountdown: CountdownPresenting {
+    private var onFinish: (() -> Void)?
+
+    func show(
+        seconds _: Int,
+        onTick _: @escaping (Int) -> Void,
+        onFinish: @escaping () -> Void
+    ) {
+        self.onFinish = onFinish
+    }
+
+    func close() {}
+
+    func finish() {
+        onFinish?()
     }
 }
 
