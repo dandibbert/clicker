@@ -46,7 +46,7 @@ struct ScriptHeaderView: View {
 
             PrimaryActionBar(
                 phase: state.phase,
-                hasPlayableScript: !script.blocks.isEmpty
+                hasPlayableScript: ScriptPlaybackEligibility.isPlayable(script)
             )
 
             HStack(spacing: ClickerVisualTheme.spacing16) {

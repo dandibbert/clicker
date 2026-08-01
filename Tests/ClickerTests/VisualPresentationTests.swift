@@ -74,6 +74,17 @@ final class VisualPresentationTests: XCTestCase {
         XCTAssertEqual(model.durationText, "约 0.0 秒")
     }
 
+    func testTrailingOnlyScriptPresentsPlaybackAsEnabled() {
+        let script = Script(name: "收尾等待", trailingDelay: 0.5)
+
+        let actions = PrimaryActionPresentation.pair(
+            phase: .idle,
+            hasPlayableScript: ScriptPlaybackEligibility.isPlayable(script)
+        )
+
+        XCTAssertTrue(actions[1].isEnabled)
+    }
+
     func testEmptyLibraryOffersRecordingAction() {
         let model = ClickerEmptyStatePresentation(kind: .emptyLibrary)
 

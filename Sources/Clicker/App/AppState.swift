@@ -303,8 +303,7 @@ final class AppState: ObservableObject {
                 return
             }
             guard let script = selectedScript else { return }
-            let plan = BlockExpander.plan(for: script)
-            guard !plan.steps.isEmpty || plan.duration > 0 else { return }
+            guard ScriptPlaybackEligibility.isPlayable(script) else { return }
             let fallback = externalApplicationTracker.mostRecentExternalBundleIdentifier
             application.hideClicker()
             activatePlaybackTarget(
