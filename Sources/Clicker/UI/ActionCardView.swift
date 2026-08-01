@@ -67,7 +67,9 @@ struct ActionCardView: View {
                 .animation(trailAnimation, value: isTrailDimmed)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(presentation.accessibilityLabel)
+        .accessibilityLabel(
+            isActive ? presentation.activeAccessibilityLabel : presentation.accessibilityLabel
+        )
         .onAppear { updateTrailPulse() }
         .onChange(of: feedbackStyle) { _, _ in updateTrailPulse() }
     }

@@ -106,6 +106,81 @@ final class ActionCardPresentationTests: XCTestCase {
         XCTAssertTrue(model.accessibilityLabel.contains("等待"))
     }
 
+    func testDurationPresentationUsesEffectiveDurationAndNeverEmitsUnsafeValues() {
+        let fixtures: [(ActionBlock, String)] = [
+            (
+                .move(MoveBlock(
+                    duration: -4,
+                    points: [TrackPoint(t: 1.25, x: 0, y: 0)]
+                )),
+                "1.3 秒"
+            ),
+            (
+                .drag(DragBlock(
+                    button: .left,
+                    duration: .nan,
+                    points: [TrackPoint(t: 2.25, x: 0, y: 0)]
+                )),
+                "2.3 秒"
+            ),
+            (.wait(WaitBlock(duration: -1)), "0.0 秒"),
+            (.wait(WaitBlock(duration: .nan)), "0.0 秒"),
+            (.wait(WaitBlock(duration: .infinity)), "0.0 秒"),
+            (.wait(WaitBlock(duration: .greatestFiniteMagnitude)), "9223372035.9 秒"),
+        ]
+
+        for (block, expected) in fixtures {
+            let trailingText = ActionCardPresentation(block: block).trailingText
+
+            XCTAssertEqual(trailingText, expected)
+            XCTAssertFalse(trailingText.lowercased().contains("nan"))
+            XCTAssertFalse(trailingText.lowercased().contains("inf"))
+            XCTAssertFalse(trailingText.hasPrefix("-"))
+        }
+    }
+
+    func testCoordinatesReplaceNonfiniteValuesButPreserveLegalNegativeValues() {
+        let invalid = ActionCardPresentation(block: .click(ClickBlock(
+            x: .nan,
+            y: .infinity,
+            button: .left,
+            clickCount: 1
+        )))
+        let negative = ActionCardPresentation(block: .click(ClickBlock(
+            x: -42.6,
+            y: -8.2,
+            button: .left,
+            clickCount: 1
+        )))
+
+        XCTAssertEqual(invalid.summary, "(0, 0)")
+        XCTAssertEqual(negative.summary, "(-43, -8)")
+    }
+
+    func testScrollIgnoresNonfiniteDeltasAndPreservesNegativeDirection() {
+        let model = ActionCardPresentation(block: .scroll(ScrollBlock(
+            x: 0,
+            y: 0,
+            duration: 0,
+            steps: [
+                ScrollStep(t: 0, dx: 0, dy: .nan),
+                ScrollStep(t: 0.1, dx: 0, dy: .infinity),
+                ScrollStep(t: 0.2, dx: 0, dy: -12.6),
+            ]
+        )))
+
+        XCTAssertEqual(model.summary, "向下 13 px")
+        XCTAssertFalse(model.accessibilityLabel.lowercased().contains("nan"))
+        XCTAssertFalse(model.accessibilityLabel.lowercased().contains("inf"))
+    }
+
+    func testActiveAccessibilityLabelAnnouncesPlayback() {
+        let model = ActionCardPresentation(block: .wait(WaitBlock(duration: 1.25)))
+
+        XCTAssertEqual(model.accessibilityLabel, "等待，暂停回放，1.3 秒")
+        XCTAssertEqual(model.activeAccessibilityLabel, "正在回放，等待，暂停回放，1.3 秒")
+    }
+
     func testInactiveCardHasNoActiveFeedback() {
         XCTAssertNil(ActiveFeedbackStyle.resolve(isActive: false, reduceMotion: false))
         XCTAssertNil(ActiveFeedbackStyle.resolve(isActive: false, reduceMotion: true))

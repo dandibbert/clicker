@@ -7,6 +7,7 @@ struct ActionCardPresentation: Equatable {
     let summary: String
     let trailingText: String
     let accessibilityLabel: String
+    let activeAccessibilityLabel: String
 
     init(block: ActionBlock) {
         let values: (systemImage: String, title: String, summary: String, trailingText: String)
@@ -16,7 +17,7 @@ struct ActionCardPresentation: Equatable {
                 "arrow.up.and.down.and.arrow.left.and.right",
                 "移动鼠标",
                 Self.pathSummary(move.points),
-                Self.durationText(move.duration)
+                Self.durationText(block.effectiveDuration)
             )
         case .click(let click):
             let title = click.button == .right ? "右键" : (click.clickCount >= 2 ? "双击" : "单击")
@@ -31,10 +32,10 @@ struct ActionCardPresentation: Equatable {
                 "hand.draw",
                 "拖拽",
                 Self.pathSummary(drag.points),
-                Self.durationText(drag.duration)
+                Self.durationText(block.effectiveDuration)
             )
         case .scroll(let scroll):
-            let total = scroll.steps.reduce(0.0) { $0 + $1.dy }
+            let total = Self.finiteSum(scroll.steps.map(\.dy))
             let direction = total <= 0 ? "向下" : "向上"
             values = (
                 "computermouse",
@@ -56,8 +57,8 @@ struct ActionCardPresentation: Equatable {
                 KeyCodeMap.shortcutDisplay(keyCode: shortcut.keyCode, flags: shortcut.flags),
                 ""
             )
-        case .wait(let wait):
-            values = ("clock", "等待", "暂停回放", Self.durationText(wait.duration))
+        case .wait:
+            values = ("clock", "等待", "暂停回放", Self.durationText(block.effectiveDuration))
         }
 
         systemImage = values.systemImage
@@ -74,6 +75,7 @@ struct ActionCardPresentation: Equatable {
         accessibilityLabel = [values.title, accessibleSummary, values.trailingText]
             .filter { !$0.isEmpty }
             .joined(separator: "，")
+        activeAccessibilityLabel = "正在回放，\(accessibilityLabel)"
     }
 
     private static func pointSummary(x: Double, y: Double) -> String {
@@ -86,18 +88,29 @@ struct ActionCardPresentation: Equatable {
     }
 
     private static func number(_ value: Double) -> String {
-        String(format: "%.0f", value)
+        let finiteValue = value.isFinite ? value : 0
+        return String(format: "%.0f", locale: posixLocale, finiteValue)
     }
 
     private static func durationText(_ duration: TimeInterval) -> String {
         let rounded = (duration * 10).rounded(.toNearestOrAwayFromZero) / 10
-        return String(format: "%.1f 秒", rounded)
+        return String(format: "%.1f 秒", locale: posixLocale, rounded)
+    }
+
+    private static func finiteSum(_ values: [Double]) -> Double {
+        values.reduce(0) { total, value in
+            guard value.isFinite else { return total }
+            let result = total + value
+            return result.isFinite ? result : 0
+        }
     }
 
     private static func truncated(_ text: String) -> String {
         guard text.count > 28 else { return text }
         return "\(text.prefix(28))…"
     }
+
+    private static let posixLocale = Locale(identifier: "en_US_POSIX")
 }
 
 enum ActiveFeedbackStyle: Equatable {
