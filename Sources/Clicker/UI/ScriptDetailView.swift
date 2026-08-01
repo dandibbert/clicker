@@ -55,13 +55,15 @@ struct ScriptDetailView: View {
         ZStack {
             List {
                 ForEach(Array(script.blocks.enumerated()), id: \.element.id) { index, block in
-                    ActionCardView(block: block, isActive: block.id == activeID)
+                    ActionCardView(
+                        block: block,
+                        isActive: block.id == activeID,
+                        isEditEnabled: state.canEditScripts,
+                        onEdit: { editingBlockID = block.id }
+                    )
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
                         .contentShape(Rectangle())
-                        .onTapGesture(count: 2) {
-                            if state.canEditScripts { editingBlockID = block.id }
-                        }
                         .moveDisabled(!state.canEditScripts)
                         .deleteDisabled(!state.canEditScripts)
                         .contextMenu {

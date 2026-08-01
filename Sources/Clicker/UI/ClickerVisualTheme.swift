@@ -12,6 +12,7 @@ enum ClickerVisualTheme {
         case selection
         case recordFill
         case playbackFill
+        case playbackForeground
         case activeTrail
     }
 
@@ -24,6 +25,7 @@ enum ClickerVisualTheme {
     static let selection = color(for: .selection)
     static let recordFill = color(for: .recordFill)
     static let playbackFill = color(for: .playbackFill)
+    static let playbackForeground = color(for: .playbackForeground)
     static let activeTrail = color(for: .activeTrail)
 
     static let spacing4: CGFloat = 4
@@ -33,6 +35,7 @@ enum ClickerVisualTheme {
     static let spacing24: CGFloat = 24
     static let cardCornerRadius: CGFloat = 10
     static let panelCornerRadius: CGFloat = 14
+    static let cardBorderWidth: CGFloat = 1
     static let primaryControlHeight: CGFloat = 34
 
     static func resolvedColor(for role: ColorRole, appearance: NSAppearance) -> NSColor {
@@ -58,12 +61,16 @@ enum ClickerVisualTheme {
             (.warmWhite, .darkCard)
         case .primaryText:
             (.inkBlack, .warmWhite)
-        case .secondaryText, .separator:
+        case .secondaryText:
+            (.secondaryLight, .secondaryDark)
+        case .separator:
             (.warmGray, .warmGray)
         case .recordFill, .activeTrail:
             (.trailRed, .trailRed)
         case .playbackFill:
             (.inkBlack, .warmWhite)
+        case .playbackForeground:
+            (.warmWhite, .inkBlack)
         }
     }
 
@@ -89,6 +96,8 @@ enum ClickerVisualTheme {
         static let inkBlack = RGB(red: 0x17 / 255, green: 0x16 / 255, blue: 0x19 / 255)
         static let trailRed = RGB(red: 0xE7 / 255, green: 0x38 / 255, blue: 0x36 / 255)
         static let warmGray = RGB(red: 0x8B / 255, green: 0x84 / 255, blue: 0x7A / 255)
+        static let secondaryLight = RGB(red: 0x70 / 255, green: 0x68 / 255, blue: 0x5F / 255)
+        static let secondaryDark = RGB(red: 0xA9 / 255, green: 0xA1 / 255, blue: 0x97 / 255)
         static let darkCanvas = RGB(red: 0x15 / 255, green: 0x14 / 255, blue: 0x18 / 255)
         static let darkCard = RGB(red: 0x23 / 255, green: 0x21 / 255, blue: 0x26 / 255)
     }

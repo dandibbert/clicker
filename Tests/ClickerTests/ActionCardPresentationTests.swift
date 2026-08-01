@@ -1,4 +1,6 @@
+import AppKit
 import ClickerCore
+import SwiftUI
 import XCTest
 @testable import Clicker
 
@@ -198,5 +200,72 @@ final class ActionCardPresentationTests: XCTestCase {
             ActiveFeedbackStyle.resolve(isActive: true, reduceMotion: true),
             .staticHighlight
         )
+    }
+
+    func testActionCardEditPolicySupportsKeyboardAndAccessibilityOnlyWhenEnabled() {
+        let enabled = ActionCardEditPolicy(isEnabled: true)
+        let disabled = ActionCardEditPolicy(isEnabled: false)
+
+        XCTAssertTrue(enabled.isFocusable)
+        XCTAssertTrue(enabled.allows(.doubleClick))
+        XCTAssertTrue(enabled.allows(.returnKey))
+        XCTAssertTrue(enabled.allows(.spaceKey))
+        XCTAssertTrue(enabled.allows(.accessibilityAction))
+        XCTAssertEqual(enabled.accessibilityActionName, "编辑动作")
+
+        XCTAssertFalse(disabled.isFocusable)
+        XCTAssertFalse(disabled.allows(.doubleClick))
+        XCTAssertFalse(disabled.allows(.returnKey))
+        XCTAssertFalse(disabled.allows(.spaceKey))
+        XCTAssertFalse(disabled.allows(.accessibilityAction))
+        XCTAssertNil(disabled.accessibilityActionName)
+    }
+
+    @MainActor
+    func testLightActionCardRendersVisibleBoundaryAgainstCanvas() throws {
+        _ = NSApplication.shared
+        let view = ActionCardView(
+            block: .wait(WaitBlock(duration: 1.25)),
+            isActive: false
+        )
+        .environment(\.colorScheme, .light)
+        .frame(width: 320)
+        .background(ClickerVisualTheme.canvas)
+        let hosting = NSHostingView(rootView: view)
+        hosting.appearance = NSAppearance(named: .aqua)
+        hosting.frame = CGRect(origin: .zero, size: hosting.fittingSize)
+        hosting.layoutSubtreeIfNeeded()
+        hosting.displayIfNeeded()
+
+        let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        let centerX = bitmap.pixelsWide / 2
+        let boundary = try XCTUnwrap(bitmap.colorAt(x: centerX, y: 1)?.usingColorSpace(.sRGB))
+        let interior = try XCTUnwrap(
+            bitmap.colorAt(x: centerX, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB)
+        )
+
+        XCTAssertGreaterThan(
+            contrastRatio(boundary, interior),
+            3,
+            "浅色动作卡片边界必须达到非文本 UI 的 3:1 对比度"
+        )
+    }
+
+    private func contrastRatio(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
+        let first = relativeLuminance(lhs)
+        let second = relativeLuminance(rhs)
+        return (max(first, second) + 0.05) / (min(first, second) + 0.05)
+    }
+
+    private func relativeLuminance(_ color: NSColor) -> CGFloat {
+        func linear(_ component: CGFloat) -> CGFloat {
+            component <= 0.04045
+                ? component / 12.92
+                : pow((component + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(color.redComponent)
+            + 0.7152 * linear(color.greenComponent)
+            + 0.0722 * linear(color.blueComponent)
     }
 }

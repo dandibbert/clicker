@@ -174,6 +174,17 @@ final class VisualPresentationTests: XCTestCase {
         XCTAssertFalse(PrimaryActionPresentation.usesAnimatedActiveFeedback(isReduceMotionEnabled: true))
     }
 
+    func testRecordingIndicatorUsesStaticFeedbackWhenReduceMotionIsEnabled() {
+        XCTAssertEqual(
+            RecordingIndicatorFeedbackStyle.resolve(reduceMotion: false),
+            .pulsing
+        )
+        XCTAssertEqual(
+            RecordingIndicatorFeedbackStyle.resolve(reduceMotion: true),
+            .staticHighlight
+        )
+    }
+
     func testVisualThemeUsesApprovedLayoutTokens() {
         XCTAssertEqual(ClickerVisualTheme.spacing4, 4)
         XCTAssertEqual(ClickerVisualTheme.spacing8, 8)
@@ -247,6 +258,31 @@ final class VisualPresentationTests: XCTestCase {
         }
     }
 
+    func testSecondaryTextMeetsNormalTextContrastAcrossAppearances() throws {
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            let text = ClickerVisualTheme.resolvedColor(for: .secondaryText, appearance: appearance)
+            let canvas = ClickerVisualTheme.resolvedColor(for: .canvas, appearance: appearance)
+            let card = ClickerVisualTheme.resolvedColor(for: .cardSurface, appearance: appearance)
+
+            XCTAssertGreaterThanOrEqual(contrastRatio(text, canvas), 4.5)
+            XCTAssertGreaterThanOrEqual(contrastRatio(text, card), 4.5)
+        }
+    }
+
+    func testPlaybackButtonUsesExplicitHighContrastForegroundAcrossAppearances() throws {
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            let fill = ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance)
+            let foreground = ClickerVisualTheme.resolvedColor(
+                for: .playbackForeground,
+                appearance: appearance
+            )
+
+            XCTAssertGreaterThanOrEqual(contrastRatio(foreground, fill), 4.5)
+        }
+    }
+
     private var paletteExpectations: [
         (role: ClickerVisualTheme.ColorRole, light: (UInt8, UInt8, UInt8), dark: (UInt8, UInt8, UInt8))
     ] {
@@ -255,11 +291,12 @@ final class VisualPresentationTests: XCTestCase {
             (.cardSurface, (0xF1, 0xEA, 0xDC), (0x23, 0x21, 0x26)),
             (.elevatedSurface, (0xF1, 0xEA, 0xDC), (0x23, 0x21, 0x26)),
             (.primaryText, (0x17, 0x16, 0x19), (0xF1, 0xEA, 0xDC)),
-            (.secondaryText, (0x8B, 0x84, 0x7A), (0x8B, 0x84, 0x7A)),
+            (.secondaryText, (0x70, 0x68, 0x5F), (0xA9, 0xA1, 0x97)),
             (.separator, (0x8B, 0x84, 0x7A), (0x8B, 0x84, 0x7A)),
             (.selection, (0xF1, 0xEA, 0xDC), (0x23, 0x21, 0x26)),
             (.recordFill, (0xE7, 0x38, 0x36), (0xE7, 0x38, 0x36)),
             (.playbackFill, (0x17, 0x16, 0x19), (0xF1, 0xEA, 0xDC)),
+            (.playbackForeground, (0xF1, 0xEA, 0xDC), (0x17, 0x16, 0x19)),
             (.activeTrail, (0xE7, 0x38, 0x36), (0xE7, 0x38, 0x36)),
         ]
     }
@@ -309,5 +346,23 @@ final class VisualPresentationTests: XCTestCase {
         return sRGB.redComponent == CGFloat(0xE7) / 255
             && sRGB.greenComponent == CGFloat(0x38) / 255
             && sRGB.blueComponent == CGFloat(0x36) / 255
+    }
+
+    private func contrastRatio(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
+        let first = relativeLuminance(lhs)
+        let second = relativeLuminance(rhs)
+        return (max(first, second) + 0.05) / (min(first, second) + 0.05)
+    }
+
+    private func relativeLuminance(_ color: NSColor) -> CGFloat {
+        guard let color = color.usingColorSpace(.sRGB) else { return 0 }
+        func linear(_ component: CGFloat) -> CGFloat {
+            component <= 0.04045
+                ? component / 12.92
+                : pow((component + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(color.redComponent)
+            + 0.7152 * linear(color.greenComponent)
+            + 0.0722 * linear(color.blueComponent)
     }
 }

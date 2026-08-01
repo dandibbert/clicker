@@ -86,6 +86,16 @@ struct RecordingSettingsView: View {
                         style: .continuous
                     )
                 )
+                .overlay {
+                    RoundedRectangle(
+                        cornerRadius: ClickerVisualTheme.panelCornerRadius,
+                        style: .continuous
+                    )
+                    .strokeBorder(
+                        ClickerVisualTheme.separator,
+                        lineWidth: ClickerVisualTheme.cardBorderWidth
+                    )
+                }
 
                 HStack(alignment: .firstTextBaseline, spacing: ClickerVisualTheme.spacing8) {
                     if let message = editor.message {
@@ -110,7 +120,10 @@ struct RecordingSettingsView: View {
 
                     Spacer()
 
-                    Button("完成") { dismiss() }
+                    Button(action: { dismiss() }) {
+                        Text("完成")
+                            .foregroundStyle(ClickerVisualTheme.playbackForeground)
+                    }
                         .buttonStyle(.borderedProminent)
                         .tint(ClickerVisualTheme.playbackFill)
                 }

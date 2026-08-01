@@ -17,7 +17,7 @@ struct PrimaryActionBar: View {
                 Button {
                     post(action)
                 } label: {
-                    Label(action.title, systemImage: action.systemImage)
+                    actionLabel(action)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(tint(for: action))
@@ -30,6 +30,17 @@ struct PrimaryActionBar: View {
                     minHeight: ClickerVisualTheme.primaryControlHeight
                 )
             }
+        }
+    }
+
+    @ViewBuilder
+    private func actionLabel(_ action: PrimaryActionPresentation) -> some View {
+        switch action.kind {
+        case .record:
+            Label(action.title, systemImage: action.systemImage)
+        case .play:
+            Label(action.title, systemImage: action.systemImage)
+                .foregroundStyle(ClickerVisualTheme.playbackForeground)
         }
     }
 

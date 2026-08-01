@@ -1,24 +1,35 @@
 import SwiftUI
 
+enum RecordingIndicatorFeedbackStyle: Equatable {
+    case pulsing
+    case staticHighlight
+
+    static func resolve(reduceMotion: Bool) -> Self {
+        reduceMotion ? .staticHighlight : .pulsing
+    }
+}
+
 struct RecordingIndicatorView: View {
     let shortcut: RecordingStopShortcut
     let showsHint: Bool
     let hintTopPadding: CGFloat
 
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var isPulsing = false
+
+    private var feedbackStyle: RecordingIndicatorFeedbackStyle {
+        .resolve(reduceMotion: accessibilityReduceMotion)
+    }
 
     var body: some View {
         ZStack {
             Color.clear
 
             RoundedRectangle(cornerRadius: 12)
-                .stroke(.red, lineWidth: 5)
+                .stroke(ClickerVisualTheme.recordFill, lineWidth: 5)
                 .padding(8)
-                .opacity(isPulsing ? 1 : 0.35)
-                .animation(
-                    .easeInOut(duration: 0.9).repeatForever(autoreverses: true),
-                    value: isPulsing
-                )
+                .opacity(borderOpacity)
+                .animation(borderAnimation, value: isPulsing)
 
             if showsHint {
                 VStack {
@@ -35,6 +46,25 @@ struct RecordingIndicatorView: View {
             }
         }
         .allowsHitTesting(false)
-        .onAppear { isPulsing = true }
+        .onAppear { updatePulse() }
+        .onChange(of: feedbackStyle) { _, _ in updatePulse() }
+    }
+
+    private var borderOpacity: Double {
+        switch feedbackStyle {
+        case .pulsing:
+            isPulsing ? 1 : 0.35
+        case .staticHighlight:
+            1
+        }
+    }
+
+    private var borderAnimation: Animation? {
+        guard feedbackStyle == .pulsing else { return nil }
+        return .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+    }
+
+    private func updatePulse() {
+        isPulsing = feedbackStyle == .pulsing
     }
 }

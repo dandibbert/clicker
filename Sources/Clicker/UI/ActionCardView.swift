@@ -1,12 +1,44 @@
 import SwiftUI
 import ClickerCore
 
+enum ActionCardEditTrigger {
+    case doubleClick
+    case returnKey
+    case spaceKey
+    case accessibilityAction
+}
+
+struct ActionCardEditPolicy {
+    let isEnabled: Bool
+
+    var isFocusable: Bool { isEnabled }
+    var accessibilityActionName: String? { isEnabled ? "编辑动作" : nil }
+
+    func allows(_ trigger: ActionCardEditTrigger) -> Bool {
+        isEnabled
+    }
+}
+
 struct ActionCardView: View {
     let block: ActionBlock
     let isActive: Bool
+    private let editPolicy: ActionCardEditPolicy
+    private let onEdit: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var isTrailDimmed = false
+
+    init(
+        block: ActionBlock,
+        isActive: Bool,
+        isEditEnabled: Bool = false,
+        onEdit: (() -> Void)? = nil
+    ) {
+        self.block = block
+        self.isActive = isActive
+        editPolicy = ActionCardEditPolicy(isEnabled: isEditEnabled && onEdit != nil)
+        self.onEdit = onEdit
+    }
 
     private var presentation: ActionCardPresentation {
         ActionCardPresentation(block: block)
@@ -58,6 +90,16 @@ struct ActionCardView: View {
                 style: .continuous
             )
         )
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: ClickerVisualTheme.cardCornerRadius,
+                style: .continuous
+            )
+            .strokeBorder(
+                ClickerVisualTheme.separator,
+                lineWidth: ClickerVisualTheme.cardBorderWidth
+            )
+        }
         .overlay(alignment: .leading) {
             Capsule()
                 .fill(ClickerVisualTheme.activeTrail)
@@ -70,6 +112,7 @@ struct ActionCardView: View {
         .accessibilityLabel(
             isActive ? presentation.activeAccessibilityLabel : presentation.accessibilityLabel
         )
+        .modifier(ActionCardEditModifier(policy: editPolicy, onEdit: onEdit))
         .onAppear { updateTrailPulse() }
         .onChange(of: feedbackStyle) { _, _ in updateTrailPulse() }
     }
@@ -92,5 +135,37 @@ struct ActionCardView: View {
 
     private func updateTrailPulse() {
         isTrailDimmed = feedbackStyle == .pulsingTrail
+    }
+}
+
+private struct ActionCardEditModifier: ViewModifier {
+    let policy: ActionCardEditPolicy
+    let onEdit: (() -> Void)?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if policy.isFocusable, let onEdit, let actionName = policy.accessibilityActionName {
+            content
+                .focusable()
+                .onTapGesture(count: 2) {
+                    if policy.allows(.doubleClick) { onEdit() }
+                }
+                .onKeyPress(.return) {
+                    guard policy.allows(.returnKey) else { return .ignored }
+                    onEdit()
+                    return .handled
+                }
+                .onKeyPress(.space) {
+                    guard policy.allows(.spaceKey) else { return .ignored }
+                    onEdit()
+                    return .handled
+                }
+                .accessibilityAction(named: Text(actionName)) {
+                    if policy.allows(.accessibilityAction) { onEdit() }
+                }
+                .accessibilityHint("双击或按 Return 编辑")
+        } else {
+            content
+        }
     }
 }

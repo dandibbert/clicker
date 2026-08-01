@@ -37,7 +37,14 @@ struct ClickerEmptyStateView: View {
 
             HStack(spacing: ClickerVisualTheme.spacing8) {
                 if let actionTitle = presentation.actionTitle, let action {
-                    Button(actionTitle, action: action)
+                    Button(action: action) {
+                        if kind == .permissionRequired {
+                            Text(actionTitle)
+                                .foregroundStyle(ClickerVisualTheme.playbackForeground)
+                        } else {
+                            Text(actionTitle)
+                        }
+                    }
                         .buttonStyle(.borderedProminent)
                         .tint(primaryActionTint)
                 }
