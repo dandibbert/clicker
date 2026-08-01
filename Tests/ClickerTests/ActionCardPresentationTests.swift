@@ -202,6 +202,40 @@ final class ActionCardPresentationTests: XCTestCase {
         )
     }
 
+    func testActiveTrailPulseMaintainsNonTextContrastAtItsMinimumOpacity() {
+        let inactive = ActionCardActiveTrail(feedbackStyle: nil, isDimmed: false)
+        let staticTrail = ActionCardActiveTrail(
+            feedbackStyle: .staticHighlight,
+            isDimmed: true
+        )
+        let pulseLow = ActionCardActiveTrail(feedbackStyle: .pulsingTrail, isDimmed: true)
+        let pulseHigh = ActionCardActiveTrail(feedbackStyle: .pulsingTrail, isDimmed: false)
+
+        XCTAssertEqual(inactive.trailOpacity, 0)
+        XCTAssertEqual(staticTrail.trailOpacity, 1)
+        XCTAssertEqual(pulseHigh.trailOpacity, 1)
+        XCTAssertGreaterThan(pulseLow.trailOpacity, 0)
+        XCTAssertLessThan(pulseLow.trailOpacity, 1)
+
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = NSAppearance(named: appearanceName)!
+            let red = ClickerVisualTheme.resolvedColor(for: .activeTrail, appearance: appearance)
+            let card = ClickerVisualTheme.resolvedColor(for: .cardSurface, appearance: appearance)
+            let composited = composite(red, over: card, alpha: pulseLow.trailOpacity)
+
+            XCTAssertGreaterThanOrEqual(
+                contrastRatio(composited, card),
+                3,
+                "The pulse low point must retain 3:1 contrast in \(appearanceName.rawValue)"
+            )
+        }
+
+        XCTAssertTrue(
+            String(reflecting: ActionCardView.Body.self).contains("ActionCardActiveTrail"),
+            "Deleting the real active-trail consumer must fail this test"
+        )
+    }
+
     func testActionCardEditConfigurationInvokesExactlyOnceOnlyWhenEnabled() {
         var editCount = 0
         let enabled = ActionCardEditConfiguration(isEnabled: true) { editCount += 1 }
@@ -320,6 +354,18 @@ final class ActionCardPresentationTests: XCTestCase {
         let first = relativeLuminance(lhs)
         let second = relativeLuminance(rhs)
         return (max(first, second) + 0.05) / (min(first, second) + 0.05)
+    }
+
+    private func composite(_ foreground: NSColor, over background: NSColor, alpha: Double) -> NSColor {
+        let foreground = foreground.usingColorSpace(.sRGB)!
+        let background = background.usingColorSpace(.sRGB)!
+        let alpha = CGFloat(alpha)
+        return NSColor(
+            red: foreground.redComponent * alpha + background.redComponent * (1 - alpha),
+            green: foreground.greenComponent * alpha + background.greenComponent * (1 - alpha),
+            blue: foreground.blueComponent * alpha + background.blueComponent * (1 - alpha),
+            alpha: 1
+        )
     }
 
     private func relativeLuminance(_ color: NSColor) -> CGFloat {

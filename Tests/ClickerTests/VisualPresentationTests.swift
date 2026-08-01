@@ -265,6 +265,93 @@ final class VisualPresentationTests: XCTestCase {
         }
     }
 
+    func testRecordingSettingsUsesScrollableContentAndFixedSafeFooter() {
+        let body = String(reflecting: RecordingSettingsView.Body.self)
+
+        XCTAssertTrue(body.contains("ScrollView"), body)
+        XCTAssertTrue(body.contains("_InsetViewModifier"), body)
+        XCTAssertTrue(body.contains("RecordingSettingsMessage"), body)
+        XCTAssertTrue(body.contains("RecordingSettingsFooter"), body)
+    }
+
+    @MainActor
+    func testRecordingSettingsKeepsBothFooterControlsVisibleAtMaximumDynamicType() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let state = AppState(store: ScriptStore(directory: directory))
+        let appearance = try XCTUnwrap(NSAppearance(named: .aqua))
+        let bitmap = try renderBitmap(
+            RecordingSettingsView()
+                .environmentObject(state)
+                .environment(\.dynamicTypeSize, .accessibility5)
+                .environment(\.colorScheme, .light),
+            appearance: appearance,
+            size: CGSize(width: 440, height: 360)
+        )
+        let ink = ClickerVisualTheme.resolvedColor(for: .primaryText, appearance: appearance)
+        let restoreRegion = CGRect(
+            x: CGFloat(bitmap.pixelsWide) * 0.04,
+            y: CGFloat(bitmap.pixelsHigh) * 0.82,
+            width: CGFloat(bitmap.pixelsWide) * 0.28,
+            height: CGFloat(bitmap.pixelsHigh) * 0.16
+        )
+        let doneRegion = CGRect(
+            x: CGFloat(bitmap.pixelsWide) * 0.72,
+            y: CGFloat(bitmap.pixelsHigh) * 0.82,
+            width: CGFloat(bitmap.pixelsWide) * 0.24,
+            height: CGFloat(bitmap.pixelsHigh) * 0.16
+        )
+
+        XCTAssertGreaterThan(
+            pixelFraction(in: bitmap, region: restoreRegion, near: ink, tolerance: 0.16),
+            0.001,
+            "Restore Defaults must remain visibly rendered in the fixed footer"
+        )
+        XCTAssertGreaterThan(
+            pixelFraction(in: bitmap, region: doneRegion, near: ink, tolerance: 0.12),
+            0.01,
+            "Done must remain visibly rendered in the fixed footer"
+        )
+    }
+
+    @MainActor
+    func testRecordingSettingsWarningUsesApprovedReadableForegroundInLightAndDark() throws {
+        XCTAssertEqual(
+            RecordingSettingsMessage(message: "裸文本键可能在输入文字时误触发").foregroundRole,
+            .primaryText
+        )
+        XCTAssertEqual(RecordingSettingsMessage(message: nil).foregroundRole, .secondaryText)
+
+        for fixture in [
+            (NSAppearance.Name.aqua, ColorScheme.light),
+            (.darkAqua, .dark),
+        ] {
+            let appearance = try XCTUnwrap(NSAppearance(named: fixture.0))
+            let foreground = ClickerVisualTheme.resolvedColor(
+                for: .primaryText,
+                appearance: appearance
+            )
+            let canvas = ClickerVisualTheme.resolvedColor(for: .canvas, appearance: appearance)
+            XCTAssertGreaterThanOrEqual(try contrastRatio(foreground, canvas), 4.5)
+
+            let bitmap = try renderBitmap(
+                RecordingSettingsMessage(message: "裸文本键可能在输入文字时误触发")
+                    .environment(\.colorScheme, fixture.1)
+                    .frame(width: 360, height: 64)
+                    .background(ClickerVisualTheme.canvas),
+                appearance: appearance,
+                size: CGSize(width: 360, height: 64)
+            )
+            XCTAssertGreaterThan(
+                pixelFraction(in: bitmap, near: foreground, tolerance: 0.12),
+                0.001,
+                "The real warning consumer must visibly render its approved foreground"
+            )
+        }
+    }
+
     func testVisualThemeUsesApprovedLayoutTokens() {
         XCTAssertEqual(ClickerVisualTheme.spacing4, 4)
         XCTAssertEqual(ClickerVisualTheme.spacing8, 8)
@@ -299,11 +386,15 @@ final class VisualPresentationTests: XCTestCase {
         ]
         let lightAppearanceNames: [NSAppearance.Name] = [
             .aqua,
+            .vibrantLight,
             .accessibilityHighContrastAqua,
+            .accessibilityHighContrastVibrantLight,
         ]
         let darkAppearanceNames: [NSAppearance.Name] = [
             .darkAqua,
+            .vibrantDark,
             .accessibilityHighContrastDarkAqua,
+            .accessibilityHighContrastVibrantDark,
         ]
 
         for appearanceName in lightAppearanceNames {
@@ -334,11 +425,15 @@ final class VisualPresentationTests: XCTestCase {
     func testExportedDynamicThemeProvidersResolveThePaletteAcrossAppearances() throws {
         let lightAppearanceNames: [NSAppearance.Name] = [
             .aqua,
+            .vibrantLight,
             .accessibilityHighContrastAqua,
+            .accessibilityHighContrastVibrantLight,
         ]
         let darkAppearanceNames: [NSAppearance.Name] = [
             .darkAqua,
+            .vibrantDark,
             .accessibilityHighContrastDarkAqua,
+            .accessibilityHighContrastVibrantDark,
         ]
 
         for appearanceName in lightAppearanceNames {
@@ -356,6 +451,28 @@ final class VisualPresentationTests: XCTestCase {
         }
     }
 
+    func testAppearanceClassificationUsesAquaDarkAquaBestMatchForAllEightAppearances() throws {
+        let fixtures: [(NSAppearance.Name, Bool)] = [
+            (.aqua, false),
+            (.vibrantLight, false),
+            (.accessibilityHighContrastAqua, false),
+            (.accessibilityHighContrastVibrantLight, false),
+            (.darkAqua, true),
+            (.vibrantDark, true),
+            (.accessibilityHighContrastDarkAqua, true),
+            (.accessibilityHighContrastVibrantDark, true),
+        ]
+
+        for (name, expectedIsDark) in fixtures {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            XCTAssertEqual(
+                ClickerVisualTheme.appearanceIsDark(appearance),
+                expectedIsDark,
+                name.rawValue
+            )
+        }
+    }
+
     func testSecondaryTextMeetsNormalTextContrastAcrossAppearances() throws {
         for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
             let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
@@ -368,16 +485,25 @@ final class VisualPresentationTests: XCTestCase {
         }
     }
 
-    func testProminentButtonUsesExplicitHighContrastForegroundAcrossAppearances() throws {
-        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
-            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
-            let fill = ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance)
-            let foreground = ClickerVisualTheme.resolvedColor(
-                for: .prominentForeground,
-                appearance: appearance
-            )
+    func testProminentButtonRolesUseReadableTextInLightAndDark() throws {
+        for role in [ClickerProminentButtonRole.recording, .neutral] {
+            for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+                let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+                let fill = ClickerVisualTheme.resolvedColor(
+                    for: role.fillRole,
+                    appearance: appearance
+                )
+                let foreground = ClickerVisualTheme.resolvedColor(
+                    for: role.foregroundRole,
+                    appearance: appearance
+                )
 
-            XCTAssertGreaterThanOrEqual(try contrastRatio(foreground, fill), 4.5)
+                XCTAssertGreaterThanOrEqual(
+                    try contrastRatio(foreground, fill),
+                    4.5,
+                    "\(role) text must remain readable in \(appearanceName.rawValue)"
+                )
+            }
         }
     }
 
@@ -385,7 +511,7 @@ final class VisualPresentationTests: XCTestCase {
         let consumers: [(String, Any.Type)] = [
             ("record and playback", PrimaryActionBar.Body.self),
             ("recording empty state and permission", ClickerEmptyStateView.Body.self),
-            ("settings done", RecordingSettingsView.Body.self),
+            ("settings done", RecordingSettingsFooter.Body.self),
         ]
 
         for (name, bodyType) in consumers {
@@ -396,16 +522,60 @@ final class VisualPresentationTests: XCTestCase {
         }
     }
 
-    func testSharedProminentButtonAppliesAnExplicitForegroundForBothSemanticRoles() {
-        XCTAssertEqual(ClickerProminentButtonRole.recording.fillRole, .recordFill)
+    func testSharedProminentButtonAppliesAnExplicitForegroundForBothSemanticRoles() throws {
+        XCTAssertEqual(ClickerProminentButtonRole.recording.fillRole, .playbackFill)
         XCTAssertEqual(ClickerProminentButtonRole.recording.foregroundRole, .prominentForeground)
+        XCTAssertEqual(ClickerProminentButtonRole.recording.cueRole, .recordFill)
         XCTAssertEqual(ClickerProminentButtonRole.neutral.fillRole, .playbackFill)
         XCTAssertEqual(ClickerProminentButtonRole.neutral.foregroundRole, .prominentForeground)
+        XCTAssertNil(ClickerProminentButtonRole.neutral.cueRole)
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = NSAppearance(named: appearanceName)!
+            let cue = ClickerVisualTheme.resolvedColor(for: .recordFill, appearance: appearance)
+            let fill = ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance)
+            XCTAssertGreaterThanOrEqual(try contrastRatio(cue, fill), 3)
+        }
         XCTAssertTrue(
             String(reflecting: ClickerProminentButton<Text>.Body.self)
                 .contains("_ForegroundStyleModifier"),
             "Removing foregroundStyle from the real shared button must fail this test"
         )
+        XCTAssertTrue(
+            String(reflecting: ClickerProminentButton<Text>.Body.self)
+                .contains("_OverlayModifier"),
+            "Removing the recording cue overlay from the real shared button must fail this test"
+        )
+    }
+
+    @MainActor
+    func testProminentButtonRasterKeepsRedAsARecordingCueOnly() throws {
+        for fixture in [
+            (NSAppearance.Name.aqua, ColorScheme.light),
+            (.darkAqua, .dark),
+        ] {
+            let appearance = try XCTUnwrap(NSAppearance(named: fixture.0))
+            let record = try renderBitmap(
+                ClickerProminentButton(role: .recording, action: {}) { Text("录制") }
+                    .environment(\.colorScheme, fixture.1)
+                    .frame(width: 160, height: 44),
+                appearance: appearance,
+                size: CGSize(width: 160, height: 44)
+            )
+            let neutral = try renderBitmap(
+                ClickerProminentButton(role: .neutral, action: {}) { Text("回放") }
+                    .environment(\.colorScheme, fixture.1)
+                    .frame(width: 160, height: 44),
+                appearance: appearance,
+                size: CGSize(width: 160, height: 44)
+            )
+            let cue = ClickerVisualTheme.resolvedColor(for: .recordFill, appearance: appearance)
+            let recordFraction = pixelFraction(in: record, near: cue, tolerance: 0.08)
+            let neutralFraction = pixelFraction(in: neutral, near: cue, tolerance: 0.08)
+
+            XCTAssertGreaterThan(recordFraction, 0.005)
+            XCTAssertLessThan(recordFraction, 0.2, "Red must remain a cue, not the recording fill")
+            XCTAssertLessThan(neutralFraction, 0.001)
+        }
     }
 
     func testContrastCalculationRejectsAColorThatCannotConvertToSRGB() {
@@ -512,6 +682,56 @@ final class VisualPresentationTests: XCTestCase {
             }
         }
         return false
+    }
+
+    private func pixelFraction(
+        in bitmap: NSBitmapImageRep,
+        near target: NSColor,
+        tolerance: CGFloat
+    ) -> CGFloat {
+        guard let target = target.usingColorSpace(.sRGB) else { return 0 }
+        var matches = 0
+        for y in 0 ..< bitmap.pixelsHigh {
+            for x in 0 ..< bitmap.pixelsWide {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
+                    continue
+                }
+                if abs(color.redComponent - target.redComponent) <= tolerance,
+                   abs(color.greenComponent - target.greenComponent) <= tolerance,
+                   abs(color.blueComponent - target.blueComponent) <= tolerance {
+                    matches += 1
+                }
+            }
+        }
+        return CGFloat(matches) / CGFloat(bitmap.pixelsWide * bitmap.pixelsHigh)
+    }
+
+    private func pixelFraction(
+        in bitmap: NSBitmapImageRep,
+        region: CGRect,
+        near target: NSColor,
+        tolerance: CGFloat
+    ) -> CGFloat {
+        guard let target = target.usingColorSpace(.sRGB) else { return 0 }
+        let minX = max(0, Int(region.minX.rounded(.down)))
+        let maxX = min(bitmap.pixelsWide, Int(region.maxX.rounded(.up)))
+        let minY = max(0, Int(region.minY.rounded(.down)))
+        let maxY = min(bitmap.pixelsHigh, Int(region.maxY.rounded(.up)))
+        guard minX < maxX, minY < maxY else { return 0 }
+        var matches = 0
+        for y in minY ..< maxY {
+            for x in minX ..< maxX {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
+                    continue
+                }
+                if abs(color.redComponent - target.redComponent) <= tolerance,
+                   abs(color.greenComponent - target.greenComponent) <= tolerance,
+                   abs(color.blueComponent - target.blueComponent) <= tolerance {
+                    matches += 1
+                }
+            }
+        }
+        return CGFloat(matches) / CGFloat((maxX - minX) * (maxY - minY))
     }
 
 

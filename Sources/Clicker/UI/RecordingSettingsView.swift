@@ -72,6 +72,48 @@ struct RecordingSettingsPanel<Content: View>: View {
     }
 }
 
+struct RecordingSettingsMessage: View {
+    let message: String?
+
+    var foregroundRole: ClickerVisualTheme.ColorRole {
+        message == nil ? .secondaryText : .primaryText
+    }
+
+    var body: some View {
+        Group {
+            if let message {
+                Label(message, systemImage: "exclamationmark.triangle")
+            } else {
+                Text("录制时可在任意应用中按此快捷键停止。")
+            }
+        }
+        .foregroundStyle(ClickerVisualTheme.color(for: foregroundRole))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, ClickerVisualTheme.spacing4)
+    }
+}
+
+struct RecordingSettingsFooter: View {
+    let restoreDefaults: () -> Void
+    let done: () -> Void
+
+    var body: some View {
+        HStack(spacing: ClickerVisualTheme.spacing8) {
+            Button("恢复默认值", action: restoreDefaults)
+                .buttonStyle(.bordered)
+
+            Spacer()
+
+            ClickerProminentButton(role: .neutral, action: done) {
+                Text("完成")
+            }
+        }
+        .padding(.horizontal, ClickerVisualTheme.spacing24)
+        .padding(.vertical, ClickerVisualTheme.spacing16)
+        .background(ClickerVisualTheme.canvas)
+    }
+}
+
 struct RecordingSettingsView: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.dismiss) private var dismiss
@@ -80,62 +122,47 @@ struct RecordingSettingsView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing16) {
-                RecordingSettingsPanel {
-                    VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing12) {
-                        Text("停止录制")
-                            .font(.headline)
-                            .foregroundStyle(ClickerVisualTheme.primaryText)
+            ScrollView {
+                VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing16) {
+                    RecordingSettingsPanel {
+                        VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing12) {
+                            Text("停止录制")
+                                .font(.headline)
+                                .foregroundStyle(ClickerVisualTheme.primaryText)
 
-                        HStack(spacing: ClickerVisualTheme.spacing12) {
-                            Text("当前快捷键")
-                                .foregroundStyle(ClickerVisualTheme.secondaryText)
-                            Spacer()
-                            shortcutToken
+                            HStack(spacing: ClickerVisualTheme.spacing12) {
+                                Text("当前快捷键")
+                                    .foregroundStyle(ClickerVisualTheme.secondaryText)
+                                Spacer()
+                                shortcutToken
+                            }
+
+                            Divider()
+
+                            Button(isCapturing ? "请按下新的快捷键…" : "更改快捷键") {
+                                isCapturing.toggle()
+                            }
+
+                            if isCapturing {
+                                ShortcutCaptureView(onCandidate: accept)
+                                    .frame(height: 1)
+                            }
                         }
-
-                        Divider()
-
-                        Button(isCapturing ? "请按下新的快捷键…" : "更改快捷键") {
-                            isCapturing.toggle()
-                        }
-
-                        if isCapturing {
-                            ShortcutCaptureView(onCandidate: accept)
-                                .frame(height: 1)
-                        }
                     }
+
+                    RecordingSettingsMessage(message: editor.message)
                 }
-
-                HStack(alignment: .firstTextBaseline, spacing: ClickerVisualTheme.spacing8) {
-                    if let message = editor.message {
-                        Label(message, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.orange)
-                    } else {
-                        Text("录制时可在任意应用中按此快捷键停止。")
-                            .foregroundStyle(ClickerVisualTheme.secondaryText)
-                    }
-                }
-                .padding(.horizontal, ClickerVisualTheme.spacing4)
-
-                Spacer(minLength: 0)
-
-                HStack(spacing: ClickerVisualTheme.spacing8) {
-                    Button("恢复默认值") {
-                        editor.restoreDefault()
-                        state.recordingStopShortcut = editor.shortcut
-                        isCapturing = false
-                    }
-                    .buttonStyle(.bordered)
-
-                    Spacer()
-
-                    ClickerProminentButton(role: .neutral, action: { dismiss() }) {
-                        Text("完成")
-                    }
-                }
+                .padding(.horizontal, ClickerVisualTheme.spacing24)
+                .padding(.top, ClickerVisualTheme.spacing24)
+                .padding(.bottom, ClickerVisualTheme.spacing16)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(ClickerVisualTheme.spacing24)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                RecordingSettingsFooter(
+                    restoreDefaults: restoreDefaults,
+                    done: { dismiss() }
+                )
+            }
             .background(ClickerVisualTheme.canvas)
             .navigationTitle("录制设置")
         }
@@ -147,6 +174,12 @@ struct RecordingSettingsView: View {
         .onChange(of: state.phase) { _, phase in
             if phase != .idle { dismiss() }
         }
+    }
+
+    private func restoreDefaults() {
+        editor.restoreDefault()
+        state.recordingStopShortcut = editor.shortcut
+        isCapturing = false
     }
 
     private func accept(_ candidate: RecordingStopShortcut) {

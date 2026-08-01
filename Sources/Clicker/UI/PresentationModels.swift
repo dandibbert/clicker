@@ -204,13 +204,6 @@ enum PrimaryActionKind: Equatable {
     case play
 }
 
-enum ScriptPlaybackEligibility {
-    static func isPlayable(_ script: Script) -> Bool {
-        let plan = BlockExpander.plan(for: script)
-        return !plan.steps.isEmpty || plan.duration > 0
-    }
-}
-
 struct PrimaryActionPresentation: Equatable {
     let kind: PrimaryActionKind
     let title: String

@@ -17,6 +17,36 @@ struct ActionCardEditConfiguration {
     }
 }
 
+struct ActionCardActiveTrail: View {
+    let feedbackStyle: ActiveFeedbackStyle?
+    let isDimmed: Bool
+
+    var trailOpacity: Double {
+        switch feedbackStyle {
+        case nil:
+            0
+        case .staticHighlight:
+            1
+        case .pulsingTrail:
+            isDimmed ? 0.86 : 1
+        }
+    }
+
+    var body: some View {
+        Capsule()
+            .fill(ClickerVisualTheme.activeTrail)
+            .frame(width: 3)
+            .padding(.vertical, ClickerVisualTheme.spacing4)
+            .opacity(trailOpacity)
+            .animation(trailAnimation, value: isDimmed)
+    }
+
+    private var trailAnimation: Animation? {
+        guard feedbackStyle == .pulsingTrail else { return nil }
+        return .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
+    }
+}
+
 struct ActionCardView: View {
     let block: ActionBlock
     let isActive: Bool
@@ -99,12 +129,10 @@ struct ActionCardView: View {
             )
         }
         .overlay(alignment: .leading) {
-            Capsule()
-                .fill(ClickerVisualTheme.activeTrail)
-                .frame(width: 3)
-                .padding(.vertical, ClickerVisualTheme.spacing4)
-                .opacity(trailOpacity)
-                .animation(trailAnimation, value: isTrailDimmed)
+            ActionCardActiveTrail(
+                feedbackStyle: feedbackStyle,
+                isDimmed: isTrailDimmed
+            )
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
@@ -113,22 +141,6 @@ struct ActionCardView: View {
         .modifier(ActionCardEditModifier(configuration: editConfiguration))
         .onAppear { updateTrailPulse() }
         .onChange(of: feedbackStyle) { _, _ in updateTrailPulse() }
-    }
-
-    private var trailOpacity: Double {
-        switch feedbackStyle {
-        case nil:
-            0
-        case .staticHighlight:
-            1
-        case .pulsingTrail:
-            isTrailDimmed ? 0.42 : 1
-        }
-    }
-
-    private var trailAnimation: Animation? {
-        guard feedbackStyle == .pulsingTrail else { return nil }
-        return .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
     }
 
     private func updateTrailPulse() {

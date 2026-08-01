@@ -5,16 +5,15 @@ enum ClickerProminentButtonRole: Equatable {
     case neutral
 
     var fillRole: ClickerVisualTheme.ColorRole {
-        switch self {
-        case .recording:
-            .recordFill
-        case .neutral:
-            .playbackFill
-        }
+        .playbackFill
     }
 
     var foregroundRole: ClickerVisualTheme.ColorRole {
         .prominentForeground
+    }
+
+    var cueRole: ClickerVisualTheme.ColorRole? {
+        self == .recording ? .recordFill : nil
     }
 }
 
@@ -30,5 +29,13 @@ struct ClickerProminentButton<Label: View>: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(ClickerVisualTheme.color(for: role.fillRole))
+        .overlay {
+            if let cueRole = role.cueRole {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(ClickerVisualTheme.color(for: cueRole), lineWidth: 2)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
     }
 }

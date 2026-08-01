@@ -40,7 +40,7 @@ enum ClickerVisualTheme {
 
     static func resolvedColor(for role: ColorRole, appearance: NSAppearance) -> NSColor {
         let palette = palette(for: role)
-        return (isDarkAppearance(appearance) ? palette.dark : palette.light).nsColor
+        return (appearanceIsDark(appearance) ? palette.dark : palette.light).nsColor
     }
 
     static func dynamicNSColor(for role: ColorRole) -> NSColor {
@@ -74,13 +74,8 @@ enum ClickerVisualTheme {
         }
     }
 
-    private static func isDarkAppearance(_ appearance: NSAppearance) -> Bool {
-        switch appearance.name {
-        case .darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua:
-            true
-        default:
-            false
-        }
+    static func appearanceIsDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
     }
 
     private struct RGB {
