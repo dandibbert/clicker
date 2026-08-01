@@ -3,6 +3,7 @@ import ClickerCore
 
 struct MainView: View {
     @EnvironmentObject var state: AppState
+    @State private var isShowingRecordingSettings = false
 
     var body: some View {
         Group {
@@ -14,6 +15,26 @@ struct MainView: View {
                 }
             } else {
                 PermissionGuideView()
+            }
+        }
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    isShowingRecordingSettings = true
+                } label: {
+                    Label("录制设置", systemImage: "gearshape")
+                }
+                .help("录制设置")
+                .disabled(state.phase != .idle)
+            }
+        }
+        .sheet(isPresented: $isShowingRecordingSettings) {
+            RecordingSettingsView()
+                .environmentObject(state)
+        }
+        .onChange(of: state.phase) { _, phase in
+            if phase != .idle {
+                isShowingRecordingSettings = false
             }
         }
         .onReceive(NotificationCenter.default.publisher(

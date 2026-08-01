@@ -69,6 +69,11 @@ final class AppState: ObservableObject {
         phase == .idle
     }
 
+    var recordingStopShortcut: RecordingStopShortcut {
+        get { stopShortcutStore.shortcut }
+        set { stopShortcutStore.shortcut = newValue }
+    }
+
     @discardableResult
     func create(_ script: Script) -> Bool {
         guard canEditScripts else { return false }
