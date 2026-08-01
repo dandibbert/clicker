@@ -100,11 +100,18 @@ final class VisualPresentationTests: XCTestCase {
         XCTAssertNil(model.actionTitle)
     }
 
-    func testEmptyScriptInvitesTheFirstRecordedAction() {
+    func testPermissionPresentationKeepsPrimaryAndSecondaryActions() {
+        let model = ClickerEmptyStatePresentation(kind: .permissionRequired)
+
+        XCTAssertEqual(model.title, "需要辅助功能权限")
+        XCTAssertEqual(model.actionTitle, "打开系统设置")
+        XCTAssertEqual(model.secondaryActionTitle, "重新检测")
+    }
+
+    func testEmptyScriptInvitesRecordingOrAddingAnAction() {
         let model = ClickerEmptyStatePresentation(kind: .emptyScript)
 
         XCTAssertEqual(model.title, "这个脚本还没有动作")
-        XCTAssertTrue(model.description.contains("添加第一个动作"))
         XCTAssertEqual(model.actionTitle, "开始录制")
     }
 

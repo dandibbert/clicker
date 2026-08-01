@@ -1,12 +1,20 @@
 import SwiftUI
 
 struct ClickerEmptyStateView: View {
+    private let kind: ClickerEmptyStateKind
     private let presentation: ClickerEmptyStatePresentation
     private let action: (() -> Void)?
+    private let secondaryAction: (() -> Void)?
 
-    init(kind: ClickerEmptyStateKind, action: (() -> Void)? = nil) {
+    init(
+        kind: ClickerEmptyStateKind,
+        action: (() -> Void)? = nil,
+        secondaryAction: (() -> Void)? = nil
+    ) {
+        self.kind = kind
         presentation = ClickerEmptyStatePresentation(kind: kind)
         self.action = action
+        self.secondaryAction = secondaryAction
     }
 
     var body: some View {
@@ -27,12 +35,26 @@ struct ClickerEmptyStateView: View {
                     .frame(maxWidth: 300)
             }
 
-            if let actionTitle = presentation.actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .buttonStyle(.borderedProminent)
-                    .tint(ClickerVisualTheme.recordFill)
+            HStack(spacing: ClickerVisualTheme.spacing8) {
+                if let actionTitle = presentation.actionTitle, let action {
+                    Button(actionTitle, action: action)
+                        .buttonStyle(.borderedProminent)
+                        .tint(primaryActionTint)
+                }
+
+                if let secondaryActionTitle = presentation.secondaryActionTitle,
+                   let secondaryAction {
+                    Button(secondaryActionTitle, action: secondaryAction)
+                        .buttonStyle(.bordered)
+                }
             }
         }
         .padding(ClickerVisualTheme.spacing24)
+    }
+
+    private var primaryActionTint: Color {
+        kind == .permissionRequired
+            ? ClickerVisualTheme.playbackFill
+            : ClickerVisualTheme.recordFill
     }
 }

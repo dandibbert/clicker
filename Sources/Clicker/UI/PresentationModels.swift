@@ -158,6 +158,7 @@ struct ScriptRowPresentation: Equatable {
 enum ClickerEmptyStateKind: Equatable {
     case emptyLibrary
     case noSelection
+    case permissionRequired
     case emptyScript
 }
 
@@ -166,6 +167,7 @@ struct ClickerEmptyStatePresentation: Equatable {
     let title: String
     let description: String
     let actionTitle: String?
+    let secondaryActionTitle: String?
 
     init(kind: ClickerEmptyStateKind) {
         switch kind {
@@ -174,16 +176,25 @@ struct ClickerEmptyStatePresentation: Equatable {
             title = "还没有脚本"
             description = "录制一段操作，创建你的第一个脚本。"
             actionTitle = "开始录制"
+            secondaryActionTitle = nil
         case .noSelection:
             systemImage = "sidebar.left"
             title = "选择一个脚本"
             description = "从左侧脚本库选择一个脚本，查看和编辑它的动作。"
             actionTitle = nil
+            secondaryActionTitle = nil
+        case .permissionRequired:
+            systemImage = "hand.raised.circle"
+            title = "需要辅助功能权限"
+            description = "Clicker 需要在「系统设置 → 隐私与安全性 → 辅助功能」中获得授权，才能录制和回放鼠标键盘操作。授权后回到本窗口自动生效。"
+            actionTitle = "打开系统设置"
+            secondaryActionTitle = "重新检测"
         case .emptyScript:
             systemImage = "square.stack.3d.up.slash"
             title = "这个脚本还没有动作"
             description = "开始录制操作，或手动添加第一个动作。"
             actionTitle = "开始录制"
+            secondaryActionTitle = nil
         }
     }
 }

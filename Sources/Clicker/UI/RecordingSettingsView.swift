@@ -54,16 +54,20 @@ struct RecordingSettingsView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("停止录制") {
-                    LabeledContent("当前快捷键") {
-                        Text(editor.shortcut.displayName)
-                            .font(.system(.body, design: .monospaced).weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-                            .accessibilityLabel("当前快捷键 \(editor.shortcut.displayName)")
+            VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing16) {
+                VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing12) {
+                    Text("停止录制")
+                        .font(.headline)
+                        .foregroundStyle(ClickerVisualTheme.primaryText)
+
+                    HStack(spacing: ClickerVisualTheme.spacing12) {
+                        Text("当前快捷键")
+                            .foregroundStyle(ClickerVisualTheme.secondaryText)
+                        Spacer()
+                        shortcutToken
                     }
+
+                    Divider()
 
                     Button(isCapturing ? "请按下新的快捷键…" : "更改快捷键") {
                         isCapturing.toggle()
@@ -74,32 +78,46 @@ struct RecordingSettingsView: View {
                             .frame(height: 1)
                     }
                 }
+                .padding(ClickerVisualTheme.spacing16)
+                .background(
+                    ClickerVisualTheme.elevatedSurface,
+                    in: RoundedRectangle(
+                        cornerRadius: ClickerVisualTheme.panelCornerRadius,
+                        style: .continuous
+                    )
+                )
 
-                Section("提示") {
+                HStack(alignment: .firstTextBaseline, spacing: ClickerVisualTheme.spacing8) {
                     if let message = editor.message {
                         Label(message, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.orange)
                     } else {
                         Text("录制时可在任意应用中按此快捷键停止。")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(ClickerVisualTheme.secondaryText)
                     }
                 }
+                .padding(.horizontal, ClickerVisualTheme.spacing4)
 
-                Section {
-                    Button("恢复默认值（Esc）") {
+                Spacer(minLength: 0)
+
+                HStack(spacing: ClickerVisualTheme.spacing8) {
+                    Button("恢复默认值") {
                         editor.restoreDefault()
                         state.recordingStopShortcut = editor.shortcut
                         isCapturing = false
                     }
-                }
-            }
-            .formStyle(.grouped)
-            .navigationTitle("录制设置")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
+                    .buttonStyle(.bordered)
+
+                    Spacer()
+
                     Button("完成") { dismiss() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(ClickerVisualTheme.playbackFill)
                 }
             }
+            .padding(ClickerVisualTheme.spacing24)
+            .background(ClickerVisualTheme.canvas)
+            .navigationTitle("录制设置")
         }
         .frame(width: 440, height: 360)
         .disabled(state.phase != .idle)
@@ -116,5 +134,22 @@ struct RecordingSettingsView: View {
             state.recordingStopShortcut = editor.shortcut
         }
         isCapturing = false
+    }
+
+    private var shortcutToken: some View {
+        Text(editor.shortcut.displayName)
+            .font(.system(.body, design: .monospaced).weight(.semibold))
+            .foregroundStyle(ClickerVisualTheme.primaryText)
+            .padding(.horizontal, ClickerVisualTheme.spacing12)
+            .padding(.vertical, ClickerVisualTheme.spacing4)
+            .background(
+                ClickerVisualTheme.cardSurface,
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(ClickerVisualTheme.separator, lineWidth: 1)
+            }
+            .accessibilityLabel("当前快捷键 \(editor.shortcut.displayName)")
     }
 }

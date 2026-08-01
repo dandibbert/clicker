@@ -52,60 +52,69 @@ struct ScriptDetailView: View {
             if case .playing(_, let id) = state.phase { return id }
             return nil
         }()
-        List {
-            ForEach(Array(script.blocks.enumerated()), id: \.element.id) { index, block in
-                ActionCardView(block: block, isActive: block.id == activeID)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        if state.canEditScripts { editingBlockID = block.id }
-                    }
-                    .moveDisabled(!state.canEditScripts)
-                    .deleteDisabled(!state.canEditScripts)
-                    .contextMenu {
-                        Button("编辑…") { editingBlockID = block.id }
+        ZStack {
+            List {
+                ForEach(Array(script.blocks.enumerated()), id: \.element.id) { index, block in
+                    ActionCardView(block: block, isActive: block.id == activeID)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            if state.canEditScripts { editingBlockID = block.id }
+                        }
+                        .moveDisabled(!state.canEditScripts)
+                        .deleteDisabled(!state.canEditScripts)
+                        .contextMenu {
+                            Button("编辑…") { editingBlockID = block.id }
+                                .disabled(!state.canEditScripts)
+                            Button("复制") {
+                                var s = script
+                                s.blocks = TimelineMutation.duplicating(
+                                    at: index,
+                                    in: s.blocks
+                                )
+                                state.update(s)
+                            }
                             .disabled(!state.canEditScripts)
-                        Button("复制") {
-                            var s = script
-                            s.blocks = TimelineMutation.duplicating(
-                                at: index,
-                                in: s.blocks
-                            )
-                            state.update(s)
+                            Divider()
+                            Button("删除", role: .destructive) {
+                                var s = script
+                                s.blocks = TimelineMutation.deleting(
+                                    at: index,
+                                    in: s.blocks
+                                )
+                                state.update(s)
+                            }
+                            .disabled(!state.canEditScripts)
                         }
-                        .disabled(!state.canEditScripts)
-                        Divider()
-                        Button("删除", role: .destructive) {
-                            var s = script
-                            s.blocks = TimelineMutation.deleting(
-                                at: index,
-                                in: s.blocks
-                            )
-                            state.update(s)
-                        }
-                        .disabled(!state.canEditScripts)
-                    }
+                }
+                .onMove { from, to in
+                    var s = script
+                    s.blocks = TimelineMutation.moving(
+                        fromOffsets: from,
+                        toOffset: to,
+                        in: s.blocks
+                    )
+                    state.update(s)
+                }
+                .onDelete { offsets in
+                    var s = script
+                    s.blocks = TimelineMutation.deleting(
+                        atOffsets: offsets,
+                        in: s.blocks
+                    )
+                    state.update(s)
+                }
             }
-            .onMove { from, to in
-                var s = script
-                s.blocks = TimelineMutation.moving(
-                    fromOffsets: from,
-                    toOffset: to,
-                    in: s.blocks
-                )
-                state.update(s)
-            }
-            .onDelete { offsets in
-                var s = script
-                s.blocks = TimelineMutation.deleting(
-                    atOffsets: offsets,
-                    in: s.blocks
-                )
-                state.update(s)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+
+            if script.blocks.isEmpty {
+                ClickerEmptyStateView(kind: .emptyScript, action: startRecording)
+                    .disabled(!state.canStartRecording)
             }
         }
-        .listStyle(.plain)
+        .background(ClickerVisualTheme.canvas)
         .safeAreaInset(edge: .bottom) {
             HStack {
                 Menu {
@@ -123,9 +132,16 @@ struct ScriptDetailView: View {
                 .disabled(!state.canEditScripts)
                 Spacer()
             }
-            .padding(10)
-            .background(.bar)
+            .padding(ClickerVisualTheme.spacing12)
+            .background(ClickerVisualTheme.elevatedSurface)
         }
+    }
+
+    private func startRecording() {
+        NotificationCenter.default.post(
+            name: .toggleRecord,
+            object: ["source": "ui"]
+        )
     }
 
     private func append(_ block: ActionBlock, to script: Script) {
