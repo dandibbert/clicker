@@ -54,7 +54,7 @@ struct ScriptDetailView: View {
         }()
         List {
             ForEach(Array(script.blocks.enumerated()), id: \.element.id) { index, block in
-                BlockRowView(block: block, isActive: block.id == activeID)
+                ActionCardView(block: block, isActive: block.id == activeID)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
                     .contentShape(Rectangle())

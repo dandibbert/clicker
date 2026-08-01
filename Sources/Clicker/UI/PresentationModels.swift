@@ -1,6 +1,115 @@
 import Foundation
 import ClickerCore
 
+struct ActionCardPresentation: Equatable {
+    let systemImage: String
+    let title: String
+    let summary: String
+    let trailingText: String
+    let accessibilityLabel: String
+
+    init(block: ActionBlock) {
+        let values: (systemImage: String, title: String, summary: String, trailingText: String)
+        switch block {
+        case .move(let move):
+            values = (
+                "arrow.up.and.down.and.arrow.left.and.right",
+                "移动鼠标",
+                Self.pathSummary(move.points),
+                Self.durationText(move.duration)
+            )
+        case .click(let click):
+            let title = click.button == .right ? "右键" : (click.clickCount >= 2 ? "双击" : "单击")
+            values = (
+                "cursorarrow.click",
+                title,
+                Self.pointSummary(x: click.x, y: click.y),
+                ""
+            )
+        case .drag(let drag):
+            values = (
+                "hand.draw",
+                "拖拽",
+                Self.pathSummary(drag.points),
+                Self.durationText(drag.duration)
+            )
+        case .scroll(let scroll):
+            let total = scroll.steps.reduce(0.0) { $0 + $1.dy }
+            let direction = total <= 0 ? "向下" : "向上"
+            values = (
+                "computermouse",
+                "滚动",
+                "\(direction) \(Self.number(abs(total))) px",
+                ""
+            )
+        case .typeText(let typeText):
+            values = (
+                "keyboard",
+                "输入文本",
+                "\"\(Self.truncated(typeText.text))\"",
+                ""
+            )
+        case .shortcut(let shortcut):
+            values = (
+                "command",
+                "快捷键",
+                KeyCodeMap.shortcutDisplay(keyCode: shortcut.keyCode, flags: shortcut.flags),
+                ""
+            )
+        case .wait(let wait):
+            values = ("clock", "等待", "暂停回放", Self.durationText(wait.duration))
+        }
+
+        systemImage = values.systemImage
+        title = values.title
+        summary = values.summary
+        trailingText = values.trailingText
+
+        let accessibleSummary: String
+        if case .typeText(let typeText) = block {
+            accessibleSummary = typeText.text
+        } else {
+            accessibleSummary = values.summary
+        }
+        accessibilityLabel = [values.title, accessibleSummary, values.trailingText]
+            .filter { !$0.isEmpty }
+            .joined(separator: "，")
+    }
+
+    private static func pointSummary(x: Double, y: Double) -> String {
+        "(\(number(x)), \(number(y)))"
+    }
+
+    private static func pathSummary(_ points: [TrackPoint]) -> String {
+        guard let first = points.first, let last = points.last else { return "未记录轨迹" }
+        return "\(pointSummary(x: first.x, y: first.y)) → \(pointSummary(x: last.x, y: last.y))"
+    }
+
+    private static func number(_ value: Double) -> String {
+        String(format: "%.0f", value)
+    }
+
+    private static func durationText(_ duration: TimeInterval) -> String {
+        let rounded = (duration * 10).rounded(.toNearestOrAwayFromZero) / 10
+        return String(format: "%.1f 秒", rounded)
+    }
+
+    private static func truncated(_ text: String) -> String {
+        guard text.count > 28 else { return text }
+        return "\(text.prefix(28))…"
+    }
+}
+
+enum ActiveFeedbackStyle: Equatable {
+    case staticHighlight
+    case pulsingTrail
+
+    static func resolve(isActive: Bool, reduceMotion: Bool) -> ActiveFeedbackStyle? {
+        guard isActive else { return nil }
+        return reduceMotion ? .staticHighlight : .pulsingTrail
+    }
+}
+
 struct ScriptRowPresentation: Equatable {
     let name: String
     let actionCountText: String
