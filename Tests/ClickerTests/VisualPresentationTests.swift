@@ -41,6 +41,39 @@ final class VisualPresentationTests: XCTestCase {
         XCTAssertEqual(model.modifiedText, "2 小时前修改")
     }
 
+    func testHeaderReportsActionCountAndPlanDuration() {
+        let script = Script(
+            name: "日报流程",
+            blocks: [.wait(WaitBlock(duration: 1.5))],
+            trailingDelay: 0.5
+        )
+
+        let model = ScriptHeaderPresentation(script: script)
+
+        XCTAssertEqual(model.title, "日报流程")
+        XCTAssertEqual(model.actionCountText, "1 个动作")
+        XCTAssertEqual(model.durationText, "约 2.0 秒")
+    }
+
+    func testHeaderReportsEmptyScriptMetadata() {
+        let model = ScriptHeaderPresentation(script: Script(name: "空脚本"))
+
+        XCTAssertEqual(model.actionCountText, "0 个动作")
+        XCTAssertEqual(model.durationText, "约 0.0 秒")
+    }
+
+    func testHeaderFormatsNonfinitePlanDurationSafely() {
+        let script = Script(
+            name: "安全时长",
+            blocks: [.wait(WaitBlock(duration: .infinity))],
+            trailingDelay: .nan
+        )
+
+        let model = ScriptHeaderPresentation(script: script)
+
+        XCTAssertEqual(model.durationText, "约 0.0 秒")
+    }
+
     func testEmptyLibraryOffersRecordingAction() {
         let model = ClickerEmptyStatePresentation(kind: .emptyLibrary)
 

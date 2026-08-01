@@ -16,15 +16,9 @@ struct ScriptDetailView: View {
     @ViewBuilder
     private func content(_ script: Script) -> some View {
         VStack(spacing: 0) {
-            controlBar(script)
+            ScriptHeaderView(script: script)
             Divider()
             blockList(script)
-        }
-        .toolbar {
-            ToolbarItemGroup {
-                recordButton
-                playButton(script)
-            }
         }
         .sheet(item: Binding(
             get: { editingBlockID.map(EditTarget.init(id:)) },
@@ -48,47 +42,6 @@ struct ScriptDetailView: View {
 
     private struct EditTarget: Identifiable {
         let id: UUID
-    }
-
-    // MARK: 控制栏：重复次数 + 间隔
-
-    @ViewBuilder
-    private func controlBar(_ script: Script) -> some View {
-        HStack(spacing: 20) {
-            HStack(spacing: 6) {
-                Text("重复")
-                TextField("次数", value: Binding(
-                    get: { script.repeatCount },
-                    set: { var s = script; s.repeatCount = max(1, $0); state.update(s) }),
-                    format: .number)
-                    .frame(width: 50)
-                    .disabled(script.repeatForever)
-                Text("次")
-                Toggle("无限", isOn: Binding(
-                    get: { script.repeatForever },
-                    set: { var s = script; s.repeatForever = $0; state.update(s) }))
-                    .toggleStyle(.checkbox)
-            }
-            .disabled(!state.canEditScripts)
-            HStack(spacing: 6) {
-                Text("间隔")
-                TextField("秒", value: Binding(
-                    get: { script.repeatInterval },
-                    set: { var s = script; s.repeatInterval = max(0, $0); state.update(s) }),
-                    format: .number)
-                    .frame(width: 50)
-                Text("秒")
-            }
-            .disabled(!state.canEditScripts)
-            Spacer()
-            if case .playing(let iteration, _) = state.phase {
-                Label(script.repeatForever ? "第 \(iteration) 轮" : "第 \(iteration)/\(script.repeatCount) 轮",
-                      systemImage: "play.fill")
-                    .foregroundStyle(.green)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
     }
 
     // MARK: 块列表
@@ -184,36 +137,5 @@ struct ScriptDetailView: View {
             in: s.blocks
         )
         state.update(s)
-    }
-
-    // MARK: 工具栏按钮
-
-    @ViewBuilder
-    private var recordButton: some View {
-        switch state.phase {
-        case .recording, .countdown:
-            Button {
-                NotificationCenter.default.post(name: .toggleRecord, object: ["source": "ui"])
-            } label: { Label("停止录制", systemImage: "stop.circle.fill") }
-        default:
-            Button {
-                NotificationCenter.default.post(name: .toggleRecord, object: ["source": "ui"])
-            } label: { Label("录制", systemImage: "record.circle") }
-                .disabled(state.phase != .idle)
-        }
-    }
-
-    @ViewBuilder
-    private func playButton(_ script: Script) -> some View {
-        if case .playing = state.phase {
-            Button {
-                NotificationCenter.default.post(name: .togglePlay, object: nil)
-            } label: { Label("停止", systemImage: "stop.fill") }
-        } else {
-            Button {
-                NotificationCenter.default.post(name: .togglePlay, object: nil)
-            } label: { Label("回放", systemImage: "play.fill") }
-                .disabled(state.phase != .idle || script.blocks.isEmpty)
-        }
     }
 }
