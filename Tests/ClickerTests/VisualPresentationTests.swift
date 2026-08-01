@@ -1,9 +1,14 @@
 import AppKit
 import ClickerCore
+import SwiftUI
 import XCTest
 @testable import Clicker
 
 final class VisualPresentationTests: XCTestCase {
+    private enum ColorConversionError: Error {
+        case cannotConvertToSRGB
+    }
+
     func testScriptRowIncludesActionCountAndModifiedMetadata() {
         let modifiedAt = Date(timeIntervalSince1970: 1_800_000_000)
         let script = Script(
@@ -185,6 +190,81 @@ final class VisualPresentationTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testRecordingIndicatorBorderUsesRecordFillAndConcreteMotionPolicy() throws {
+        let staticBorder = RecordingIndicatorBorder(
+            feedbackStyle: .staticHighlight,
+            isPulsing: false
+        )
+        XCTAssertEqual(staticBorder.borderOpacity, 1)
+        XCTAssertNil(staticBorder.borderAnimation)
+
+        let pulsingLow = RecordingIndicatorBorder(feedbackStyle: .pulsing, isPulsing: false)
+        let pulsingHigh = RecordingIndicatorBorder(feedbackStyle: .pulsing, isPulsing: true)
+        XCTAssertEqual(pulsingLow.borderOpacity, 0.35)
+        XCTAssertEqual(pulsingHigh.borderOpacity, 1)
+        XCTAssertNotNil(pulsingLow.borderAnimation)
+
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            let bitmap = try renderBitmap(
+                staticBorder.frame(width: 100, height: 100),
+                appearance: appearance,
+                size: CGSize(width: 100, height: 100)
+            )
+            XCTAssertTrue(
+                bitmapContainsVisibleRecordFill(bitmap),
+                "The real indicator border must render recordFill in \(appearanceName.rawValue)"
+            )
+        }
+
+        XCTAssertTrue(
+            String(reflecting: RecordingIndicatorView.Body.self)
+                .contains("RecordingIndicatorBorder"),
+            "Deleting the real indicator-border consumer must fail this test"
+        )
+        XCTAssertTrue(
+            String(reflecting: RecordingIndicatorBorder.Body.self)
+                .contains("_AnimationModifier"),
+            "Deleting the real border animation wiring must fail this test"
+        )
+    }
+
+    @MainActor
+    func testRecordingSettingsPanelRendersVisibleStrokeInLightAndDark() throws {
+        XCTAssertTrue(
+            String(reflecting: RecordingSettingsView.Body.self)
+                .contains("RecordingSettingsPanel"),
+            "RecordingSettingsView must retain the real stroked panel consumer"
+        )
+
+        for fixture in [
+            (NSAppearance.Name.aqua, ColorScheme.light),
+            (.darkAqua, .dark),
+        ] {
+            let appearance = try XCTUnwrap(NSAppearance(named: fixture.0))
+            let view = RecordingSettingsPanel {
+                Color.clear
+            }
+            .environment(\.colorScheme, fixture.1)
+            .frame(width: 320, height: 140)
+            .background(ClickerVisualTheme.canvas)
+            let bitmap = try renderBitmap(
+                view,
+                appearance: appearance,
+                size: CGSize(width: 320, height: 140)
+            )
+            let centerX = bitmap.pixelsWide / 2
+            let boundary = try XCTUnwrap(
+                bitmap.colorAt(x: centerX, y: 1)?.usingColorSpace(.sRGB)
+            )
+            let interior = try XCTUnwrap(
+                bitmap.colorAt(x: centerX, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB)
+            )
+            XCTAssertGreaterThanOrEqual(try contrastRatio(boundary, interior), 3)
+        }
+    }
+
     func testVisualThemeUsesApprovedLayoutTokens() {
         XCTAssertEqual(ClickerVisualTheme.spacing4, 4)
         XCTAssertEqual(ClickerVisualTheme.spacing8, 8)
@@ -209,6 +289,14 @@ final class VisualPresentationTests: XCTestCase {
     }
 
     func testVisualThemeResolvesOnlyApprovedPaletteAcrossAppearances() throws {
+        let approvedPalette: Set<UInt32> = [
+            0xF1_EA_DC,
+            0x17_16_19,
+            0xE7_38_36,
+            0x8B_84_7A,
+            0x15_14_18,
+            0x23_21_26,
+        ]
         let lightAppearanceNames: [NSAppearance.Name] = [
             .aqua,
             .accessibilityHighContrastAqua,
@@ -220,15 +308,25 @@ final class VisualPresentationTests: XCTestCase {
 
         for appearanceName in lightAppearanceNames {
             let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
-            for expectation in paletteExpectations {
-                assertSRGB(expectation.role, equals: expectation.light, in: appearance)
+            for role in ClickerVisualTheme.ColorRole.allCases {
+                XCTAssertTrue(
+                    approvedPalette.contains(try rgb24(
+                        ClickerVisualTheme.resolvedColor(for: role, appearance: appearance)
+                    )),
+                    "\(role.rawValue) must resolve to one of the independently approved six colors"
+                )
             }
         }
 
         for appearanceName in darkAppearanceNames {
             let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
-            for expectation in paletteExpectations {
-                assertSRGB(expectation.role, equals: expectation.dark, in: appearance)
+            for role in ClickerVisualTheme.ColorRole.allCases {
+                XCTAssertTrue(
+                    approvedPalette.contains(try rgb24(
+                        ClickerVisualTheme.resolvedColor(for: role, appearance: appearance)
+                    )),
+                    "\(role.rawValue) must resolve to one of the independently approved six colors"
+                )
             }
         }
     }
@@ -265,22 +363,55 @@ final class VisualPresentationTests: XCTestCase {
             let canvas = ClickerVisualTheme.resolvedColor(for: .canvas, appearance: appearance)
             let card = ClickerVisualTheme.resolvedColor(for: .cardSurface, appearance: appearance)
 
-            XCTAssertGreaterThanOrEqual(contrastRatio(text, canvas), 4.5)
-            XCTAssertGreaterThanOrEqual(contrastRatio(text, card), 4.5)
+            XCTAssertGreaterThanOrEqual(try contrastRatio(text, canvas), 4.5)
+            XCTAssertGreaterThanOrEqual(try contrastRatio(text, card), 4.5)
         }
     }
 
-    func testPlaybackButtonUsesExplicitHighContrastForegroundAcrossAppearances() throws {
+    func testProminentButtonUsesExplicitHighContrastForegroundAcrossAppearances() throws {
         for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
             let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
             let fill = ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance)
             let foreground = ClickerVisualTheme.resolvedColor(
-                for: .playbackForeground,
+                for: .prominentForeground,
                 appearance: appearance
             )
 
-            XCTAssertGreaterThanOrEqual(contrastRatio(foreground, fill), 4.5)
+            XCTAssertGreaterThanOrEqual(try contrastRatio(foreground, fill), 4.5)
         }
+    }
+
+    func testEveryProminentActionConsumerUsesTheExplicitSharedButton() {
+        let consumers: [(String, Any.Type)] = [
+            ("record and playback", PrimaryActionBar.Body.self),
+            ("recording empty state and permission", ClickerEmptyStateView.Body.self),
+            ("settings done", RecordingSettingsView.Body.self),
+        ]
+
+        for (name, bodyType) in consumers {
+            XCTAssertTrue(
+                String(reflecting: bodyType).contains("ClickerProminentButton"),
+                "\(name) must use ClickerProminentButton so deleting its explicit foreground is observable"
+            )
+        }
+    }
+
+    func testSharedProminentButtonAppliesAnExplicitForegroundForBothSemanticRoles() {
+        XCTAssertEqual(ClickerProminentButtonRole.recording.fillRole, .recordFill)
+        XCTAssertEqual(ClickerProminentButtonRole.recording.foregroundRole, .prominentForeground)
+        XCTAssertEqual(ClickerProminentButtonRole.neutral.fillRole, .playbackFill)
+        XCTAssertEqual(ClickerProminentButtonRole.neutral.foregroundRole, .prominentForeground)
+        XCTAssertTrue(
+            String(reflecting: ClickerProminentButton<Text>.Body.self)
+                .contains("_ForegroundStyleModifier"),
+            "Removing foregroundStyle from the real shared button must fail this test"
+        )
+    }
+
+    func testContrastCalculationRejectsAColorThatCannotConvertToSRGB() {
+        let pattern = NSColor(patternImage: NSImage(size: NSSize(width: 1, height: 1)))
+
+        XCTAssertThrowsError(try relativeLuminance(pattern))
     }
 
     private var paletteExpectations: [
@@ -291,12 +422,12 @@ final class VisualPresentationTests: XCTestCase {
             (.cardSurface, (0xF1, 0xEA, 0xDC), (0x23, 0x21, 0x26)),
             (.elevatedSurface, (0xF1, 0xEA, 0xDC), (0x23, 0x21, 0x26)),
             (.primaryText, (0x17, 0x16, 0x19), (0xF1, 0xEA, 0xDC)),
-            (.secondaryText, (0x70, 0x68, 0x5F), (0xA9, 0xA1, 0x97)),
+            (.secondaryText, (0x17, 0x16, 0x19), (0xF1, 0xEA, 0xDC)),
             (.separator, (0x8B, 0x84, 0x7A), (0x8B, 0x84, 0x7A)),
             (.selection, (0xF1, 0xEA, 0xDC), (0x23, 0x21, 0x26)),
             (.recordFill, (0xE7, 0x38, 0x36), (0xE7, 0x38, 0x36)),
             (.playbackFill, (0x17, 0x16, 0x19), (0xF1, 0xEA, 0xDC)),
-            (.playbackForeground, (0xF1, 0xEA, 0xDC), (0x17, 0x16, 0x19)),
+            (.prominentForeground, (0xF1, 0xEA, 0xDC), (0x17, 0x16, 0x19)),
             (.activeTrail, (0xE7, 0x38, 0x36), (0xE7, 0x38, 0x36)),
         ]
     }
@@ -341,6 +472,49 @@ final class VisualPresentationTests: XCTestCase {
         XCTAssertEqual(sRGB.blueComponent, CGFloat(expected.2) / 255, accuracy: 0.0001, file: file, line: line)
     }
 
+    private func rgb24(_ color: NSColor) throws -> UInt32 {
+        let sRGB = try XCTUnwrap(color.usingColorSpace(.sRGB))
+        let red = UInt32((sRGB.redComponent * 255).rounded())
+        let green = UInt32((sRGB.greenComponent * 255).rounded())
+        let blue = UInt32((sRGB.blueComponent * 255).rounded())
+        return red << 16 | green << 8 | blue
+    }
+
+    @MainActor
+    private func renderBitmap<V: View>(
+        _ view: V,
+        appearance: NSAppearance,
+        size: CGSize
+    ) throws -> NSBitmapImageRep {
+        _ = NSApplication.shared
+        let hosting = NSHostingView(rootView: view)
+        hosting.appearance = appearance
+        hosting.frame = CGRect(origin: .zero, size: size)
+        hosting.layoutSubtreeIfNeeded()
+        hosting.displayIfNeeded()
+        let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        return bitmap
+    }
+
+    private func bitmapContainsVisibleRecordFill(_ bitmap: NSBitmapImageRep) -> Bool {
+        for y in 0 ..< bitmap.pixelsHigh {
+            for x in 0 ..< bitmap.pixelsWide {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
+                    continue
+                }
+                if abs(color.redComponent - CGFloat(0xE7) / 255) < 0.01,
+                   abs(color.greenComponent - CGFloat(0x38) / 255) < 0.01,
+                   abs(color.blueComponent - CGFloat(0x36) / 255) < 0.01,
+                   color.alphaComponent > 0.8 {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+
     private func isTrailRed(_ color: NSColor) -> Bool {
         guard let sRGB = color.usingColorSpace(.sRGB) else { return false }
         return sRGB.redComponent == CGFloat(0xE7) / 255
@@ -348,14 +522,16 @@ final class VisualPresentationTests: XCTestCase {
             && sRGB.blueComponent == CGFloat(0x36) / 255
     }
 
-    private func contrastRatio(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
-        let first = relativeLuminance(lhs)
-        let second = relativeLuminance(rhs)
+    private func contrastRatio(_ lhs: NSColor, _ rhs: NSColor) throws -> CGFloat {
+        let first = try relativeLuminance(lhs)
+        let second = try relativeLuminance(rhs)
         return (max(first, second) + 0.05) / (min(first, second) + 0.05)
     }
 
-    private func relativeLuminance(_ color: NSColor) -> CGFloat {
-        guard let color = color.usingColorSpace(.sRGB) else { return 0 }
+    private func relativeLuminance(_ color: NSColor) throws -> CGFloat {
+        guard let color = color.usingColorSpace(.sRGB) else {
+            throw ColorConversionError.cannotConvertToSRGB
+        }
         func linear(_ component: CGFloat) -> CGFloat {
             component <= 0.04045
                 ? component / 12.92

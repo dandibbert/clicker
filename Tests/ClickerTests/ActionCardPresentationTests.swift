@@ -202,23 +202,87 @@ final class ActionCardPresentationTests: XCTestCase {
         )
     }
 
-    func testActionCardEditPolicySupportsKeyboardAndAccessibilityOnlyWhenEnabled() {
-        let enabled = ActionCardEditPolicy(isEnabled: true)
-        let disabled = ActionCardEditPolicy(isEnabled: false)
+    func testActionCardEditConfigurationInvokesExactlyOnceOnlyWhenEnabled() {
+        var editCount = 0
+        let enabled = ActionCardEditConfiguration(isEnabled: true) { editCount += 1 }
+        let disabled = ActionCardEditConfiguration(isEnabled: false) { editCount += 1 }
 
-        XCTAssertTrue(enabled.isFocusable)
-        XCTAssertTrue(enabled.allows(.doubleClick))
-        XCTAssertTrue(enabled.allows(.returnKey))
-        XCTAssertTrue(enabled.allows(.spaceKey))
-        XCTAssertTrue(enabled.allows(.accessibilityAction))
+        XCTAssertTrue(enabled.isEnabled)
+        XCTAssertFalse(disabled.isEnabled)
+        enabled.performEdit()
+        disabled.performEdit()
+        XCTAssertEqual(editCount, 1)
         XCTAssertEqual(enabled.accessibilityActionName, "编辑动作")
+        XCTAssertEqual(
+            enabled.accessibilityHint,
+            "双击，按 Return 或 Space，或使用 VoiceOver“编辑动作”操作"
+        )
+    }
 
-        XCTAssertFalse(disabled.isFocusable)
-        XCTAssertFalse(disabled.allows(.doubleClick))
-        XCTAssertFalse(disabled.allows(.returnKey))
-        XCTAssertFalse(disabled.allows(.spaceKey))
-        XCTAssertFalse(disabled.allows(.accessibilityAction))
-        XCTAssertNil(disabled.accessibilityActionName)
+    func testRealActionCardConsumerRetainsKeyboardAndNamedAccessibilityEditing() {
+        XCTAssertTrue(
+            String(reflecting: ActionCardView.Body.self).contains("ActionCardEditModifier"),
+            "Deleting the real ActionCardView edit modifier must fail this test"
+        )
+        let modifierBody = String(reflecting: ActionCardEditModifier.Body.self)
+        XCTAssertTrue(modifierBody.contains("KeyPress"), "Return and Space handlers must remain")
+        XCTAssertTrue(
+            modifierBody.contains("Accessibility"),
+            "The named VoiceOver edit action and hint must remain"
+        )
+    }
+
+    @MainActor
+    func testEditableActionCardReceivesLocalDoubleClickInsideListExactlyOnce() throws {
+        XCTAssertEqual(try editCountAfterLocalDoubleClick(isEnabled: true), 1)
+    }
+
+    @MainActor
+    private func editCountAfterLocalDoubleClick(isEnabled: Bool) throws -> Int {
+        _ = NSApplication.shared
+        var editCount = 0
+        let root = List {
+            ActionCardView(
+                block: .wait(WaitBlock(duration: 1)),
+                isActive: false,
+                isEditEnabled: isEnabled,
+                onEdit: { editCount += 1 }
+            )
+        }
+        .listStyle(.plain)
+        .frame(width: 360, height: 100)
+        let hosting = NSHostingView(rootView: root)
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 360, height: 100),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hosting
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        hosting.layoutSubtreeIfNeeded()
+        hosting.displayIfNeeded()
+
+        for clickCount in [1, 2] {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = try XCTUnwrap(NSEvent.mouseEvent(
+                    with: type,
+                    location: NSPoint(x: 180, y: 50),
+                    modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber,
+                    context: nil,
+                    eventNumber: 0,
+                    clickCount: clickCount,
+                    pressure: type == .leftMouseDown ? 1 : 0
+                ))
+                window.sendEvent(event)
+            }
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+        return editCount
     }
 
     @MainActor

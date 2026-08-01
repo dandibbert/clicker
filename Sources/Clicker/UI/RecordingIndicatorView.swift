@@ -9,6 +9,33 @@ enum RecordingIndicatorFeedbackStyle: Equatable {
     }
 }
 
+struct RecordingIndicatorBorder: View {
+    let feedbackStyle: RecordingIndicatorFeedbackStyle
+    let isPulsing: Bool
+
+    var borderOpacity: Double {
+        switch feedbackStyle {
+        case .pulsing:
+            isPulsing ? 1 : 0.35
+        case .staticHighlight:
+            1
+        }
+    }
+
+    var borderAnimation: Animation? {
+        guard feedbackStyle == .pulsing else { return nil }
+        return .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+    }
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12)
+            .stroke(ClickerVisualTheme.recordFill, lineWidth: 5)
+            .padding(8)
+            .opacity(borderOpacity)
+            .animation(borderAnimation, value: isPulsing)
+    }
+}
+
 struct RecordingIndicatorView: View {
     let shortcut: RecordingStopShortcut
     let showsHint: Bool
@@ -25,11 +52,10 @@ struct RecordingIndicatorView: View {
         ZStack {
             Color.clear
 
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(ClickerVisualTheme.recordFill, lineWidth: 5)
-                .padding(8)
-                .opacity(borderOpacity)
-                .animation(borderAnimation, value: isPulsing)
+            RecordingIndicatorBorder(
+                feedbackStyle: feedbackStyle,
+                isPulsing: isPulsing
+            )
 
             if showsHint {
                 VStack {
@@ -48,20 +74,6 @@ struct RecordingIndicatorView: View {
         .allowsHitTesting(false)
         .onAppear { updatePulse() }
         .onChange(of: feedbackStyle) { _, _ in updatePulse() }
-    }
-
-    private var borderOpacity: Double {
-        switch feedbackStyle {
-        case .pulsing:
-            isPulsing ? 1 : 0.35
-        case .staticHighlight:
-            1
-        }
-    }
-
-    private var borderAnimation: Animation? {
-        guard feedbackStyle == .pulsing else { return nil }
-        return .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
     }
 
     private func updatePulse() {

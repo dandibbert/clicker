@@ -46,6 +46,32 @@ struct RecordingShortcutEditor {
     }
 }
 
+struct RecordingSettingsPanel<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .padding(ClickerVisualTheme.spacing16)
+            .background(
+                ClickerVisualTheme.elevatedSurface,
+                in: RoundedRectangle(
+                    cornerRadius: ClickerVisualTheme.panelCornerRadius,
+                    style: .continuous
+                )
+            )
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: ClickerVisualTheme.panelCornerRadius,
+                    style: .continuous
+                )
+                .strokeBorder(
+                    ClickerVisualTheme.separator,
+                    lineWidth: ClickerVisualTheme.cardBorderWidth
+                )
+            }
+    }
+}
+
 struct RecordingSettingsView: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.dismiss) private var dismiss
@@ -55,46 +81,30 @@ struct RecordingSettingsView: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing16) {
-                VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing12) {
-                    Text("停止录制")
-                        .font(.headline)
-                        .foregroundStyle(ClickerVisualTheme.primaryText)
+                RecordingSettingsPanel {
+                    VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing12) {
+                        Text("停止录制")
+                            .font(.headline)
+                            .foregroundStyle(ClickerVisualTheme.primaryText)
 
-                    HStack(spacing: ClickerVisualTheme.spacing12) {
-                        Text("当前快捷键")
-                            .foregroundStyle(ClickerVisualTheme.secondaryText)
-                        Spacer()
-                        shortcutToken
+                        HStack(spacing: ClickerVisualTheme.spacing12) {
+                            Text("当前快捷键")
+                                .foregroundStyle(ClickerVisualTheme.secondaryText)
+                            Spacer()
+                            shortcutToken
+                        }
+
+                        Divider()
+
+                        Button(isCapturing ? "请按下新的快捷键…" : "更改快捷键") {
+                            isCapturing.toggle()
+                        }
+
+                        if isCapturing {
+                            ShortcutCaptureView(onCandidate: accept)
+                                .frame(height: 1)
+                        }
                     }
-
-                    Divider()
-
-                    Button(isCapturing ? "请按下新的快捷键…" : "更改快捷键") {
-                        isCapturing.toggle()
-                    }
-
-                    if isCapturing {
-                        ShortcutCaptureView(onCandidate: accept)
-                            .frame(height: 1)
-                    }
-                }
-                .padding(ClickerVisualTheme.spacing16)
-                .background(
-                    ClickerVisualTheme.elevatedSurface,
-                    in: RoundedRectangle(
-                        cornerRadius: ClickerVisualTheme.panelCornerRadius,
-                        style: .continuous
-                    )
-                )
-                .overlay {
-                    RoundedRectangle(
-                        cornerRadius: ClickerVisualTheme.panelCornerRadius,
-                        style: .continuous
-                    )
-                    .strokeBorder(
-                        ClickerVisualTheme.separator,
-                        lineWidth: ClickerVisualTheme.cardBorderWidth
-                    )
                 }
 
                 HStack(alignment: .firstTextBaseline, spacing: ClickerVisualTheme.spacing8) {
@@ -120,12 +130,9 @@ struct RecordingSettingsView: View {
 
                     Spacer()
 
-                    Button(action: { dismiss() }) {
+                    ClickerProminentButton(role: .neutral, action: { dismiss() }) {
                         Text("完成")
-                            .foregroundStyle(ClickerVisualTheme.playbackForeground)
                     }
-                        .buttonStyle(.borderedProminent)
-                        .tint(ClickerVisualTheme.playbackFill)
                 }
             }
             .padding(ClickerVisualTheme.spacing24)

@@ -14,13 +14,11 @@ struct PrimaryActionBar: View {
     var body: some View {
         HStack(spacing: ClickerVisualTheme.spacing8) {
             ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
-                Button {
+                ClickerProminentButton(role: buttonRole(for: action)) {
                     post(action)
                 } label: {
-                    actionLabel(action)
+                    Label(action.title, systemImage: action.systemImage)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(tint(for: action))
                 .disabled(!action.isEnabled)
                 .accessibilityLabel(action.accessibilityLabel)
                 .help(action.accessibilityLabel)
@@ -33,23 +31,12 @@ struct PrimaryActionBar: View {
         }
     }
 
-    @ViewBuilder
-    private func actionLabel(_ action: PrimaryActionPresentation) -> some View {
+    private func buttonRole(for action: PrimaryActionPresentation) -> ClickerProminentButtonRole {
         switch action.kind {
         case .record:
-            Label(action.title, systemImage: action.systemImage)
+            .recording
         case .play:
-            Label(action.title, systemImage: action.systemImage)
-                .foregroundStyle(ClickerVisualTheme.playbackForeground)
-        }
-    }
-
-    private func tint(for action: PrimaryActionPresentation) -> Color {
-        switch action.kind {
-        case .record:
-            ClickerVisualTheme.recordFill
-        case .play:
-            ClickerVisualTheme.playbackFill
+            .neutral
         }
     }
 

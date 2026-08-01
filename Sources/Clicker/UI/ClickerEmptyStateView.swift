@@ -37,16 +37,9 @@ struct ClickerEmptyStateView: View {
 
             HStack(spacing: ClickerVisualTheme.spacing8) {
                 if let actionTitle = presentation.actionTitle, let action {
-                    Button(action: action) {
-                        if kind == .permissionRequired {
-                            Text(actionTitle)
-                                .foregroundStyle(ClickerVisualTheme.playbackForeground)
-                        } else {
-                            Text(actionTitle)
-                        }
+                    ClickerProminentButton(role: primaryActionRole, action: action) {
+                        Text(actionTitle)
                     }
-                        .buttonStyle(.borderedProminent)
-                        .tint(primaryActionTint)
                 }
 
                 if let secondaryActionTitle = presentation.secondaryActionTitle,
@@ -59,9 +52,9 @@ struct ClickerEmptyStateView: View {
         .padding(ClickerVisualTheme.spacing24)
     }
 
-    private var primaryActionTint: Color {
+    private var primaryActionRole: ClickerProminentButtonRole {
         kind == .permissionRequired
-            ? ClickerVisualTheme.playbackFill
-            : ClickerVisualTheme.recordFill
+            ? .neutral
+            : .recording
     }
 }

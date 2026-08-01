@@ -1,29 +1,26 @@
 import SwiftUI
 import ClickerCore
 
-enum ActionCardEditTrigger {
-    case doubleClick
-    case returnKey
-    case spaceKey
-    case accessibilityAction
-}
+struct ActionCardEditConfiguration {
+    private let onEdit: (() -> Void)?
 
-struct ActionCardEditPolicy {
-    let isEnabled: Bool
+    init(isEnabled: Bool, onEdit: @escaping () -> Void) {
+        self.onEdit = isEnabled ? onEdit : nil
+    }
 
-    var isFocusable: Bool { isEnabled }
-    var accessibilityActionName: String? { isEnabled ? "编辑动作" : nil }
+    var isEnabled: Bool { onEdit != nil }
+    let accessibilityActionName = "编辑动作"
+    let accessibilityHint = "双击，按 Return 或 Space，或使用 VoiceOver“编辑动作”操作"
 
-    func allows(_ trigger: ActionCardEditTrigger) -> Bool {
-        isEnabled
+    func performEdit() {
+        onEdit?()
     }
 }
 
 struct ActionCardView: View {
     let block: ActionBlock
     let isActive: Bool
-    private let editPolicy: ActionCardEditPolicy
-    private let onEdit: (() -> Void)?
+    private let editConfiguration: ActionCardEditConfiguration?
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var isTrailDimmed = false
@@ -36,8 +33,9 @@ struct ActionCardView: View {
     ) {
         self.block = block
         self.isActive = isActive
-        editPolicy = ActionCardEditPolicy(isEnabled: isEditEnabled && onEdit != nil)
-        self.onEdit = onEdit
+        editConfiguration = onEdit.map {
+            ActionCardEditConfiguration(isEnabled: isEditEnabled, onEdit: $0)
+        }
     }
 
     private var presentation: ActionCardPresentation {
@@ -112,7 +110,7 @@ struct ActionCardView: View {
         .accessibilityLabel(
             isActive ? presentation.activeAccessibilityLabel : presentation.accessibilityLabel
         )
-        .modifier(ActionCardEditModifier(policy: editPolicy, onEdit: onEdit))
+        .modifier(ActionCardEditModifier(configuration: editConfiguration))
         .onAppear { updateTrailPulse() }
         .onChange(of: feedbackStyle) { _, _ in updateTrailPulse() }
     }
@@ -138,32 +136,29 @@ struct ActionCardView: View {
     }
 }
 
-private struct ActionCardEditModifier: ViewModifier {
-    let policy: ActionCardEditPolicy
-    let onEdit: (() -> Void)?
+struct ActionCardEditModifier: ViewModifier {
+    let configuration: ActionCardEditConfiguration?
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if policy.isFocusable, let onEdit, let actionName = policy.accessibilityActionName {
+        if let configuration, configuration.isEnabled {
             content
                 .focusable()
                 .onTapGesture(count: 2) {
-                    if policy.allows(.doubleClick) { onEdit() }
+                    configuration.performEdit()
                 }
                 .onKeyPress(.return) {
-                    guard policy.allows(.returnKey) else { return .ignored }
-                    onEdit()
+                    configuration.performEdit()
                     return .handled
                 }
                 .onKeyPress(.space) {
-                    guard policy.allows(.spaceKey) else { return .ignored }
-                    onEdit()
+                    configuration.performEdit()
                     return .handled
                 }
-                .accessibilityAction(named: Text(actionName)) {
-                    if policy.allows(.accessibilityAction) { onEdit() }
+                .accessibilityAction(named: Text(configuration.accessibilityActionName)) {
+                    configuration.performEdit()
                 }
-                .accessibilityHint("双击或按 Return 编辑")
+                .accessibilityHint(configuration.accessibilityHint)
         } else {
             content
         }
