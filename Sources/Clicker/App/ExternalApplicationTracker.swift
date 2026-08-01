@@ -20,7 +20,7 @@ final class SystemExternalApplicationTracker: ExternalApplicationTracking {
         initialFrontmostBundleIdentifier: @escaping () -> String? = {
             NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         },
-        notificationCenter: NotificationCenter = .default,
+        notificationCenter: NotificationCenter = NSWorkspace.shared.notificationCenter,
         activatedBundleIdentifier: @escaping (Notification) -> String? = { notification in
             (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
         }

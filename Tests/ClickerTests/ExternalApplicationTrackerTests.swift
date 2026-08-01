@@ -4,6 +4,24 @@ import XCTest
 
 @MainActor
 final class ExternalApplicationTrackerTests: XCTestCase {
+    func testDefaultNotificationCenterTracksWorkspaceActivationNotifications() {
+        let payloadKey = "ExternalApplicationTrackerTests.\(UUID().uuidString)"
+        let expectedBundleIdentifier = "com.example.production-wiring.\(UUID().uuidString)"
+        let tracker = SystemExternalApplicationTracker(
+            initialFrontmostBundleIdentifier: { nil },
+            activatedBundleIdentifier: { $0.userInfo?[payloadKey] as? String }
+        )
+        tracker.start()
+
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            userInfo: [payloadKey: expectedBundleIdentifier]
+        )
+
+        XCTAssertEqual(tracker.mostRecentExternalBundleIdentifier, expectedBundleIdentifier)
+    }
+
     func testStartCapturesInitialExternalApplicationAndIsIdempotent() {
         let center = NotificationCenter()
         var initialReads = 0
