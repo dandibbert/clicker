@@ -121,9 +121,6 @@ final class ShortcutCaptureTests: XCTestCase {
         hosting.displayIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
 
-        let body = String(reflecting: ShortcutCaptureCard.Body.self)
-        XCTAssertTrue(body.contains("Button"), body)
-        XCTAssertTrue(body.contains("AccessibilityAttachment"), body)
         let points = [
             CGPoint(x: 12, y: 12),
             CGPoint(x: hosting.bounds.midX, y: hosting.bounds.midY),

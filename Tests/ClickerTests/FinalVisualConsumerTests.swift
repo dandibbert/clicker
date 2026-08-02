@@ -599,7 +599,10 @@ final class FinalVisualConsumerTests: XCTestCase {
                 .joined()
                 .replacingOccurrences(of: " ", with: "")
 
-            for expected in ["外观", "跟随系统", "浅色", "深色"] {
+            for expected in [
+                "通用", "外观", "跟随系统", "浅色", "深色",
+                "录制", "停止录制快捷键", "恢复默认设置",
+            ] {
                 XCTAssertTrue(
                     renderedCopy.contains(expected),
                     "The real settings consumer must render \(expected) in \(fixture.0.rawValue): \(renderedCopy)"
@@ -607,17 +610,27 @@ final class FinalVisualConsumerTests: XCTestCase {
             }
             XCTAssertFalse(renderedCopy.contains("当前快捷键"), renderedCopy)
             XCTAssertFalse(renderedCopy.contains("更改快捷键"), renderedCopy)
+            XCTAssertFalse(renderedCopy.contains("完成"), renderedCopy)
         }
     }
 
     @MainActor
-    func testFooterControlsRemainEnabledDistinctAndInsideStandardViewport() throws {
+    func testResetRemainsLowEmphasisAndNoFooterAppearsInStandardViewport() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let state = AppState(store: ScriptStore(directory: directory))
+        let shortcutStore = FinalVisualShortcutStoreStub(shortcut: RecordingStopShortcut(
+            keyCode: 1,
+            modifierFlags: KeyCodeMap.maskControl
+        ))
+        let appearanceStore = FinalVisualAppearanceStoreStub(preference: .dark)
+        let state = AppState(
+            store: ScriptStore(directory: directory),
+            stopShortcutStore: shortcutStore,
+            appearancePreferenceStore: appearanceStore
+        )
         let hosting = NSHostingView(
             rootView: RecordingSettingsView()
                 .environmentObject(state)
@@ -643,56 +656,47 @@ final class FinalVisualConsumerTests: XCTestCase {
             logicalSize: hosting.bounds.size
         )
         let restoreLabel = try XCTUnwrap(
-            renderedText.first { $0.text.replacingOccurrences(of: " ", with: "").contains("恢复默认值") }
-        )
-        let doneLabel = try XCTUnwrap(
-            renderedText.first { $0.text.replacingOccurrences(of: " ", with: "").contains("完成") }
+            renderedText.first { $0.text.replacingOccurrences(of: " ", with: "").contains("恢复默认设置") }
         )
         XCTAssertTrue(hosting.bounds.contains(restoreLabel.frame))
-        XCTAssertTrue(hosting.bounds.contains(doneLabel.frame))
+        XCTAssertFalse(renderedText.contains { $0.text.contains("完成") })
 
         let restoreButton = try XCTUnwrap(
             nativeButton(
-                recognizing: "恢复默认值",
+                recognizing: "恢复默认设置",
                 among: nativeControls(in: hosting).compactMap { $0 as? NSButton },
                 recognizedText: renderedText,
                 in: hosting
             ),
-            "The bordered restore action must remain a native hit target"
+            "Reset must remain a stable native action boundary"
         )
         let restoreBounds = hosting.convert(restoreButton.bounds, from: restoreButton)
         XCTAssertTrue(restoreButton.isEnabled)
         XCTAssertTrue(hosting.bounds.contains(restoreBounds))
         XCTAssertTrue(restoreBounds.contains(restoreLabel.frame))
+        restoreButton.performClick(nil)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(shortcutStore.shortcut, .defaultValue)
+        XCTAssertEqual(appearanceStore.preference, .system)
 
-        let midpoint = (restoreLabel.frame.maxX + doneLabel.frame.minX) / 2
-        let footerRegion = CGRect(
-            x: midpoint,
-            y: hosting.bounds.height - 80,
-            width: hosting.bounds.width - midpoint,
-            height: 80
-        )
         let appearance = try XCTUnwrap(NSAppearance(named: .aqua))
-        let doneBounds = try XCTUnwrap(
-            visibleColorBounds(
-                in: bitmap(for: hosting),
+        XCTAssertLessThan(
+            renderedPixelFraction(
+                in: try bitmap(for: hosting),
+                logicalSize: hosting.bounds.size,
+                region: restoreBounds,
                 near: ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance),
-                tolerance: 0.08,
-                within: footerRegion,
-                logicalSize: hosting.bounds.size
+                tolerance: 0.04
             ),
-            "The enabled Done action must render the shared prominent neutral fill"
+            0.35,
+            "Reset must not use a large prominent primary fill"
         )
-        XCTAssertTrue(hosting.bounds.contains(doneBounds))
-        XCTAssertTrue(doneBounds.contains(doneLabel.frame))
-        XCTAssertFalse(doneBounds.intersects(restoreBounds))
-        XCTAssertTrue((36 ... 40).contains(doneBounds.height), "Done height: \(doneBounds)")
 
         let renderedCopy = renderedText
             .map(\.text)
             .joined()
             .replacingOccurrences(of: " ", with: "")
-        for expected in ["外观", "停止录制快捷键", "恢复默认值", "完成"] {
+        for expected in ["通用", "外观", "录制", "停止录制快捷键", "恢复默认设置"] {
             XCTAssertTrue(
                 renderedCopy.contains(expected),
                 "\(expected) must remain rendered in the standard hosted viewport: \(renderedCopy)"
@@ -700,4 +704,20 @@ final class FinalVisualConsumerTests: XCTestCase {
         }
     }
 
+}
+
+private final class FinalVisualShortcutStoreStub: RecordingStopShortcutProviding {
+    var shortcut: RecordingStopShortcut
+
+    init(shortcut: RecordingStopShortcut) {
+        self.shortcut = shortcut
+    }
+}
+
+private final class FinalVisualAppearanceStoreStub: AppAppearancePreferenceProviding {
+    var preference: AppAppearancePreference
+
+    init(preference: AppAppearancePreference) {
+        self.preference = preference
+    }
 }

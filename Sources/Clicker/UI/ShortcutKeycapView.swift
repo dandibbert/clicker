@@ -34,7 +34,7 @@ struct ShortcutCaptureCard: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: ClickerVisualTheme.spacing12) {
-                VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing8) {
+                VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing4) {
                     Text(presentation.title)
                         .font(.headline)
                         .foregroundStyle(ClickerVisualTheme.primaryText)
@@ -44,7 +44,7 @@ struct ShortcutCaptureCard: View {
                             Text(key)
                                 .font(.system(.body, design: .monospaced).weight(.semibold))
                                 .foregroundStyle(ClickerVisualTheme.primaryText)
-                                .frame(minWidth: 30, minHeight: 30)
+                                .frame(minWidth: 26, minHeight: 26)
                                 .padding(.horizontal, ClickerVisualTheme.spacing4)
                                 .background(
                                     ClickerVisualTheme.elevatedSurface,
@@ -69,8 +69,8 @@ struct ShortcutCaptureCard: View {
                     .multilineTextAlignment(.trailing)
                     .frame(width: 104, alignment: .trailing)
             }
-            .padding(ClickerVisualTheme.spacing16)
-            .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
+            .padding(.horizontal, ClickerVisualTheme.spacing12)
+            .frame(maxWidth: .infinity, minHeight: 80, maxHeight: 80, alignment: .leading)
             .background(
                 ClickerVisualTheme.cardSurface,
                 in: RoundedRectangle(

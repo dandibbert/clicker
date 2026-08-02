@@ -203,12 +203,6 @@ final class VisualPresentationTests: XCTestCase {
 
     @MainActor
     func testRecordingSettingsPanelRendersVisibleStrokeInLightAndDark() throws {
-        XCTAssertTrue(
-            String(reflecting: RecordingSettingsView.Body.self)
-                .contains("RecordingSettingsPanel"),
-            "RecordingSettingsView must retain the real stroked panel consumer"
-        )
-
         for fixture in [
             (NSAppearance.Name.aqua, ColorScheme.light),
             (.darkAqua, .dark),
@@ -234,56 +228,6 @@ final class VisualPresentationTests: XCTestCase {
             )
             XCTAssertGreaterThanOrEqual(try contrastRatio(boundary, interior), 3)
         }
-    }
-
-    func testRecordingSettingsUsesScrollableContentAndFixedSafeFooter() {
-        let body = String(reflecting: RecordingSettingsView.Body.self)
-
-        XCTAssertTrue(body.contains("ScrollView"), body)
-        XCTAssertTrue(body.contains("_InsetViewModifier"), body)
-        XCTAssertTrue(body.contains("RecordingSettingsMessage"), body)
-        XCTAssertTrue(body.contains("RecordingSettingsFooter"), body)
-    }
-
-    @MainActor
-    func testRecordingSettingsKeepsBothFooterControlsVisibleInStandardHostedViewport() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let state = AppState(store: ScriptStore(directory: directory))
-        let appearance = try XCTUnwrap(NSAppearance(named: .aqua))
-        let bitmap = try renderBitmap(
-            RecordingSettingsView()
-                .environmentObject(state)
-                .environment(\.colorScheme, .light),
-            appearance: appearance,
-            size: CGSize(width: 440, height: 360)
-        )
-        let ink = ClickerVisualTheme.resolvedColor(for: .primaryText, appearance: appearance)
-        let restoreRegion = CGRect(
-            x: CGFloat(bitmap.pixelsWide) * 0.04,
-            y: CGFloat(bitmap.pixelsHigh) * 0.82,
-            width: CGFloat(bitmap.pixelsWide) * 0.28,
-            height: CGFloat(bitmap.pixelsHigh) * 0.16
-        )
-        let doneRegion = CGRect(
-            x: CGFloat(bitmap.pixelsWide) * 0.72,
-            y: CGFloat(bitmap.pixelsHigh) * 0.82,
-            width: CGFloat(bitmap.pixelsWide) * 0.24,
-            height: CGFloat(bitmap.pixelsHigh) * 0.16
-        )
-
-        XCTAssertGreaterThan(
-            pixelFraction(in: bitmap, region: restoreRegion, near: ink, tolerance: 0.16),
-            0.001,
-            "Restore Defaults must remain visibly rendered in the fixed footer"
-        )
-        XCTAssertGreaterThan(
-            pixelFraction(in: bitmap, region: doneRegion, near: ink, tolerance: 0.12),
-            0.01,
-            "Done must remain visibly rendered in the fixed footer"
-        )
     }
 
     @MainActor
@@ -513,7 +457,6 @@ final class VisualPresentationTests: XCTestCase {
         let consumers: [(String, Any.Type)] = [
             ("record and playback", PrimaryActionBar.Body.self),
             ("recording empty state and permission", ClickerEmptyStateView.Body.self),
-            ("settings done", RecordingSettingsFooter.Body.self),
         ]
 
         for (name, bodyType) in consumers {

@@ -99,41 +99,18 @@ struct RecordingSettingsMessage: View {
     }
 }
 
-struct RecordingSettingsFooter: View {
-    let restoreDefaults: () -> Void
-    let done: () -> Void
-
-    var body: some View {
-        HStack(spacing: ClickerVisualTheme.spacing8) {
-            Button("恢复默认值", action: restoreDefaults)
-                .buttonStyle(.bordered)
-
-            Spacer()
-
-            ClickerProminentButton(role: .neutral, action: done) {
-                Text("完成")
-            }
-        }
-        .padding(.horizontal, ClickerVisualTheme.spacing24)
-        .padding(.vertical, ClickerVisualTheme.spacing16)
-        .background(ClickerVisualTheme.canvas)
-    }
-}
-
 struct RecordingSettingsView: View {
     @EnvironmentObject private var state: AppState
-    @Environment(\.dismiss) private var dismiss
     @State private var isCapturing = false
     @State private var editor = RecordingShortcutEditor(shortcut: .defaultValue)
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing16) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing16) {
+                settingsSection("通用") {
                     RecordingSettingsPanel {
-                        VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing12) {
+                        HStack(spacing: ClickerVisualTheme.spacing12) {
                             Text("外观")
-                                .font(.headline)
                                 .foregroundStyle(ClickerVisualTheme.primaryText)
 
                             Picker("外观", selection: $state.appearancePreference) {
@@ -143,14 +120,19 @@ struct RecordingSettingsView: View {
                             }
                             .pickerStyle(.segmented)
                             .labelsHidden()
+                            .frame(width: 240)
+                            .disabled(state.phase != .idle)
                         }
                     }
+                }
 
+                settingsSection("录制") {
                     ShortcutCaptureCard(
                         shortcut: editor.shortcut,
                         isCapturing: isCapturing,
-                        action: { isCapturing = true }
+                        action: beginCapture
                     )
+                    .disabled(state.phase != .idle)
                     .background {
                         if isCapturing {
                             ShortcutCaptureView(onCandidate: accept)
@@ -161,31 +143,52 @@ struct RecordingSettingsView: View {
                     }
 
                     RecordingSettingsMessage(message: editor.message)
+
+                    Button("恢复默认设置", action: restoreDefaults)
+                        .buttonStyle(.bordered)
+                        .foregroundStyle(ClickerVisualTheme.secondaryText)
+                        .disabled(state.phase != .idle)
                 }
-                .padding(.horizontal, ClickerVisualTheme.spacing24)
-                .padding(.top, ClickerVisualTheme.spacing24)
-                .padding(.bottom, ClickerVisualTheme.spacing16)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                RecordingSettingsFooter(
-                    restoreDefaults: restoreDefaults,
-                    done: { dismiss() }
-                )
-            }
-            .background(ClickerVisualTheme.canvas)
-            .navigationTitle("录制设置")
+            .padding(.horizontal, ClickerVisualTheme.spacing24)
+            .padding(.vertical, ClickerVisualTheme.spacing16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .background(ClickerVisualTheme.canvas)
         .frame(width: 440, height: 360)
-        .disabled(state.phase != .idle)
         .onAppear {
             editor = RecordingShortcutEditor(shortcut: state.recordingStopShortcut)
         }
+        .onChange(of: state.phase) { _, phase in
+            if phase != .idle {
+                isCapturing = false
+            }
+        }
+    }
+
+    private func settingsSection<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing8) {
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(ClickerVisualTheme.primaryText)
+
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func beginCapture() {
+        guard state.phase == .idle else { return }
+        isCapturing = true
     }
 
     private func restoreDefaults() {
         editor.restoreDefault()
         state.recordingStopShortcut = editor.shortcut
+        state.appearancePreference = .system
         isCapturing = false
     }
 
