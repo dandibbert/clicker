@@ -1,5 +1,6 @@
 import AppKit
 import ClickerCore
+import Combine
 import SwiftUI
 import XCTest
 @testable import Clicker
@@ -58,6 +59,45 @@ final class SettingsAccessTests: XCTestCase {
 
         let button = try XCTUnwrap(descendants(of: hosting).compactMap { $0 as? NSButton }.first)
         XCTAssertFalse(button.isEnabled)
+    }
+
+    @MainActor
+    func testSettingsButtonDisablesNativeControlAfterDynamicStateChange() throws {
+        _ = NSApplication.shared
+        let harness = SettingsButtonStateHarness()
+        let hosting = NSHostingView(rootView: SettingsButtonStateHarnessView(harness: harness))
+        hosting.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
+        let window = NSWindow(
+            contentRect: hosting.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hosting
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        hosting.layoutSubtreeIfNeeded()
+        hosting.displayIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+        let enabledButton = try XCTUnwrap(
+            descendants(of: hosting).compactMap { $0 as? NSButton }.first
+        )
+        XCTAssertTrue(enabledButton.isEnabled)
+        enabledButton.performClick(nil)
+        XCTAssertEqual(harness.openCount, 1)
+
+        harness.isDisabled = true
+        hosting.layoutSubtreeIfNeeded()
+        hosting.displayIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+        let disabledButton = try XCTUnwrap(
+            descendants(of: hosting).compactMap { $0 as? NSButton }.first
+        )
+        XCTAssertFalse(disabledButton.isEnabled)
+        disabledButton.performClick(nil)
+        XCTAssertEqual(harness.openCount, 1)
     }
 
     @MainActor
@@ -134,5 +174,19 @@ private final class SettingsAccessAppearanceStoreStub: AppAppearancePreferencePr
 
     init(preference: AppAppearancePreference) {
         self.preference = preference
+    }
+}
+
+private final class SettingsButtonStateHarness: ObservableObject {
+    @Published var isDisabled = false
+    var openCount = 0
+}
+
+private struct SettingsButtonStateHarnessView: View {
+    @ObservedObject var harness: SettingsButtonStateHarness
+
+    var body: some View {
+        SettingsButton { harness.openCount += 1 }
+            .disabled(harness.isDisabled)
     }
 }
