@@ -1,10 +1,88 @@
 import AppKit
 import ClickerCore
 import SwiftUI
+import Vision
 import XCTest
 @testable import Clicker
 
 final class FinalVisualConsumerTests: XCTestCase {
+    @MainActor
+    func testInfinitePlayingHeaderKeepsRepeatAndProgressVisibleAtMinimumWindowSize() throws {
+        _ = NSApplication.shared
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let state = AppState(store: ScriptStore(directory: directory))
+        let firstBlock = ActionBlock.wait(WaitBlock(duration: 1))
+        let script = Script(
+            name: "无限回放脚本",
+            blocks: [firstBlock, .wait(WaitBlock(duration: 0.5))],
+            repeatCount: 3,
+            repeatForever: true,
+            repeatInterval: 1.5
+        )
+        state.scripts = [script]
+        state.selectedScriptID = script.id
+        state.phase = .playing(iteration: 2, currentBlockID: firstBlock.id)
+        let size = CGSize(width: 760, height: 480)
+
+        for fixture in [
+            (NSAppearance.Name.aqua, ColorScheme.light),
+            (.darkAqua, .dark),
+        ] {
+            let appearance = try XCTUnwrap(NSAppearance(named: fixture.0))
+            let hosting = NSHostingView(
+                rootView: ScriptDetailView()
+                    .environmentObject(state)
+                    .environment(\.colorScheme, fixture.1)
+                    .frame(width: size.width, height: size.height)
+            )
+            hosting.appearance = appearance
+            hosting.frame = CGRect(origin: .zero, size: size)
+            let window = NSWindow(
+                contentRect: hosting.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.contentView = hosting
+            window.makeKeyAndOrderFront(nil)
+            defer { window.orderOut(nil) }
+            hosting.layoutSubtreeIfNeeded()
+            hosting.displayIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+            let bitmap = try bitmap(for: hosting)
+            let matches: [(text: String, frame: CGRect)] = try recognizedTextFrames(
+                in: bitmap,
+                logicalSize: size
+            )
+            let normalizedMatches = matches.map {
+                (text: $0.text.replacingOccurrences(of: " ", with: ""), frame: $0.frame)
+            }
+            let infinite = try XCTUnwrap(
+                normalizedMatches.first { $0.text.contains("无限") },
+                "The real infinite-repeat label must remain visibly rendered"
+            )
+            let progress = try XCTUnwrap(
+                normalizedMatches.first { $0.text.contains("第2轮") },
+                "The real infinite playback progress must keep its existing copy"
+            )
+            let headerBounds = CGRect(
+                x: 0,
+                y: 0,
+                width: size.width,
+                height: ClickerVisualTheme.compactHeaderHeight
+            )
+
+            XCTAssertTrue(headerBounds.contains(infinite.frame))
+            XCTAssertTrue(headerBounds.contains(progress.frame))
+            XCTAssertTrue(hosting.bounds.contains(infinite.frame))
+            XCTAssertTrue(hosting.bounds.contains(progress.frame))
+        }
+    }
+
     @MainActor
     func testSelectedScriptKeepsCompactHeaderControlsAndActionListVisibleAtMinimumWindowSize() throws {
         _ = NSApplication.shared
@@ -70,20 +148,39 @@ final class FinalVisualConsumerTests: XCTestCase {
             )
 
             let controls = nativeControls(in: hosting)
-            XCTAssertEqual(
-                PrimaryActionPresentation.pair(phase: .idle, hasPlayableScript: true).map(\.title),
-                ["录制", "回放"]
+            let recordButton = try XCTUnwrap(
+                nativeButton(
+                    accessibilityLabel: "开始录制",
+                    phase: .idle,
+                    hasPlayableScript: true,
+                    in: controls
+                ),
+                "The accessibility-labeled record action must map to its rendered NSButton"
             )
-            let primaryButtons = controls.compactMap { $0 as? NSButton }.filter {
-                !($0 is NSPopUpButton)
-            }
-            XCTAssertEqual(primaryButtons.count, 2, "Both labeled primary actions must render")
+            let playbackButton = try XCTUnwrap(
+                nativeButton(
+                    accessibilityLabel: "开始回放",
+                    phase: .idle,
+                    hasPlayableScript: true,
+                    in: controls
+                ),
+                "The accessibility-labeled playback action must map to its rendered NSButton"
+            )
+            let primaryButtons = [recordButton, playbackButton]
+            let headerBounds = CGRect(x: 0, y: 0, width: size.width, height: headerHeight)
             for button in primaryButtons {
                 let frame = hosting.convert(button.bounds, from: button)
                 XCTAssertGreaterThanOrEqual(frame.width, 44)
                 XCTAssertGreaterThanOrEqual(frame.height, 44)
-                XCTAssertLessThanOrEqual(frame.maxY, headerHeight)
+                XCTAssertTrue(headerBounds.contains(frame), "The labeled button must be visible in the header")
             }
+            let recordFrame = hosting.convert(recordButton.bounds, from: recordButton)
+            let playbackFrame = hosting.convert(playbackButton.bounds, from: playbackButton)
+            XCTAssertLessThanOrEqual(
+                abs(recordFrame.width - playbackFrame.width),
+                1,
+                "Record/play native hit widths must be equal within one point"
+            )
 
             for label in ["次数", "秒"] {
                 let element = try XCTUnwrap(
@@ -271,6 +368,32 @@ final class FinalVisualConsumerTests: XCTestCase {
         }
     }
 
+    private func recognizedTextFrames(
+        in bitmap: NSBitmapImageRep,
+        logicalSize: CGSize
+    ) throws -> [(text: String, frame: CGRect)] {
+        let image = try XCTUnwrap(bitmap.cgImage)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["zh-Hans"]
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: image, orientation: .up).perform([request])
+
+        return (request.results ?? []).compactMap { observation in
+            guard let candidate = observation.topCandidates(1).first else { return nil }
+            let box = observation.boundingBox
+            return (
+                text: candidate.string,
+                frame: CGRect(
+                    x: box.minX * logicalSize.width,
+                    y: (1 - box.maxY) * logicalSize.height,
+                    width: box.width * logicalSize.width,
+                    height: box.height * logicalSize.height
+                )
+            )
+        }
+    }
+
     @MainActor
     private func nativeControls<V: View>(in hosting: NSHostingView<V>) -> [NSView] {
         var controls: [ObjectIdentifier: NSView] = [:]
@@ -288,6 +411,26 @@ final class FinalVisualConsumerTests: XCTestCase {
         if let field = view as? NSTextField { return field.placeholderString }
         if let button = view as? NSButton, !button.title.isEmpty { return button.title }
         return nil
+    }
+
+    private func nativeButton(
+        accessibilityLabel: String,
+        phase: AppPhase,
+        hasPlayableScript: Bool,
+        in controls: [NSView]
+    ) -> NSButton? {
+        let buttons = controls
+            .compactMap { $0 as? NSButton }
+            .filter { !($0 is NSPopUpButton) }
+            .sorted {
+                $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX
+            }
+        let labels = PrimaryActionPresentation.pair(
+            phase: phase,
+            hasPlayableScript: hasPlayableScript
+        ).map(\.accessibilityLabel)
+        guard buttons.count == labels.count else { return nil }
+        return Dictionary(uniqueKeysWithValues: zip(labels, buttons))[accessibilityLabel]
     }
 
     private func color(
