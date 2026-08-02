@@ -59,7 +59,7 @@ struct RecordingSettingsPanel<Content: View>: View {
         content()
             .padding(ClickerVisualTheme.spacing16)
             .background(
-                ClickerVisualTheme.elevatedSurface,
+                ClickerVisualTheme.controlSurface,
                 in: RoundedRectangle(
                     cornerRadius: ClickerVisualTheme.panelCornerRadius,
                     style: .continuous
@@ -105,54 +105,56 @@ struct RecordingSettingsView: View {
     @State private var editor = RecordingShortcutEditor(shortcut: .defaultValue)
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing16) {
-                settingsSection("通用") {
-                    RecordingSettingsPanel {
-                        HStack(spacing: ClickerVisualTheme.spacing12) {
-                            Text("外观")
-                                .foregroundStyle(ClickerVisualTheme.primaryText)
+        ClickerNeutralControlScope {
+            ScrollView {
+                VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing16) {
+                    settingsSection("通用") {
+                        RecordingSettingsPanel {
+                            HStack(spacing: ClickerVisualTheme.spacing12) {
+                                Text("外观")
+                                    .foregroundStyle(ClickerVisualTheme.primaryText)
 
-                            Picker("外观", selection: $state.appearancePreference) {
-                                ForEach(AppAppearancePreference.allCases, id: \.self) { preference in
-                                    Text(preference.title).tag(preference)
+                                Picker("外观", selection: $state.appearancePreference) {
+                                    ForEach(AppAppearancePreference.allCases, id: \.self) { preference in
+                                        Text(preference.title).tag(preference)
+                                    }
                                 }
+                                .pickerStyle(.segmented)
+                                .labelsHidden()
+                                .frame(width: 240)
+                                .disabled(state.phase != .idle)
                             }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
-                            .frame(width: 240)
-                            .disabled(state.phase != .idle)
-                        }
-                    }
-                }
-
-                settingsSection("录制") {
-                    ShortcutCaptureCard(
-                        shortcut: editor.shortcut,
-                        isCapturing: isCapturing,
-                        action: beginCapture
-                    )
-                    .disabled(state.phase != .idle)
-                    .background {
-                        if isCapturing {
-                            ShortcutCaptureView(onCandidate: accept)
-                                .frame(width: 1, height: 1)
-                                .opacity(0)
-                                .accessibilityHidden(true)
                         }
                     }
 
-                    RecordingSettingsMessage(message: editor.message)
-
-                    Button("恢复默认设置", action: restoreDefaults)
-                        .buttonStyle(.bordered)
-                        .foregroundStyle(ClickerVisualTheme.secondaryText)
+                    settingsSection("录制") {
+                        ShortcutCaptureCard(
+                            shortcut: editor.shortcut,
+                            isCapturing: isCapturing,
+                            action: beginCapture
+                        )
                         .disabled(state.phase != .idle)
+                        .background {
+                            if isCapturing {
+                                ShortcutCaptureView(onCandidate: accept)
+                                    .frame(width: 1, height: 1)
+                                    .opacity(0)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+
+                        RecordingSettingsMessage(message: editor.message)
+
+                        Button("恢复默认设置", action: restoreDefaults)
+                            .buttonStyle(.bordered)
+                            .foregroundStyle(ClickerVisualTheme.secondaryText)
+                            .disabled(state.phase != .idle)
+                    }
                 }
+                .padding(.horizontal, ClickerVisualTheme.spacing24)
+                .padding(.vertical, ClickerVisualTheme.spacing16)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, ClickerVisualTheme.spacing24)
-            .padding(.vertical, ClickerVisualTheme.spacing16)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(ClickerVisualTheme.canvas)
         .frame(width: 440, height: 360)

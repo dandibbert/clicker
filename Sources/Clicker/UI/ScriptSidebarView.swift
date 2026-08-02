@@ -21,7 +21,7 @@ struct ScriptSidebarView: View {
                 .overlay(ClickerVisualTheme.separator)
             scriptList
         }
-        .background(ClickerVisualTheme.canvas)
+        .background(ClickerVisualTheme.sidebarBackground)
         .alert("重命名脚本", isPresented: renameBinding) {
             TextField("名称", text: $renameText)
             Button("确定", action: commitRename)

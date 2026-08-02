@@ -14,6 +14,8 @@ enum ClickerVisualTheme {
         case secondaryText
         case separator
         case selection
+        case recordSurface
+        case recordForeground
         case recordFill
         case playbackFill
         case prominentForeground
@@ -31,6 +33,8 @@ enum ClickerVisualTheme {
     static let secondaryText = color(for: .secondaryText)
     static let separator = color(for: .separator)
     static let selection = color(for: .selection)
+    static let recordSurface = color(for: .recordSurface)
+    static let recordForeground = color(for: .recordForeground)
     static let recordFill = color(for: .recordFill)
     static let playbackFill = color(for: .playbackFill)
     static let prominentForeground = color(for: .prominentForeground)
@@ -82,12 +86,16 @@ enum ClickerVisualTheme {
             (.secondaryLight, .secondaryDark)
         case .separator:
             (.separatorLight, .separatorDark)
+        case .recordSurface:
+            (.windowLight, .primaryDark)
+        case .recordForeground:
+            (.recordText, .recordText)
         case .recordFill, .activeTrail:
             (.recordRedLight, .recordRedDark)
         case .playbackFill:
-            (.playbackLight, .playbackDark)
+            (.playback, .playback)
         case .prominentForeground:
-            (.primaryDark, .primaryLight)
+            (.primaryDark, .primaryDark)
         }
     }
 
@@ -116,13 +124,40 @@ enum ClickerVisualTheme {
         static let focusDark = RGB(red: 0xA1 / 255, green: 0xA1 / 255, blue: 0xA6 / 255)
         static let recordRedLight = RGB(red: 0xE5 / 255, green: 0x39 / 255, blue: 0x35 / 255)
         static let recordRedDark = RGB(red: 0xF0 / 255, green: 0x4A / 255, blue: 0x45 / 255)
-        static let playbackLight = RGB(red: 0x30 / 255, green: 0x30 / 255, blue: 0x33 / 255)
-        static let playbackDark = RGB(red: 0xFF / 255, green: 0xFF / 255, blue: 0xFF / 255)
+        static let recordText = RGB(red: 0xB3 / 255, green: 0x26 / 255, blue: 0x1E / 255)
+        static let playback = RGB(red: 0x3C / 255, green: 0x3C / 255, blue: 0x40 / 255)
         static let primaryLight = RGB(red: 0x1D / 255, green: 0x1D / 255, blue: 0x1F / 255)
         static let primaryDark = RGB(red: 0xF5 / 255, green: 0xF5 / 255, blue: 0xF7 / 255)
         static let secondaryLight = RGB(red: 0x3D / 255, green: 0x3D / 255, blue: 0x43 / 255)
         static let secondaryDark = RGB(red: 0xD3 / 255, green: 0xD3 / 255, blue: 0xD6 / 255)
         static let separatorLight = RGB(red: 0x74 / 255, green: 0x74 / 255, blue: 0x7A / 255)
         static let separatorDark = RGB(red: 0xA1 / 255, green: 0xA1 / 255, blue: 0xA6 / 255)
+    }
+}
+
+struct ClickerNeutralControlScope<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .tint(ClickerVisualTheme.focusRing)
+    }
+}
+
+struct ClickerPresentationLayoutPolicy: Equatable {
+    let usesAccessibilityLayout: Bool
+    let headerHeight: CGFloat
+    let shortcutCardHeight: CGFloat
+    let compactFieldWidth: CGFloat
+    let compactControlHeight: CGFloat
+    let compactControlSpacing: CGFloat
+
+    init(dynamicTypeSize: DynamicTypeSize) {
+        usesAccessibilityLayout = dynamicTypeSize.isAccessibilitySize
+        headerHeight = usesAccessibilityLayout ? 280 : ClickerVisualTheme.compactHeaderHeight
+        shortcutCardHeight = usesAccessibilityLayout ? 200 : 80
+        compactFieldWidth = usesAccessibilityLayout ? 64 : ClickerVisualTheme.primaryControlHeight
+        compactControlHeight = usesAccessibilityLayout ? 48 : ClickerVisualTheme.primaryControlHeight
+        compactControlSpacing = usesAccessibilityLayout ? 12 : ClickerVisualTheme.spacing4
     }
 }

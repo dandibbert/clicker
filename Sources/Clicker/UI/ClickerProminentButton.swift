@@ -5,11 +5,11 @@ enum ClickerProminentButtonRole: Equatable {
     case neutral
 
     var fillRole: ClickerVisualTheme.ColorRole {
-        .playbackFill
+        self == .recording ? .recordSurface : .playbackFill
     }
 
     var foregroundRole: ClickerVisualTheme.ColorRole {
-        .prominentForeground
+        self == .recording ? .recordForeground : .prominentForeground
     }
 
     var cueRole: ClickerVisualTheme.ColorRole? {
@@ -19,6 +19,8 @@ enum ClickerProminentButtonRole: Equatable {
 
 struct ClickerProminentButton<Label: View>: View {
     @Environment(\.isEnabled) private var isEnabled
+    @FocusState private var isFocused: Bool
+    @State private var isHovered = false
 
     let role: ClickerProminentButtonRole
     let action: () -> Void
@@ -28,15 +30,31 @@ struct ClickerProminentButton<Label: View>: View {
         Button(action: action) {
             label()
         }
-        .buttonStyle(ClickerProminentButtonStyle(role: role, isEnabled: isEnabled))
+        .buttonStyle(ClickerProminentButtonStyle(
+            role: role,
+            isEnabled: isEnabled,
+            isHovered: isHovered,
+            isFocused: isFocused
+        ))
+        .onHover { isHovered = $0 }
+        .focused($isFocused)
+        .focusEffectDisabled()
     }
 }
 
 private struct ClickerProminentButtonStyle: ButtonStyle {
     let role: ClickerProminentButtonRole
     let isEnabled: Bool
+    let isHovered: Bool
+    let isFocused: Bool
 
     func makeBody(configuration: Configuration) -> some View {
+        let state = ClickerInteractiveSurfaceState(
+            isHovered: isHovered,
+            isPressed: configuration.isPressed,
+            isEnabled: isEnabled,
+            isFocused: isFocused
+        )
         configuration.label
             .font(.body.weight(.semibold))
             .foregroundStyle(ClickerVisualTheme.color(for: role.foregroundRole))
@@ -67,6 +85,9 @@ private struct ClickerProminentButtonStyle: ButtonStyle {
                     style: .continuous
                 )
             )
-            .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.45)
+            .modifier(ClickerInteractiveSurfaceModifier(
+                state: state,
+                cornerRadius: ClickerVisualTheme.controlCornerRadius
+            ))
     }
 }

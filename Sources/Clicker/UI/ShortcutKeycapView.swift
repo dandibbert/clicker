@@ -23,6 +23,11 @@ struct ShortcutKeycapPresentation: Equatable {
 }
 
 struct ShortcutCaptureCard: View {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @FocusState private var isFocused: Bool
+    @State private var isHovered = false
+
     let shortcut: RecordingStopShortcut
     let isCapturing: Bool
     let action: () -> Void
@@ -31,46 +36,115 @@ struct ShortcutCaptureCard: View {
         ShortcutKeycapPresentation(shortcut: shortcut, isCapturing: isCapturing)
     }
 
+    private var layoutPolicy: ClickerPresentationLayoutPolicy {
+        ClickerPresentationLayoutPolicy(dynamicTypeSize: dynamicTypeSize)
+    }
+
     var body: some View {
         Button(action: action) {
+            cardContent
+        }
+        .buttonStyle(ShortcutCaptureButtonStyle(
+            isCapturing: isCapturing,
+            isEnabled: isEnabled,
+            isHovered: isHovered,
+            isFocused: isFocused
+        ))
+        .onHover { isHovered = $0 }
+        .focused($isFocused)
+        .focusEffectDisabled()
+        .accessibilityLabel(presentation.accessibilityLabel)
+    }
+
+    @ViewBuilder
+    private var cardContent: some View {
+        if layoutPolicy.usesAccessibilityLayout {
+            VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing8) {
+                title
+                keycaps
+                instruction
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(ClickerVisualTheme.spacing12)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: layoutPolicy.shortcutCardHeight,
+                maxHeight: layoutPolicy.shortcutCardHeight,
+                alignment: .leading
+            )
+        } else {
             HStack(spacing: ClickerVisualTheme.spacing12) {
                 VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing4) {
-                    Text(presentation.title)
-                        .font(.headline)
-                        .foregroundStyle(ClickerVisualTheme.primaryText)
-
-                    HStack(spacing: ClickerVisualTheme.spacing4) {
-                        ForEach(Array(presentation.keys.enumerated()), id: \.offset) { _, key in
-                            Text(key)
-                                .font(.system(.body, design: .monospaced).weight(.semibold))
-                                .foregroundStyle(ClickerVisualTheme.primaryText)
-                                .frame(minWidth: 26, minHeight: 26)
-                                .padding(.horizontal, ClickerVisualTheme.spacing4)
-                                .background(
-                                    ClickerVisualTheme.elevatedSurface,
-                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                )
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .strokeBorder(ClickerVisualTheme.separator, lineWidth: 1)
-                                }
-                        }
-                    }
+                    title
+                    keycaps
                 }
 
                 Spacer(minLength: ClickerVisualTheme.spacing8)
-
-                Text(presentation.instruction)
-                    .foregroundStyle(
-                        isCapturing
-                            ? ClickerVisualTheme.primaryText
-                            : ClickerVisualTheme.secondaryText
-                    )
-                    .multilineTextAlignment(.trailing)
+                instruction
                     .frame(width: 104, alignment: .trailing)
             }
             .padding(.horizontal, ClickerVisualTheme.spacing12)
-            .frame(maxWidth: .infinity, minHeight: 80, maxHeight: 80, alignment: .leading)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: layoutPolicy.shortcutCardHeight,
+                maxHeight: layoutPolicy.shortcutCardHeight,
+                alignment: .leading
+            )
+        }
+    }
+
+    private var title: some View {
+        Text(presentation.title)
+            .font(.headline)
+            .foregroundStyle(ClickerVisualTheme.primaryText)
+    }
+
+    private var instruction: some View {
+        Text(presentation.instruction)
+            .foregroundStyle(
+                isCapturing
+                    ? ClickerVisualTheme.primaryText
+                    : ClickerVisualTheme.secondaryText
+            )
+            .multilineTextAlignment(layoutPolicy.usesAccessibilityLayout ? .leading : .trailing)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var keycaps: some View {
+        HStack(spacing: ClickerVisualTheme.spacing4) {
+            ForEach(Array(presentation.keys.enumerated()), id: \.offset) { _, key in
+                Text(key)
+                    .font(.system(.body, design: .monospaced).weight(.semibold))
+                    .foregroundStyle(ClickerVisualTheme.primaryText)
+                    .frame(minWidth: 26, minHeight: 26)
+                    .padding(.horizontal, ClickerVisualTheme.spacing4)
+                    .background(
+                        ClickerVisualTheme.elevatedSurface,
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(ClickerVisualTheme.separator, lineWidth: 1)
+                    }
+            }
+        }
+    }
+}
+
+private struct ShortcutCaptureButtonStyle: ButtonStyle {
+    let isCapturing: Bool
+    let isEnabled: Bool
+    let isHovered: Bool
+    let isFocused: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        let state = ClickerInteractiveSurfaceState(
+            isHovered: isHovered,
+            isPressed: configuration.isPressed,
+            isEnabled: isEnabled,
+            isFocused: isFocused
+        )
+        configuration.label
             .background(
                 ClickerVisualTheme.cardSurface,
                 in: RoundedRectangle(
@@ -90,8 +164,15 @@ struct ShortcutCaptureCard: View {
                     lineWidth: ClickerVisualTheme.cardBorderWidth
                 )
             }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(presentation.accessibilityLabel)
+            .contentShape(
+                RoundedRectangle(
+                    cornerRadius: ClickerVisualTheme.cardCornerRadius,
+                    style: .continuous
+                )
+            )
+            .modifier(ClickerInteractiveSurfaceModifier(
+                state: state,
+                cornerRadius: ClickerVisualTheme.cardCornerRadius
+            ))
     }
 }

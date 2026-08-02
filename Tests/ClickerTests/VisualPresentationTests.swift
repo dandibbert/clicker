@@ -318,7 +318,8 @@ final class VisualPresentationTests: XCTestCase {
             0x74_74_7A,
             0xE5_39_35,
             0xF0_4A_45,
-            0x30_30_33,
+            0xB3_26_1E,
+            0x3C_3C_40,
             0x1D_1D_1F,
             0x3D_3D_43,
             0x1C_1C_1E,
@@ -468,8 +469,8 @@ final class VisualPresentationTests: XCTestCase {
     }
 
     func testSharedProminentButtonAppliesAnExplicitForegroundForBothSemanticRoles() throws {
-        XCTAssertEqual(ClickerProminentButtonRole.recording.fillRole, .playbackFill)
-        XCTAssertEqual(ClickerProminentButtonRole.recording.foregroundRole, .prominentForeground)
+        XCTAssertEqual(ClickerProminentButtonRole.recording.fillRole, .recordSurface)
+        XCTAssertEqual(ClickerProminentButtonRole.recording.foregroundRole, .recordForeground)
         XCTAssertEqual(ClickerProminentButtonRole.recording.cueRole, .recordFill)
         XCTAssertEqual(ClickerProminentButtonRole.neutral.fillRole, .playbackFill)
         XCTAssertEqual(ClickerProminentButtonRole.neutral.foregroundRole, .prominentForeground)
@@ -477,7 +478,7 @@ final class VisualPresentationTests: XCTestCase {
         for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
             let appearance = NSAppearance(named: appearanceName)!
             let cue = ClickerVisualTheme.resolvedColor(for: .recordFill, appearance: appearance)
-            let fill = ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance)
+            let fill = ClickerVisualTheme.resolvedColor(for: .recordSurface, appearance: appearance)
             XCTAssertGreaterThanOrEqual(try contrastRatio(cue, fill), 3)
         }
     }
@@ -528,15 +529,17 @@ final class VisualPresentationTests: XCTestCase {
             (.selection, (0xE1, 0xE1, 0xE5), (0x38, 0x38, 0x3C)),
             (.controlSurface, (0xF1, 0xF1, 0xF3), (0x2C, 0x2C, 0x2E)),
             (.focusRing, (0x74, 0x74, 0x7A), (0xA1, 0xA1, 0xA6)),
+            (.recordSurface, (0xF7, 0xF7, 0xF8), (0xF5, 0xF5, 0xF7)),
+            (.recordForeground, (0xB3, 0x26, 0x1E), (0xB3, 0x26, 0x1E)),
             (.recordFill, (0xE5, 0x39, 0x35), (0xF0, 0x4A, 0x45)),
-            (.playbackFill, (0x30, 0x30, 0x33), (0xFF, 0xFF, 0xFF)),
+            (.playbackFill, (0x3C, 0x3C, 0x40), (0x3C, 0x3C, 0x40)),
             (.canvas, (0xF7, 0xF7, 0xF8), (0x1C, 0x1C, 0x1E)),
             (.cardSurface, (0xF1, 0xF1, 0xF3), (0x2C, 0x2C, 0x2E)),
             (.elevatedSurface, (0xF1, 0xF1, 0xF3), (0x2C, 0x2C, 0x2E)),
             (.primaryText, (0x1D, 0x1D, 0x1F), (0xF5, 0xF5, 0xF7)),
             (.secondaryText, (0x3D, 0x3D, 0x43), (0xD3, 0xD3, 0xD6)),
             (.separator, (0x74, 0x74, 0x7A), (0xA1, 0xA1, 0xA6)),
-            (.prominentForeground, (0xF5, 0xF5, 0xF7), (0x1D, 0x1D, 0x1F)),
+            (.prominentForeground, (0xF5, 0xF5, 0xF7), (0xF5, 0xF5, 0xF7)),
             (.activeTrail, (0xE5, 0x39, 0x35), (0xF0, 0x4A, 0x45)),
         ]
     }

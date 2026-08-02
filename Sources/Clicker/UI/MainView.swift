@@ -6,26 +6,28 @@ struct MainView: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Group {
-            if state.hasPermission {
-                NavigationSplitView {
-                    ScriptListView()
-                        .navigationSplitViewColumnWidth(
-                            min: 210,
-                            ideal: ClickerVisualTheme.sidebarIdealWidth,
-                            max: 250
-                        )
-                } detail: {
-                    if state.selectedScript == nil {
-                        ClickerEmptyStateView(kind: .noSelection)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(ClickerVisualTheme.canvas)
-                    } else {
-                        ScriptDetailView()
+        ClickerNeutralControlScope {
+            Group {
+                if state.hasPermission {
+                    NavigationSplitView {
+                        ScriptListView()
+                            .navigationSplitViewColumnWidth(
+                                min: 210,
+                                ideal: ClickerVisualTheme.sidebarIdealWidth,
+                                max: 250
+                            )
+                    } detail: {
+                        if state.selectedScript == nil {
+                            ClickerEmptyStateView(kind: .noSelection)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(ClickerVisualTheme.canvas)
+                        } else {
+                            ScriptDetailView()
+                        }
                     }
+                } else {
+                    PermissionGuideView()
                 }
-            } else {
-                PermissionGuideView()
             }
         }
         .toolbar {

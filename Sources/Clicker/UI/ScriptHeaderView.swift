@@ -49,6 +49,7 @@ struct CompactScriptHeaderPresentation: Equatable {
 
 struct ScriptHeaderView: View {
     @EnvironmentObject private var state: AppState
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let script: Script
 
@@ -56,16 +57,44 @@ struct ScriptHeaderView: View {
         CompactScriptHeaderPresentation(script: script, phase: state.phase)
     }
 
+    private var layoutPolicy: ClickerPresentationLayoutPolicy {
+        ClickerPresentationLayoutPolicy(dynamicTypeSize: dynamicTypeSize)
+    }
+
     var body: some View {
         GeometryReader { geometry in
-            if geometry.size.width < 700 {
+            if layoutPolicy.usesAccessibilityLayout {
+                accessibilityComposition
+            } else if geometry.size.width < 700 {
                 compactComposition
             } else {
                 wideComposition
             }
         }
-        .frame(height: ClickerVisualTheme.compactHeaderHeight)
-        .background(ClickerVisualTheme.elevatedSurface)
+        .frame(height: layoutPolicy.headerHeight)
+        .background(ClickerVisualTheme.controlSurface)
+    }
+
+    private var accessibilityComposition: some View {
+        VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing8) {
+            HStack(alignment: .top, spacing: ClickerVisualTheme.spacing12) {
+                identity
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                playbackProgress(width: 200)
+            }
+            PrimaryActionBar(
+                phase: state.phase,
+                hasPlayableScript: ScriptPlaybackEligibility.isPlayable(script)
+            )
+            .fixedSize(horizontal: true, vertical: false)
+            repeatControls
+                .fixedSize(horizontal: true, vertical: false)
+            intervalControls
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.horizontal, ClickerVisualTheme.spacing12)
+        .padding(.vertical, ClickerVisualTheme.spacing12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var wideComposition: some View {
@@ -137,14 +166,14 @@ struct ScriptHeaderView: View {
     }
 
     private var repeatControls: some View {
-        HStack(spacing: ClickerVisualTheme.spacing4) {
+        HStack(spacing: layoutPolicy.compactControlSpacing) {
             Text("重复")
             TextField("次数", value: Binding(
                 get: { script.repeatCount },
                 set: { updateRepeatCount($0) }
             ), format: .number)
-                .frame(width: ClickerVisualTheme.primaryControlHeight)
-                .frame(minHeight: ClickerVisualTheme.primaryControlHeight)
+                .frame(width: layoutPolicy.compactFieldWidth)
+                .frame(minHeight: layoutPolicy.compactControlHeight)
                 .disabled(script.repeatForever)
             Text("次")
             Toggle("无限", isOn: Binding(
@@ -152,21 +181,21 @@ struct ScriptHeaderView: View {
                 set: { updateRepeatForever($0) }
             ))
             .toggleStyle(.checkbox)
-            .frame(minHeight: ClickerVisualTheme.primaryControlHeight)
+            .frame(minHeight: layoutPolicy.compactControlHeight)
         }
         .fixedSize(horizontal: true, vertical: false)
         .disabled(!state.canEditScripts)
     }
 
     private var intervalControls: some View {
-        HStack(spacing: ClickerVisualTheme.spacing4) {
+        HStack(spacing: layoutPolicy.compactControlSpacing) {
             Text("间隔")
             TextField("秒", value: Binding(
                 get: { script.repeatInterval },
                 set: { updateRepeatInterval($0) }
             ), format: .number)
-                .frame(width: ClickerVisualTheme.primaryControlHeight)
-                .frame(minHeight: ClickerVisualTheme.primaryControlHeight)
+                .frame(width: layoutPolicy.compactFieldWidth)
+                .frame(minHeight: layoutPolicy.compactControlHeight)
             Text("秒")
         }
         .fixedSize(horizontal: true, vertical: false)

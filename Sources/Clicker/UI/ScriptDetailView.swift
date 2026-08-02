@@ -126,19 +126,12 @@ struct ScriptDetailView: View {
         .background(ClickerVisualTheme.canvas)
         .safeAreaInset(edge: .bottom) {
             HStack {
-                Menu {
-                    Button("点击") { append(.click(ClickBlock(x: 500, y: 400, button: .left, clickCount: 1)), to: script) }
-                    Button("输入文本") { append(.typeText(TypeTextBlock(text: "文本", keystrokes: [])), to: script) }
-                    Button("快捷键") { append(.shortcut(ShortcutBlock(keyCode: 8, flags: KeyCodeMap.maskCommand)), to: script) }
-                    Button("等待") { append(.wait(WaitBlock(duration: 1.0)), to: script) }
-                    Button("移动鼠标") { append(.move(MoveBlock(duration: 0.5, points: [
-                        TrackPoint(t: 0, x: 400, y: 300), TrackPoint(t: 0.5, x: 600, y: 400)])), to: script) }
-                } label: {
-                    Label("添加动作", systemImage: "plus")
+                AddActionMenu(isEnabled: state.canEditScripts) { block in
+                    append(block, to: script)
                 }
-                .menuStyle(.borderlessButton)
+                .frame(minWidth: 32, minHeight: 32)
+                .contentShape(Rectangle())
                 .fixedSize()
-                .disabled(!state.canEditScripts)
                 Spacer()
             }
             .padding(.horizontal, 22)

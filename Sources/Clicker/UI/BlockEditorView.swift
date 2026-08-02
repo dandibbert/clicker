@@ -23,28 +23,29 @@ struct BlockEditorView: View {
     @State private var useShift = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            Form { formFields }
-                .formStyle(.grouped)
-                .scrollContentBackground(.hidden)
+        ClickerNeutralControlScope {
+            VStack(spacing: 0) {
+                Form { formFields }
+                    .formStyle(.grouped)
+                    .scrollContentBackground(.hidden)
+                    .background {
+                        Rectangle().fill(ClickerVisualTheme.windowBackground)
+                    }
+                Divider()
+                HStack {
+                    Spacer()
+                    Button("取消") { dismiss() }
+                        .buttonStyle(.bordered)
+                        .foregroundStyle(ClickerVisualTheme.primaryText)
+                    ClickerProminentButton(role: .neutral, action: save) {
+                        Text("保存")
+                    }
+                        .keyboardShortcut(.defaultAction)
+                }
+                .padding(ClickerVisualTheme.spacing12)
                 .background {
                     Rectangle().fill(ClickerVisualTheme.windowBackground)
                 }
-            Divider()
-            HStack {
-                Spacer()
-                Button("取消") { dismiss() }
-                    .buttonStyle(.bordered)
-                    .tint(ClickerVisualTheme.focusRing)
-                    .foregroundStyle(ClickerVisualTheme.primaryText)
-                ClickerProminentButton(role: .neutral, action: save) {
-                    Text("保存")
-                }
-                    .keyboardShortcut(.defaultAction)
-            }
-            .padding(ClickerVisualTheme.spacing12)
-            .background {
-                Rectangle().fill(ClickerVisualTheme.windowBackground)
             }
         }
         .frame(width: 380)

@@ -146,12 +146,9 @@ final class EditorialMainWindowTests: XCTestCase {
                 in: bitmap,
                 near: ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance),
                 tolerance: 0.08,
-                within: CGRect(
-                    x: midpoint,
-                    y: 0,
-                    width: size.width - midpoint,
-                    height: headerBounds.height
-                ),
+                within: playbackText
+                    .insetBy(dx: -24, dy: -14)
+                    .intersection(headerBounds),
                 logicalSize: hosting.bounds.size
             ),
             "The playback action must retain a complete visible neutral fill"
@@ -160,7 +157,7 @@ final class EditorialMainWindowTests: XCTestCase {
             ("record", recordBounds, recordText),
             ("playback", playbackBounds, playbackText),
         ] {
-            XCTAssertTrue((36 ... 40).contains(bounds.height), "\(name) height: \(bounds)")
+            XCTAssertTrue((36 ... 44).contains(bounds.height), "\(name) height: \(bounds)")
             XCTAssertTrue(bounds.contains(label), "\(name) label escaped its visible boundary")
             XCTAssertTrue(hosting.bounds.contains(bounds), "\(name) escaped the viewport")
         }

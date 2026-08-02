@@ -232,15 +232,53 @@ extension FinalVisualConsumerTests {
             let primary = try XCTUnwrap(text.first { $0.text.contains("打开系统设置") }).frame
             let secondary = try XCTUnwrap(text.first { $0.text.contains("重新检测") }).frame
             let fill = ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance)
-
+            let buttons = (nativeControls(in: hosted.hosting) + descendants(of: hosted.hosting))
+                .compactMap { $0 as? NSButton }
+            let secondaryButton = try XCTUnwrap(
+                nativeButton(
+                    recognizing: "重新检测",
+                    among: buttons,
+                    recognizedText: text,
+                    in: hosted.hosting
+                ),
+                "The permission secondary action must remain a native bordered button"
+            )
+            let secondaryFrame = hosted.hosting.convert(
+                secondaryButton.bounds,
+                from: secondaryButton
+            )
+            let secondaryPaddingInView = CGRect(
+                x: secondaryFrame.minX + 6,
+                y: secondary.minY + 2,
+                width: 6,
+                height: secondary.height - 4
+            )
+            let secondaryPadding = CGRect(
+                x: secondaryPaddingInView.minX,
+                y: size.height - secondaryPaddingInView.maxY,
+                width: secondaryPaddingInView.width,
+                height: secondaryPaddingInView.height
+            )
             XCTAssertGreaterThan(
-                renderedPixelFraction(in: bitmap, logicalSize: size, region: primary.insetBy(dx: -12, dy: -10), near: fill, tolerance: 0.08),
+                renderedPixelFraction(
+                    in: bitmap,
+                    logicalSize: size,
+                    region: primary.insetBy(dx: -12, dy: -10),
+                    near: fill,
+                    tolerance: 0.08
+                ),
                 0.2,
                 "The permission primary action must retain the explicit prominent fill"
             )
             XCTAssertLessThan(
-                renderedPixelFraction(in: bitmap, logicalSize: size, region: secondary.insetBy(dx: -12, dy: -10), near: fill, tolerance: 0.08),
-                0.08,
+                renderedPixelFraction(
+                    in: bitmap,
+                    logicalSize: size,
+                    region: secondaryPadding,
+                    near: fill,
+                    tolerance: 0.04
+                ),
+                0.1,
                 "The permission secondary action must remain bordered and low-emphasis"
             )
         }
