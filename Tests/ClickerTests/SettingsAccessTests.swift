@@ -36,6 +36,31 @@ final class SettingsAccessTests: XCTestCase {
     }
 
     @MainActor
+    func testDisabledSettingsButtonRendersDisabledNativeControl() throws {
+        _ = NSApplication.shared
+        let hosting = NSHostingView(
+            rootView: SettingsButton {}
+                .disabled(true)
+        )
+        hosting.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
+        let window = NSWindow(
+            contentRect: hosting.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hosting
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        hosting.layoutSubtreeIfNeeded()
+        hosting.displayIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+        let button = try XCTUnwrap(descendants(of: hosting).compactMap { $0 as? NSButton }.first)
+        XCTAssertFalse(button.isEnabled)
+    }
+
+    @MainActor
     func testClickerSettingsRootMutatesInjectedSharedState() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory
