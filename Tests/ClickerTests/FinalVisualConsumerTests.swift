@@ -306,6 +306,44 @@ final class FinalVisualConsumerTests: XCTestCase {
     }
 
     @MainActor
+    func testRecordingSettingsRendersAppearanceChoicesAndReplacesLegacyShortcutForm() throws {
+        _ = NSApplication.shared
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let state = AppState(store: ScriptStore(directory: directory))
+        let size = CGSize(width: 440, height: 360)
+
+        for fixture in [
+            (NSAppearance.Name.aqua, ColorScheme.light),
+            (.darkAqua, .dark),
+        ] {
+            let appearance = try XCTUnwrap(NSAppearance(named: fixture.0))
+            let bitmap = try renderBitmap(
+                RecordingSettingsView()
+                    .environmentObject(state)
+                    .environment(\.colorScheme, fixture.1),
+                appearance: appearance,
+                size: size
+            )
+            let renderedCopy = try recognizedTextFrames(in: bitmap, logicalSize: size)
+                .map(\.text)
+                .joined()
+                .replacingOccurrences(of: " ", with: "")
+
+            for expected in ["外观", "跟随系统", "浅色", "深色"] {
+                XCTAssertTrue(
+                    renderedCopy.contains(expected),
+                    "The real settings consumer must render \(expected) in \(fixture.0.rawValue): \(renderedCopy)"
+                )
+            }
+            XCTAssertFalse(renderedCopy.contains("当前快捷键"), renderedCopy)
+            XCTAssertFalse(renderedCopy.contains("更改快捷键"), renderedCopy)
+        }
+    }
+
+    @MainActor
     func testMaximumDynamicTypeFooterControlsAreEnabledNativeHitTargetsInsideViewport() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory
@@ -345,6 +383,20 @@ final class FinalVisualConsumerTests: XCTestCase {
         XCTAssertTrue(doneButton.isEnabled)
         XCTAssertTrue(hosting.bounds.contains(restoreButton.convert(restoreButton.bounds, to: hosting)))
         XCTAssertTrue(hosting.bounds.contains(doneButton.convert(doneButton.bounds, to: hosting)))
+
+        let renderedCopy = try recognizedTextFrames(
+            in: bitmap(for: hosting),
+            logicalSize: hosting.bounds.size
+        )
+        .map(\.text)
+        .joined()
+        .replacingOccurrences(of: " ", with: "")
+        for expected in ["外观", "停止录制快捷键", "恢复默认值", "完成"] {
+            XCTAssertTrue(
+                renderedCopy.contains(expected),
+                "\(expected) must remain rendered at accessibility5: \(renderedCopy)"
+            )
+        }
     }
 
     @MainActor

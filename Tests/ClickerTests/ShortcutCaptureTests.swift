@@ -1,8 +1,130 @@
+import AppKit
+import SwiftUI
 import XCTest
 @testable import Clicker
 import ClickerCore
 
 final class ShortcutCaptureTests: XCTestCase {
+    func testShortcutPresentationUsesSeparateOrderedKeycaps() {
+        let shortcut = RecordingStopShortcut(
+            keyCode: 14,
+            modifierFlags: KeyCodeMap.maskControl
+                | KeyCodeMap.maskOption
+                | KeyCodeMap.maskShift
+                | KeyCodeMap.maskCommand
+        )
+
+        let model = ShortcutKeycapPresentation(shortcut: shortcut, isCapturing: false)
+
+        XCTAssertEqual(model.keys, ["⌃", "⌥", "⇧", "⌘", "E"])
+        XCTAssertEqual(model.title, "停止录制快捷键")
+        XCTAssertEqual(model.instruction, "点击重新录入")
+        XCTAssertTrue(model.accessibilityLabel.contains(shortcut.displayName))
+    }
+
+    func testCapturingPresentationPromptsForACombination() {
+        let model = ShortcutKeycapPresentation(shortcut: .defaultValue, isCapturing: true)
+
+        XCTAssertEqual(model.instruction, "请按下新的组合键…")
+    }
+
+    @MainActor
+    func testCaptureCardKeepsItsDimensionsWhileListeningAtMaximumDynamicType() {
+        let shortcut = RecordingStopShortcut(
+            keyCode: 14,
+            modifierFlags: KeyCodeMap.maskControl
+                | KeyCodeMap.maskOption
+                | KeyCodeMap.maskShift
+                | KeyCodeMap.maskCommand
+        )
+        let idle = NSHostingView(
+            rootView: ShortcutCaptureCard(
+                shortcut: shortcut,
+                isCapturing: false,
+                action: {}
+            )
+            .environment(\.dynamicTypeSize, .accessibility5)
+            .frame(width: 392)
+        )
+        let capturing = NSHostingView(
+            rootView: ShortcutCaptureCard(
+                shortcut: shortcut,
+                isCapturing: true,
+                action: {}
+            )
+            .environment(\.dynamicTypeSize, .accessibility5)
+            .frame(width: 392)
+        )
+
+        XCTAssertEqual(idle.fittingSize.width, capturing.fittingSize.width, accuracy: 0.5)
+        XCTAssertEqual(idle.fittingSize.height, capturing.fittingSize.height, accuracy: 0.5)
+    }
+
+    @MainActor
+    func testCaptureCardInvokesExactlyOneTapAcrossItsWholeSurface() throws {
+        _ = NSApplication.shared
+        var tapCount = 0
+        let shortcut = RecordingStopShortcut(
+            keyCode: 14,
+            modifierFlags: KeyCodeMap.maskControl
+                | KeyCodeMap.maskOption
+                | KeyCodeMap.maskShift
+                | KeyCodeMap.maskCommand
+        )
+        let hosting = NSHostingView(
+            rootView: ShortcutCaptureCard(
+                shortcut: shortcut,
+                isCapturing: true,
+                action: { tapCount += 1 }
+            )
+            .environment(\.dynamicTypeSize, .accessibility5)
+            .frame(width: 392)
+        )
+        hosting.frame = CGRect(
+            origin: .zero,
+            size: CGSize(width: 392, height: hosting.fittingSize.height)
+        )
+        let window = NSWindow(
+            contentRect: hosting.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hosting
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        hosting.layoutSubtreeIfNeeded()
+        hosting.displayIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+        let body = String(reflecting: ShortcutCaptureCard.Body.self)
+        XCTAssertTrue(body.contains("Button"), body)
+        XCTAssertTrue(body.contains("AccessibilityAttachment"), body)
+        let points = [
+            CGPoint(x: 12, y: 12),
+            CGPoint(x: hosting.bounds.midX, y: hosting.bounds.midY),
+            CGPoint(x: hosting.bounds.maxX - 12, y: hosting.bounds.maxY - 12),
+        ]
+        for (index, point) in points.enumerated() {
+            for eventType in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = try XCTUnwrap(NSEvent.mouseEvent(
+                    with: eventType,
+                    location: point,
+                    modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber,
+                    context: nil,
+                    eventNumber: index,
+                    clickCount: 1,
+                    pressure: eventType == .leftMouseDown ? 1 : 0
+                ))
+                window.sendEvent(event)
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+            XCTAssertEqual(tapCount, index + 1)
+        }
+    }
+
     func testModifierOnlyKeyDoesNotProduceCandidate() {
         XCTAssertNil(
             ShortcutCaptureController().candidate(

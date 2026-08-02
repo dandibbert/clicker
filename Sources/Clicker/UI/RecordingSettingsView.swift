@@ -126,28 +126,31 @@ struct RecordingSettingsView: View {
                 VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing16) {
                     RecordingSettingsPanel {
                         VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing12) {
-                            Text("停止录制")
+                            Text("外观")
                                 .font(.headline)
                                 .foregroundStyle(ClickerVisualTheme.primaryText)
 
-                            HStack(spacing: ClickerVisualTheme.spacing12) {
-                                Text("当前快捷键")
-                                    .foregroundStyle(ClickerVisualTheme.secondaryText)
-                                Spacer()
-                                shortcutToken
+                            Picker("外观", selection: $state.appearancePreference) {
+                                ForEach(AppAppearancePreference.allCases, id: \.self) { preference in
+                                    Text(preference.title).tag(preference)
+                                }
                             }
-
-                            Divider()
-
-                            Button(isCapturing ? "请按下新的快捷键…" : "更改快捷键") {
-                                isCapturing.toggle()
-                            }
-
-                            if isCapturing {
-                                ShortcutCaptureView(onCandidate: accept)
-                                    .frame(height: 1)
-                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
                         }
+                    }
+
+                    ShortcutCaptureCard(
+                        shortcut: editor.shortcut,
+                        isCapturing: isCapturing,
+                        action: { isCapturing = true }
+                    )
+
+                    if isCapturing {
+                        ShortcutCaptureView(onCandidate: accept)
+                            .frame(width: 1, height: 1)
+                            .opacity(0)
+                            .accessibilityHidden(true)
                     }
 
                     RecordingSettingsMessage(message: editor.message)
@@ -187,22 +190,5 @@ struct RecordingSettingsView: View {
             state.recordingStopShortcut = editor.shortcut
         }
         isCapturing = false
-    }
-
-    private var shortcutToken: some View {
-        Text(editor.shortcut.displayName)
-            .font(.system(.body, design: .monospaced).weight(.semibold))
-            .foregroundStyle(ClickerVisualTheme.primaryText)
-            .padding(.horizontal, ClickerVisualTheme.spacing12)
-            .padding(.vertical, ClickerVisualTheme.spacing4)
-            .background(
-                ClickerVisualTheme.cardSurface,
-                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(ClickerVisualTheme.separator, lineWidth: 1)
-            }
-            .accessibilityLabel("当前快捷键 \(editor.shortcut.displayName)")
     }
 }
