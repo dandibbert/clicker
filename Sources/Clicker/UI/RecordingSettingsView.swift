@@ -1,6 +1,12 @@
 import SwiftUI
 import ClickerCore
 
+struct ClickerSettingsView: View {
+    var body: some View {
+        RecordingSettingsView()
+    }
+}
+
 struct RecordingShortcutEditor {
     private static let globalRecord = RecordingStopShortcut(
         keyCode: 15,
@@ -174,9 +180,6 @@ struct RecordingSettingsView: View {
         .disabled(state.phase != .idle)
         .onAppear {
             editor = RecordingShortcutEditor(shortcut: state.recordingStopShortcut)
-        }
-        .onChange(of: state.phase) { _, phase in
-            if phase != .idle { dismiss() }
         }
     }
 

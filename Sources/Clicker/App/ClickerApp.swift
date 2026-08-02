@@ -20,6 +20,12 @@ struct ClickerApp: App {
                 .frame(minWidth: 760, minHeight: 480)
                 .onAppear { applicationServices.start() }
         }
+
+        Settings {
+            ClickerSettingsView()
+                .environmentObject(state)
+                .preferredColorScheme(state.appearancePreference.colorScheme)
+        }
     }
 }
 
