@@ -21,13 +21,11 @@ struct SettingsButton: NSViewRepresentable {
         button.isBordered = false
         button.setAccessibilityLabel("设置")
         button.toolTip = "设置"
-        button.isEnabled = context.environment.isEnabled
         return button
     }
 
     func updateNSView(_ button: NSButton, context: Context) {
         context.coordinator.openSettings = openSettings
-        button.isEnabled = context.environment.isEnabled
     }
 
     final class Coordinator: NSObject {
