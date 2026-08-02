@@ -26,17 +26,25 @@ struct BlockEditorView: View {
         VStack(spacing: 0) {
             Form { formFields }
                 .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
+                .background(ClickerVisualTheme.windowBackground)
             Divider()
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }
-                Button("保存") { save() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
+                    .tint(ClickerVisualTheme.focusRing)
+                    .foregroundStyle(ClickerVisualTheme.primaryText)
+                ClickerProminentButton(role: .neutral, action: save) {
+                    Text("保存")
+                }
                     .keyboardShortcut(.defaultAction)
             }
-            .padding(12)
+            .padding(ClickerVisualTheme.spacing12)
+            .background(ClickerVisualTheme.windowBackground)
         }
         .frame(width: 380)
+        .background(ClickerVisualTheme.windowBackground)
         .onAppear(perform: load)
     }
 

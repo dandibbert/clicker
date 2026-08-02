@@ -44,12 +44,15 @@ struct ClickerEmptyStateView: View {
 
                 if let secondaryActionTitle = presentation.secondaryActionTitle,
                    let secondaryAction {
-                    Button(secondaryActionTitle, action: secondaryAction)
-                        .buttonStyle(.bordered)
+                    ClickerProminentButton(role: .neutral, action: secondaryAction) {
+                        Text(secondaryActionTitle)
+                    }
                 }
             }
         }
         .padding(ClickerVisualTheme.spacing24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(ClickerVisualTheme.windowBackground)
     }
 
     private var primaryActionRole: ClickerProminentButtonRole {

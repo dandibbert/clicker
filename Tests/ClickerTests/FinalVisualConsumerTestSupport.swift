@@ -62,6 +62,29 @@ final class HostedScriptDetailFixture {
     }
 }
 
+@MainActor
+final class HostedViewFixture {
+    let hosting: NSHostingView<AnyView>
+    let window: NSWindow
+
+    init(rootView: AnyView, appearance: NSAppearance, size: CGSize) throws {
+        _ = NSApplication.shared
+        hosting = NSHostingView(rootView: rootView)
+        hosting.appearance = appearance
+        hosting.frame = CGRect(origin: .zero, size: size)
+        window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = hosting
+        window.makeKeyAndOrderFront(nil)
+        hosting.layoutSubtreeIfNeeded()
+        hosting.displayIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    func tearDown() {
+        window.orderOut(nil)
+    }
+}
+
 extension FinalVisualConsumerTests {
     @MainActor
     func renderBitmap<V: View>(
@@ -291,6 +314,29 @@ extension FinalVisualConsumerTests {
             )
         )
     }
+
+    func systemBluePixelCount(in bitmap: NSBitmapImageRep) -> Int {
+        (0 ..< bitmap.pixelsHigh).reduce(0) { count, y in
+            count + (0 ..< bitmap.pixelsWide).reduce(0) { rowCount, x in
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return rowCount }
+                return rowCount + (color.blueComponent > 0.7
+                    && color.blueComponent - color.redComponent > 0.25
+                    && color.blueComponent - color.greenComponent > 0.08 ? 1 : 0)
+            }
+        }
+    }
+
+    func legacyWarmPixelCount(in bitmap: NSBitmapImageRep) -> Int {
+        (0 ..< bitmap.pixelsHigh).reduce(0) { count, y in
+            count + (0 ..< bitmap.pixelsWide).reduce(0) { rowCount, x in
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return rowCount }
+                return rowCount + (abs(color.redComponent - 0xF1 / 255) <= 0.02
+                    && abs(color.greenComponent - 0xEA / 255) <= 0.02
+                    && abs(color.blueComponent - 0xDC / 255) <= 0.02 ? 1 : 0)
+            }
+        }
+    }
+
 
     func visibleRoleBounds(
         in bitmap: NSBitmapImageRep,
