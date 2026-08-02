@@ -110,23 +110,11 @@ struct ActionCardView: View {
                 .frame(width: 64, alignment: .trailing)
         }
         .padding(.vertical, ClickerVisualTheme.spacing8)
-        .padding(.horizontal, ClickerVisualTheme.spacing12)
-        .background(
-            isActive ? ClickerVisualTheme.selection : ClickerVisualTheme.cardSurface,
-            in: RoundedRectangle(
-                cornerRadius: ClickerVisualTheme.cardCornerRadius,
-                style: .continuous
-            )
-        )
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: ClickerVisualTheme.cardCornerRadius,
-                style: .continuous
-            )
-            .strokeBorder(
-                ClickerVisualTheme.separator,
-                lineWidth: ClickerVisualTheme.cardBorderWidth
-            )
+        .frame(minHeight: 56)
+        .background {
+            if isActive {
+                ClickerVisualTheme.selection
+            }
         }
         .overlay(alignment: .leading) {
             ActionCardActiveTrail(
@@ -134,6 +122,7 @@ struct ActionCardView: View {
                 isDimmed: isTrailDimmed
             )
         }
+        .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             isActive ? presentation.activeAccessibilityLabel : presentation.accessibilityLabel

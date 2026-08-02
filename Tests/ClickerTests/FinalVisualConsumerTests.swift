@@ -6,6 +6,254 @@ import XCTest
 
 final class FinalVisualConsumerTests: XCTestCase {
     @MainActor
+    func testActionsRenderAsSeparatedRowsWithoutOuterCards() throws {
+        _ = NSApplication.shared
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let state = AppState(store: ScriptStore(directory: directory))
+        let script = Script(
+            name: "检查动作行",
+            blocks: [
+                .wait(WaitBlock(duration: 1)),
+                .click(ClickBlock(x: 320, y: 240, button: .left, clickCount: 1)),
+            ]
+        )
+        state.scripts = [script]
+        state.selectedScriptID = script.id
+        let size = CGSize(width: 600, height: 280)
+        let appearance = try XCTUnwrap(NSAppearance(named: .aqua))
+        let hosting = NSHostingView(
+            rootView: ScriptDetailView()
+                .environmentObject(state)
+                .environment(\.colorScheme, .light)
+                .frame(width: size.width, height: size.height)
+        )
+        hosting.appearance = appearance
+        hosting.frame = CGRect(origin: .zero, size: size)
+        let window = NSWindow(
+            contentRect: hosting.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hosting
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        hosting.layoutSubtreeIfNeeded()
+        hosting.displayIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+        let outline = try XCTUnwrap(
+            nativeControls(in: hosting).compactMap { $0 as? NSOutlineView }.first,
+            "The real ScriptDetailView action stack must render"
+        )
+        XCTAssertEqual(outline.numberOfRows, 2)
+        let rowFrames = (0 ..< 2).map {
+            hosting.convert(outline.rect(ofRow: $0), from: outline)
+        }
+        for frame in rowFrames {
+            XCTAssertTrue(
+                (54 ... 64).contains(frame.height),
+                "A compact action row must be 54–64pt high: \(frame)"
+            )
+        }
+
+        let bitmap = try bitmap(for: hosting)
+        let canvas = ClickerVisualTheme.resolvedColor(for: .canvas, appearance: appearance)
+        let separator = ClickerVisualTheme.resolvedColor(for: .separator, appearance: appearance)
+        let first = rowFrames[0]
+        let second = rowFrames[1]
+        let outerCornerRegions = [
+            CGRect(x: first.minX + 22, y: first.minY + 1, width: 9, height: 9),
+            CGRect(x: first.maxX - 31, y: first.minY + 1, width: 9, height: 9),
+            CGRect(x: second.minX + 22, y: second.maxY - 10, width: 9, height: 9),
+            CGRect(x: second.maxX - 31, y: second.maxY - 10, width: 9, height: 9),
+        ]
+        for region in outerCornerRegions {
+            XCTAssertGreaterThan(
+                renderedPixelFraction(
+                    in: bitmap,
+                    logicalSize: size,
+                    region: region,
+                    near: canvas,
+                    tolerance: 0.06
+                ),
+                0.9,
+                "Full-row outer corners must remain the flat list background: \(region)"
+            )
+            XCTAssertLessThan(
+                renderedPixelFraction(
+                    in: bitmap,
+                    logicalSize: size,
+                    region: region,
+                    near: separator,
+                    tolerance: 0.06
+                ),
+                0.02,
+                "A rounded outer stroke must not reappear around an action row: \(region)"
+            )
+        }
+
+        let separatorBounds = try XCTUnwrap(
+            visibleColorBounds(
+                in: bitmap,
+                near: separator,
+                tolerance: 0.08,
+                within: CGRect(
+                    x: first.minX + 22,
+                    y: first.maxY - 2,
+                    width: first.width - 44,
+                    height: 5
+                ),
+                logicalSize: size
+            ),
+            "A visible separator must divide adjacent action rows"
+        )
+        XCTAssertGreaterThan(separatorBounds.width, first.width * 0.8)
+        XCTAssertLessThanOrEqual(separatorBounds.height, 2)
+
+        let iconSurface = ClickerVisualTheme.resolvedColor(
+            for: .elevatedSurface,
+            appearance: appearance
+        )
+        let iconBounds = try XCTUnwrap(
+            visibleRoleBounds(
+                in: bitmap,
+                logicalSize: size,
+                within: CGRect(
+                    x: first.minX + 18,
+                    y: first.minY + 8,
+                    width: 44,
+                    height: first.height - 16
+                ),
+                target: iconSurface,
+                excluding: canvas
+            ),
+            "The 30pt icon surface must remain visibly distinct from the flat row"
+        )
+        XCTAssertTrue((29 ... 31).contains(iconBounds.width), "Icon width: \(iconBounds)")
+        XCTAssertTrue((29 ... 31).contains(iconBounds.height), "Icon height: \(iconBounds)")
+    }
+
+    @MainActor
+    func testBottomAddActionBarStaysFixedEnabledAndClearOfLastRow() throws {
+        _ = NSApplication.shared
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let state = AppState(store: ScriptStore(directory: directory))
+        let script = Script(
+            name: "检查底部动作栏",
+            blocks: (0 ..< 12).map { .wait(WaitBlock(duration: Double($0 + 1))) }
+        )
+        state.scripts = [script]
+        state.selectedScriptID = script.id
+        let size = CGSize(width: 760, height: 480)
+        let appearance = try XCTUnwrap(NSAppearance(named: .aqua))
+        let hosting = NSHostingView(
+            rootView: ScriptDetailView()
+                .environmentObject(state)
+                .environment(\.colorScheme, .light)
+                .frame(width: size.width, height: size.height)
+        )
+        hosting.appearance = appearance
+        hosting.frame = CGRect(origin: .zero, size: size)
+        let window = NSWindow(
+            contentRect: hosting.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hosting
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+
+        func settle() {
+            hosting.layoutSubtreeIfNeeded()
+            hosting.displayIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        settle()
+
+        let bitmap = try bitmap(for: hosting)
+        let recognizedText = try recognizedTextFrames(in: bitmap, logicalSize: size)
+        let buttons = (nativeControls(in: hosting) + descendants(of: hosting))
+            .compactMap { $0 as? NSButton }
+        let addButton = try XCTUnwrap(
+            buttons.first {
+                controlLabel($0)?
+                    .replacingOccurrences(of: " ", with: "")
+                    .contains("添加动作") == true
+            } ?? nativeButton(
+                recognizing: "添加动作",
+                among: buttons,
+                recognizedText: recognizedText,
+                in: hosting
+            ),
+            "添加动作 must remain a real native NSButton hit target"
+        )
+        let bottom48 = CGRect(x: 0, y: size.height - 48, width: size.width, height: 48)
+        let buttonFrame = hosting.convert(addButton.bounds, from: addButton)
+        XCTAssertTrue(bottom48.contains(buttonFrame), "Add hit target escaped bottom 48pt: \(buttonFrame)")
+        XCTAssertTrue(addButton.isEnabled)
+        let outline = try XCTUnwrap(
+            (nativeControls(in: hosting) + descendants(of: hosting))
+                .compactMap { $0 as? NSOutlineView }
+                .first
+        )
+
+        let barSurface = ClickerVisualTheme.resolvedColor(
+            for: .elevatedSurface,
+            appearance: appearance
+        )
+        let canvas = ClickerVisualTheme.resolvedColor(for: .canvas, appearance: appearance)
+        for xFraction in [0.01, 0.5, 0.99] {
+            let insideBar = try color(
+                in: bitmap,
+                xFraction: xFraction,
+                yFraction: (size.height - 47) / size.height
+            )
+            let aboveBar = try color(
+                in: bitmap,
+                xFraction: xFraction,
+                yFraction: (size.height - 49) / size.height
+            )
+            XCTAssertLessThan(
+                renderedColorDistance(insideBar, barSurface),
+                renderedColorDistance(insideBar, canvas),
+                "The fixed full-width bar must begin inside the bottom 48pt"
+            )
+            XCTAssertLessThan(
+                renderedColorDistance(aboveBar, canvas),
+                renderedColorDistance(aboveBar, barSurface),
+                "The compact bottom bar must not exceed 48pt"
+            )
+        }
+
+        state.phase = .playing(iteration: 1, currentBlockID: nil)
+        settle()
+        XCTAssertFalse(addButton.isEnabled, "Add action must disable while scripts cannot be edited")
+        state.phase = .idle
+        settle()
+        XCTAssertTrue(addButton.isEnabled, "Add action must re-enable with state.canEditScripts")
+
+        let lastRow = outline.numberOfRows - 1
+        XCTAssertGreaterThan(lastRow, 0)
+        outline.scrollRowToVisible(lastRow)
+        settle()
+        let lastRowFrame = hosting.convert(outline.rect(ofRow: lastRow), from: outline)
+        XCTAssertLessThanOrEqual(
+            lastRowFrame.maxY,
+            bottom48.minY + 1,
+            "The fixed add bar must not cover the last scrollable action row"
+        )
+        XCTAssertGreaterThan(lastRowFrame.minY, 0)
+    }
+
+    @MainActor
     func testSelectedScriptKeepsCompactHeaderControlsAndActionListVisibleAtMinimumWindowSize() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory
@@ -431,6 +679,105 @@ final class FinalVisualConsumerTests: XCTestCase {
                 "\(expected) must remain rendered in the standard hosted viewport: \(renderedCopy)"
             )
         }
+    }
+
+    private func renderedPixelFraction(
+        in bitmap: NSBitmapImageRep,
+        logicalSize: CGSize,
+        region: CGRect,
+        near target: NSColor,
+        tolerance: CGFloat
+    ) -> CGFloat {
+        guard let target = target.usingColorSpace(.sRGB) else { return 0 }
+        let scaleX = CGFloat(bitmap.pixelsWide) / logicalSize.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / logicalSize.height
+        let minX = max(0, Int((region.minX * scaleX).rounded(.down)))
+        let maxX = min(bitmap.pixelsWide, Int((region.maxX * scaleX).rounded(.up)))
+        let minY = max(0, Int((region.minY * scaleY).rounded(.down)))
+        let maxY = min(bitmap.pixelsHigh, Int((region.maxY * scaleY).rounded(.up)))
+        guard minX < maxX, minY < maxY else { return 0 }
+        var matches = 0
+        for y in minY ..< maxY {
+            for x in minX ..< maxX {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
+                    continue
+                }
+                if abs(color.redComponent - target.redComponent) <= tolerance,
+                   abs(color.greenComponent - target.greenComponent) <= tolerance,
+                   abs(color.blueComponent - target.blueComponent) <= tolerance {
+                    matches += 1
+                }
+            }
+        }
+        return CGFloat(matches) / CGFloat((maxX - minX) * (maxY - minY))
+    }
+
+    private func renderedColorDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
+        guard let lhs = lhs.usingColorSpace(.sRGB),
+              let rhs = rhs.usingColorSpace(.sRGB) else { return .infinity }
+        return max(
+            abs(lhs.redComponent - rhs.redComponent),
+            max(
+                abs(lhs.greenComponent - rhs.greenComponent),
+                abs(lhs.blueComponent - rhs.blueComponent)
+            )
+        )
+    }
+
+    private func visibleRoleBounds(
+        in bitmap: NSBitmapImageRep,
+        logicalSize: CGSize,
+        within region: CGRect,
+        target: NSColor,
+        excluding background: NSColor
+    ) -> CGRect? {
+        guard let target = target.usingColorSpace(.sRGB),
+              let background = background.usingColorSpace(.sRGB) else { return nil }
+        let scaleX = CGFloat(bitmap.pixelsWide) / logicalSize.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / logicalSize.height
+        let minX = max(0, Int((region.minX * scaleX).rounded(.down)))
+        let maxX = min(bitmap.pixelsWide, Int((region.maxX * scaleX).rounded(.up)))
+        let minY = max(0, Int((region.minY * scaleY).rounded(.down)))
+        let maxY = min(bitmap.pixelsHigh, Int((region.maxY * scaleY).rounded(.up)))
+        var bounds: (minX: Int, maxX: Int, minY: Int, maxY: Int)?
+
+        for y in minY ..< maxY {
+            for x in minX ..< maxX {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
+                    continue
+                }
+                let targetDistance = max(
+                    abs(color.redComponent - target.redComponent),
+                    max(
+                        abs(color.greenComponent - target.greenComponent),
+                        abs(color.blueComponent - target.blueComponent)
+                    )
+                )
+                let backgroundDistance = max(
+                    abs(color.redComponent - background.redComponent),
+                    max(
+                        abs(color.greenComponent - background.greenComponent),
+                        abs(color.blueComponent - background.blueComponent)
+                    )
+                )
+                guard targetDistance < backgroundDistance, targetDistance <= 0.08 else { continue }
+                if let current = bounds {
+                    bounds = (
+                        min(current.minX, x), max(current.maxX, x),
+                        min(current.minY, y), max(current.maxY, y)
+                    )
+                } else {
+                    bounds = (x, x, y, y)
+                }
+            }
+        }
+        guard let bounds else { return nil }
+        return CGRect(
+            x: CGFloat(bounds.minX) / scaleX,
+            y: CGFloat(bounds.minY) / scaleY,
+            width: CGFloat(bounds.maxX - bounds.minX + 1) / scaleX,
+            height: CGFloat(bounds.maxY - bounds.minY + 1) / scaleY
+        )
     }
 
 }

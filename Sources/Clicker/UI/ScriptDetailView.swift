@@ -61,8 +61,9 @@ struct ScriptDetailView: View {
                         isEditEnabled: state.canEditScripts,
                         onEdit: { editingBlockID = block.id }
                     )
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
+                        .listRowSeparator(.visible)
+                        .listRowSeparatorTint(ClickerVisualTheme.separator)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 22, bottom: 0, trailing: 22))
                         .contentShape(Rectangle())
                         .moveDisabled(!state.canEditScripts)
                         .deleteDisabled(!state.canEditScripts)
@@ -134,7 +135,8 @@ struct ScriptDetailView: View {
                 .disabled(!state.canEditScripts)
                 Spacer()
             }
-            .padding(ClickerVisualTheme.spacing12)
+            .padding(.horizontal, 22)
+            .frame(height: ClickerVisualTheme.spacing24 * 2)
             .background(ClickerVisualTheme.elevatedSurface)
         }
     }

@@ -320,7 +320,7 @@ final class ActionCardPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testLightActionCardRendersVisibleBoundaryAgainstCanvas() throws {
+    func testLightInactiveActionRowHasNoOuterBoundaryAgainstCanvas() throws {
         _ = NSApplication.shared
         let view = ActionCardView(
             block: .wait(WaitBlock(duration: 1.25)),
@@ -343,10 +343,11 @@ final class ActionCardPresentationTests: XCTestCase {
             bitmap.colorAt(x: centerX, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB)
         )
 
-        XCTAssertGreaterThan(
+        XCTAssertEqual(
             contrastRatio(boundary, interior),
-            3,
-            "浅色动作卡片边界必须达到非文本 UI 的 3:1 对比度"
+            1,
+            accuracy: 0.02,
+            "非活动动作行必须与列表画布连续，不能恢复外层卡片边框"
         )
     }
 
