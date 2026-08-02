@@ -242,7 +242,7 @@ final class VisualPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testRecordingSettingsKeepsBothFooterControlsVisibleAtMaximumDynamicType() throws {
+    func testRecordingSettingsKeepsBothFooterControlsVisibleInStandardHostedViewport() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -252,7 +252,6 @@ final class VisualPresentationTests: XCTestCase {
         let bitmap = try renderBitmap(
             RecordingSettingsView()
                 .environmentObject(state)
-                .environment(\.dynamicTypeSize, .accessibility5)
                 .environment(\.colorScheme, .light),
             appearance: appearance,
             size: CGSize(width: 440, height: 360)

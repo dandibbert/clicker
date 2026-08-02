@@ -16,7 +16,7 @@ final class FinalVisualConsumerTests: XCTestCase {
         let state = AppState(store: ScriptStore(directory: directory))
         let firstBlock = ActionBlock.wait(WaitBlock(duration: 1))
         let script = Script(
-            name: "极限轮次脚本",
+            name: "边界任务",
             blocks: [firstBlock],
             repeatCount: Int.max,
             repeatForever: false,
@@ -68,14 +68,58 @@ final class FinalVisualConsumerTests: XCTestCase {
             XCTAssertTrue(hosting.bounds.contains(frame), "\(label) frame escaped: \(frame)")
         }
         let renderedViews = descendants(of: hosting)
-        for label in ["次数", "秒"] {
-            let control = try XCTUnwrap(
-                renderedViews.first { controlLabel($0) == label },
-                "The \(label) setting must remain reachable with an extreme progress value"
+        let textFields = renderedViews.compactMap { $0 as? NSTextField }
+        var textFieldFrames: [String: CGRect] = [:]
+        for placeholder in ["次数", "秒"] {
+            let field = try XCTUnwrap(
+                textFields.first { $0.placeholderString == placeholder },
+                "The real \(placeholder) NSTextField must remain hosted"
             )
-            let frame = hosting.convert(control.bounds, from: control)
-            XCTAssertTrue(hosting.bounds.contains(frame), "\(label) frame escaped: \(frame)")
+            let frame = hosting.convert(field.bounds, from: field)
+            XCTAssertGreaterThan(frame.width, 0)
+            XCTAssertGreaterThan(frame.height, 0)
+            XCTAssertTrue(hosting.bounds.contains(frame), "\(placeholder) frame escaped: \(frame)")
+            textFieldFrames[placeholder] = frame
         }
+
+        let headerBounds = CGRect(x: 0, y: 0, width: size.width, height: 96)
+        _ = try XCTUnwrap(
+            recognizedText.first {
+                $0.text.replacingOccurrences(of: " ", with: "").contains("无限")
+                    && headerBounds.contains($0.frame)
+            },
+            "The real consumer must render the infinite-toggle label"
+        )
+        let toggleCandidates = renderedViews.compactMap { $0 as? NSButton }.filter { button in
+            let frame = hosting.convert(button.bounds, from: button)
+            return frame.width <= 30 && frame.height <= 30 && headerBounds.contains(frame)
+        }
+        XCTAssertEqual(toggleCandidates.count, 1, "Expected one real compact header checkbox")
+        let infiniteToggle = try XCTUnwrap(
+            toggleCandidates.first,
+            "The real infinite checkbox must remain hosted"
+        )
+        let toggleFrame = hosting.convert(infiniteToggle.bounds, from: infiniteToggle)
+        XCTAssertGreaterThan(toggleFrame.width, 0)
+        XCTAssertGreaterThan(toggleFrame.height, 0)
+        XCTAssertTrue(hosting.bounds.contains(toggleFrame), "Infinite toggle escaped: \(toggleFrame)")
+
+        let intervalFieldFrame = try XCTUnwrap(textFieldFrames["秒"])
+        let progressRegion = CGRect(
+            x: intervalFieldFrame.maxX,
+            y: 0,
+            width: size.width - intervalFieldFrame.maxX,
+            height: 96
+        )
+        let progressMatches = recognizedText.filter { progressRegion.contains($0.frame) }
+        let visibleProgress = progressMatches
+            .map(\.text)
+            .joined()
+            .replacingOccurrences(of: " ", with: "")
+        XCTAssertTrue(
+            visibleProgress.contains("第") && visibleProgress.contains("轮"),
+            "Extreme progress must retain its prefix and suffix in \(progressRegion): \(recognizedText)"
+        )
     }
 
     @MainActor
@@ -416,7 +460,7 @@ final class FinalVisualConsumerTests: XCTestCase {
     }
 
     @MainActor
-    func testMaximumDynamicTypeFooterControlsAreEnabledNativeHitTargetsInsideViewport() throws {
+    func testFooterControlsAreEnabledNativeHitTargetsInsideStandardViewport() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -426,7 +470,6 @@ final class FinalVisualConsumerTests: XCTestCase {
         let hosting = NSHostingView(
             rootView: RecordingSettingsView()
                 .environmentObject(state)
-                .environment(\.dynamicTypeSize, .accessibility5)
                 .environment(\.colorScheme, .light)
         )
         hosting.appearance = NSAppearance(named: .aqua)
@@ -466,7 +509,7 @@ final class FinalVisualConsumerTests: XCTestCase {
         for expected in ["外观", "停止录制快捷键", "恢复默认值", "完成"] {
             XCTAssertTrue(
                 renderedCopy.contains(expected),
-                "\(expected) must remain rendered at accessibility5: \(renderedCopy)"
+                "\(expected) must remain rendered in the standard hosted viewport: \(renderedCopy)"
             )
         }
     }

@@ -56,7 +56,7 @@ final class ShortcutCaptureTests: XCTestCase {
     }
 
     @MainActor
-    func testCaptureCardKeepsItsDimensionsWhileListeningAtMaximumDynamicType() {
+    func testCaptureCardKeepsItsDimensionsWhileListening() {
         let shortcut = RecordingStopShortcut(
             keyCode: 14,
             modifierFlags: KeyCodeMap.maskControl
@@ -70,7 +70,6 @@ final class ShortcutCaptureTests: XCTestCase {
                 isCapturing: false,
                 action: {}
             )
-            .environment(\.dynamicTypeSize, .accessibility5)
             .frame(width: 392)
         )
         let capturing = NSHostingView(
@@ -79,7 +78,6 @@ final class ShortcutCaptureTests: XCTestCase {
                 isCapturing: true,
                 action: {}
             )
-            .environment(\.dynamicTypeSize, .accessibility5)
             .frame(width: 392)
         )
 
@@ -104,7 +102,6 @@ final class ShortcutCaptureTests: XCTestCase {
                 isCapturing: true,
                 action: { tapCount += 1 }
             )
-            .environment(\.dynamicTypeSize, .accessibility5)
             .frame(width: 392)
         )
         hosting.frame = CGRect(

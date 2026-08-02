@@ -138,6 +138,9 @@ struct ScriptHeaderView: View {
             )
             .foregroundStyle(ClickerVisualTheme.playbackFill)
             .lineLimit(1)
+            .truncationMode(.middle)
+            .accessibilityLabel(playbackProgressText)
+            .help(playbackProgressText)
         }
     }
 
