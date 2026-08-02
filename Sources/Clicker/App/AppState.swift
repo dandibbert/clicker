@@ -21,6 +21,9 @@ final class AppState: ObservableObject {
     @Published var corruptFileNames: [String] = []
     @Published var persistenceIssue: ScriptStoreIssue?
     @Published var hotKeyRegistrationIssues: [HotKeyRegistrationIssue] = []
+    @Published var appearancePreference: AppAppearancePreference {
+        didSet { appearancePreferenceStore.preference = appearancePreference }
+    }
 
     let store: ScriptPersisting
     private let recorder: EventRecording
@@ -30,6 +33,7 @@ final class AppState: ObservableObject {
     private let playbackEngine: PlaybackControlling
     private let stopShortcutStore: RecordingStopShortcutProviding
     private let recordingIndicator: RecordingIndicatorPresenting
+    private let appearancePreferenceStore: AppAppearancePreferenceProviding
 
     init(
         store: ScriptPersisting = ScriptStore(directory: ScriptStore.defaultDirectory()),
@@ -38,6 +42,7 @@ final class AppState: ObservableObject {
         application: ApplicationControlling? = nil,
         externalApplicationTracker: ExternalApplicationTracking = SystemExternalApplicationTracker(),
         stopShortcutStore: RecordingStopShortcutProviding = RecordingStopShortcutStore(),
+        appearancePreferenceStore: AppAppearancePreferenceProviding = AppAppearancePreferenceStore(),
         recordingIndicator: RecordingIndicatorPresenting? = nil,
         playbackEngine: PlaybackControlling? = nil
     ) {
@@ -47,6 +52,8 @@ final class AppState: ObservableObject {
         self.application = application ?? SystemApplicationController()
         self.externalApplicationTracker = externalApplicationTracker
         self.stopShortcutStore = stopShortcutStore
+        self.appearancePreferenceStore = appearancePreferenceStore
+        self.appearancePreference = appearancePreferenceStore.preference
         self.recordingIndicator = recordingIndicator ?? RecordingIndicatorController()
         self.playbackEngine = playbackEngine ?? PlaybackEngine()
         reload()

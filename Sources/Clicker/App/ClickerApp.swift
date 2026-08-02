@@ -16,6 +16,7 @@ struct ClickerApp: App {
         Window("Clicker", id: "main") {
             MainView()
                 .environmentObject(state)
+                .preferredColorScheme(state.appearancePreference.colorScheme)
                 .frame(minWidth: 760, minHeight: 480)
                 .onAppear { applicationServices.start() }
         }
