@@ -1,7 +1,66 @@
 import AppKit
+import ClickerCore
 import SwiftUI
 import Vision
 import XCTest
+@testable import Clicker
+
+@MainActor
+final class HostedScriptDetailFixture {
+    let directory: URL
+    let state: AppState
+    let appearance: NSAppearance
+    let hosting: NSHostingView<AnyView>
+    let window: NSWindow
+
+    init(
+        script: Script,
+        size: CGSize,
+        phase: AppPhase = .idle,
+        appearanceName: NSAppearance.Name = .aqua,
+        colorScheme: ColorScheme = .light
+    ) throws {
+        _ = NSApplication.shared
+        directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        state = AppState(store: ScriptStore(directory: directory))
+        state.scripts = [script]
+        state.selectedScriptID = script.id
+        state.phase = phase
+        appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+        hosting = NSHostingView(
+            rootView: AnyView(
+                ScriptDetailView()
+                    .environmentObject(state)
+                    .environment(\.colorScheme, colorScheme)
+                    .frame(width: size.width, height: size.height)
+            )
+        )
+        hosting.appearance = appearance
+        hosting.frame = CGRect(origin: .zero, size: size)
+        window = NSWindow(
+            contentRect: hosting.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hosting
+        window.makeKeyAndOrderFront(nil)
+        settle()
+    }
+
+    func settle() {
+        hosting.layoutSubtreeIfNeeded()
+        hosting.displayIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    func tearDown() {
+        window.orderOut(nil)
+        try? FileManager.default.removeItem(at: directory)
+    }
+}
 
 extension FinalVisualConsumerTests {
     @MainActor
@@ -187,6 +246,105 @@ extension FinalVisualConsumerTests {
             y: CGFloat(matchedMinY) / scaleY,
             width: CGFloat(matchedMaxX - matchedMinX + 1) / scaleX,
             height: CGFloat(matchedMaxY - matchedMinY + 1) / scaleY
+        )
+    }
+
+    func renderedPixelFraction(
+        in bitmap: NSBitmapImageRep,
+        logicalSize: CGSize,
+        region: CGRect,
+        near target: NSColor,
+        tolerance: CGFloat
+    ) -> CGFloat {
+        guard let target = target.usingColorSpace(.sRGB) else { return 0 }
+        let scaleX = CGFloat(bitmap.pixelsWide) / logicalSize.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / logicalSize.height
+        let minX = max(0, Int((region.minX * scaleX).rounded(.down)))
+        let maxX = min(bitmap.pixelsWide, Int((region.maxX * scaleX).rounded(.up)))
+        let minY = max(0, Int((region.minY * scaleY).rounded(.down)))
+        let maxY = min(bitmap.pixelsHigh, Int((region.maxY * scaleY).rounded(.up)))
+        guard minX < maxX, minY < maxY else { return 0 }
+        var matches = 0
+        for y in minY ..< maxY {
+            for x in minX ..< maxX {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
+                    continue
+                }
+                if abs(color.redComponent - target.redComponent) <= tolerance,
+                   abs(color.greenComponent - target.greenComponent) <= tolerance,
+                   abs(color.blueComponent - target.blueComponent) <= tolerance {
+                    matches += 1
+                }
+            }
+        }
+        return CGFloat(matches) / CGFloat((maxX - minX) * (maxY - minY))
+    }
+
+    func renderedColorDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
+        guard let lhs = lhs.usingColorSpace(.sRGB),
+              let rhs = rhs.usingColorSpace(.sRGB) else { return .infinity }
+        return max(
+            abs(lhs.redComponent - rhs.redComponent),
+            max(
+                abs(lhs.greenComponent - rhs.greenComponent),
+                abs(lhs.blueComponent - rhs.blueComponent)
+            )
+        )
+    }
+
+    func visibleRoleBounds(
+        in bitmap: NSBitmapImageRep,
+        logicalSize: CGSize,
+        within region: CGRect,
+        target: NSColor,
+        excluding background: NSColor
+    ) -> CGRect? {
+        guard let target = target.usingColorSpace(.sRGB),
+              let background = background.usingColorSpace(.sRGB) else { return nil }
+        let scaleX = CGFloat(bitmap.pixelsWide) / logicalSize.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / logicalSize.height
+        let minX = max(0, Int((region.minX * scaleX).rounded(.down)))
+        let maxX = min(bitmap.pixelsWide, Int((region.maxX * scaleX).rounded(.up)))
+        let minY = max(0, Int((region.minY * scaleY).rounded(.down)))
+        let maxY = min(bitmap.pixelsHigh, Int((region.maxY * scaleY).rounded(.up)))
+        var bounds: (minX: Int, maxX: Int, minY: Int, maxY: Int)?
+
+        for y in minY ..< maxY {
+            for x in minX ..< maxX {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
+                    continue
+                }
+                let targetDistance = max(
+                    abs(color.redComponent - target.redComponent),
+                    max(
+                        abs(color.greenComponent - target.greenComponent),
+                        abs(color.blueComponent - target.blueComponent)
+                    )
+                )
+                let backgroundDistance = max(
+                    abs(color.redComponent - background.redComponent),
+                    max(
+                        abs(color.greenComponent - background.greenComponent),
+                        abs(color.blueComponent - background.blueComponent)
+                    )
+                )
+                guard targetDistance < backgroundDistance, targetDistance <= 0.08 else { continue }
+                if let current = bounds {
+                    bounds = (
+                        min(current.minX, x), max(current.maxX, x),
+                        min(current.minY, y), max(current.maxY, y)
+                    )
+                } else {
+                    bounds = (x, x, y, y)
+                }
+            }
+        }
+        guard let bounds else { return nil }
+        return CGRect(
+            x: CGFloat(bounds.minX) / scaleX,
+            y: CGFloat(bounds.minY) / scaleY,
+            width: CGFloat(bounds.maxX - bounds.minX + 1) / scaleX,
+            height: CGFloat(bounds.maxY - bounds.minY + 1) / scaleY
         )
     }
 

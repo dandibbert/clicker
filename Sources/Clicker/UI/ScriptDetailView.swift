@@ -61,8 +61,14 @@ struct ScriptDetailView: View {
                         isEditEnabled: state.canEditScripts,
                         onEdit: { editingBlockID = block.id }
                     )
-                        .listRowSeparator(.visible)
-                        .listRowSeparatorTint(ClickerVisualTheme.separator)
+                        .overlay(alignment: .bottom) {
+                            if index < script.blocks.count - 1 {
+                                Rectangle()
+                                    .fill(ClickerVisualTheme.separator)
+                                    .frame(height: 1)
+                            }
+                        }
+                        .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 0, leading: 22, bottom: 0, trailing: 22))
                         .contentShape(Rectangle())
                         .moveDisabled(!state.canEditScripts)

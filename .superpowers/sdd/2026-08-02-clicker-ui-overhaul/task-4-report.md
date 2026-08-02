@@ -90,3 +90,46 @@ SwiftPM emitted its existing failed `.netrc` load warning during commands. No `.
 - Inactive rows have no outer fill or stroke; active selection and the leading trail remain conditional on playback state.
 - The fixed bar uses existing spacing tokens for its 48pt height and continues to use `state.canEditScripts` as its enablement source.
 - No destructive operations, remote operations, or unrelated cleanup were performed.
+
+## Review Fix Round 1/5
+
+### Active and inactive row coverage
+
+The real 600pt `ScriptDetailView` fixture now enters playback with the first of two visible blocks active. The same bitmap therefore proves both sides of the state contract at once:
+
+- The active row body resolves to the selection surface.
+- Its leading trail renders at exactly 3.0pt wide and 48.0pt high; the anti-aliased assertion allows only 2.5–3.5pt width.
+- The inactive row remains canvas-colored and has neither selection pixels nor any red active trail.
+
+Mutation command:
+
+```text
+swift test --filter FinalVisualConsumerTests/testActionsRenderAsSeparatedRowsWithoutOuterCards
+```
+
+With `currentBlockID` temporarily changed to `nil`, the test failed for the intended reasons:
+
+- Active selection fraction was `0.0`, below the required `0.9`.
+- The active trail bitmap bounds were absent.
+
+Restoring `currentBlockID` to the first block made those new assertions pass. That stronger fixture also exposed that the system List separator disappeared next to an active row: its detected span was only 9pt instead of more than 480pt. `ScriptDetailView` now owns a deterministic 1pt separator overlay between rows, and the full rendered-row test passes with active feedback present.
+
+### Test support refactor
+
+- Added `HostedScriptDetailFixture` to own the temporary script store, real `AppState`, hosted `ScriptDetailView`, window, settling, and cleanup.
+- Both Task 4 consumer tests use the shared fixture instead of duplicating directory/state/window setup.
+- Moved the Task 4 bitmap fraction, color-distance, and visible-role helpers into `FinalVisualConsumerTestSupport.swift`.
+- `FinalVisualConsumerTests.swift` decreased from 783 to 703 lines despite adding the active/inactive assertions; its support file is 367 lines. Every Swift source and test file remains below 800 lines.
+
+### Round 1 verification
+
+| Check | Result |
+| --- | --- |
+| Active/inactive separated-row test | 1/1 passed |
+| Bottom-bar test after fixture refactor | 1/1 passed |
+| `ActionCardPresentationTests` | 19/19 passed |
+| `FinalVisualConsumerTests` | 8/8 passed |
+| `swift test` | 308/308 passed, 0 failures |
+| `swift build` | Exit 0 |
+| Swift files under 800 lines | Passed; Task 4 files are 703 and 367 lines |
+| `git diff --check` | Passed |
