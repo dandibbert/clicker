@@ -84,7 +84,6 @@ struct ScriptHeaderView: View {
                 intervalControls
                 playbackProgress
             }
-            .fixedSize(horizontal: true, vertical: false)
             .layoutPriority(2)
         }
         .padding(.horizontal, ClickerVisualTheme.spacing16)

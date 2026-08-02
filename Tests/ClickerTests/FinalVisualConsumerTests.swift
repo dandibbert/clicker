@@ -7,6 +7,78 @@ import XCTest
 
 final class FinalVisualConsumerTests: XCTestCase {
     @MainActor
+    func testExtremeFinitePlaybackProgressPreservesActionsAndSettingsAtMinimumWidth() throws {
+        _ = NSApplication.shared
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let state = AppState(store: ScriptStore(directory: directory))
+        let firstBlock = ActionBlock.wait(WaitBlock(duration: 1))
+        let script = Script(
+            name: "极限轮次脚本",
+            blocks: [firstBlock],
+            repeatCount: Int.max,
+            repeatForever: false,
+            repeatInterval: 1.5
+        )
+        state.scripts = [script]
+        state.selectedScriptID = script.id
+        state.phase = .playing(iteration: Int.max, currentBlockID: firstBlock.id)
+        let size = CGSize(width: 760, height: 480)
+        let appearance = try XCTUnwrap(NSAppearance(named: .aqua))
+        let hosting = NSHostingView(
+            rootView: ScriptDetailView()
+                .environmentObject(state)
+                .environment(\.colorScheme, .light)
+                .frame(width: size.width, height: size.height)
+        )
+        hosting.appearance = appearance
+        hosting.frame = CGRect(origin: .zero, size: size)
+        let window = NSWindow(
+            contentRect: hosting.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hosting
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        hosting.layoutSubtreeIfNeeded()
+        hosting.displayIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+        let bitmap = try bitmap(for: hosting)
+        let recognizedText = try recognizedTextFrames(in: bitmap, logicalSize: size)
+        let controls = nativeControls(in: hosting)
+        let primaryButtons = controls
+            .compactMap { $0 as? NSButton }
+            .filter { !($0 is NSPopUpButton) }
+        for label in ["录制", "回放"] {
+            let button = try XCTUnwrap(
+                nativeButton(
+                    recognizing: label,
+                    among: primaryButtons,
+                    recognizedText: recognizedText,
+                    in: hosting
+                ),
+                "The \(label) action must remain visible with an extreme progress value"
+            )
+            let frame = hosting.convert(button.bounds, from: button)
+            XCTAssertTrue(hosting.bounds.contains(frame), "\(label) frame escaped: \(frame)")
+        }
+        let renderedViews = descendants(of: hosting)
+        for label in ["次数", "秒"] {
+            let control = try XCTUnwrap(
+                renderedViews.first { controlLabel($0) == label },
+                "The \(label) setting must remain reachable with an extreme progress value"
+            )
+            let frame = hosting.convert(control.bounds, from: control)
+            XCTAssertTrue(hosting.bounds.contains(frame), "\(label) frame escaped: \(frame)")
+        }
+    }
+
+    @MainActor
     func testInfinitePlayingHeaderKeepsRepeatAndProgressVisibleAtMinimumWindowSize() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory
@@ -479,6 +551,11 @@ final class FinalVisualConsumerTests: XCTestCase {
             }
         }
         return Array(controls.values)
+    }
+
+    @MainActor
+    private func descendants(of root: NSView) -> [NSView] {
+        root.subviews.flatMap { [$0] + descendants(of: $0) }
     }
 
     private func controlLabel(_ view: NSView) -> String? {
