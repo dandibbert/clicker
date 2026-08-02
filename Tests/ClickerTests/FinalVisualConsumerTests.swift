@@ -16,7 +16,7 @@ final class FinalVisualConsumerTests: XCTestCase {
         let state = AppState(store: ScriptStore(directory: directory))
         let firstBlock = ActionBlock.wait(WaitBlock(duration: 1))
         let script = Script(
-            name: "无限回放脚本",
+            name: "定时任务",
             blocks: [firstBlock, .wait(WaitBlock(duration: 0.5))],
             repeatCount: 3,
             repeatForever: true,
@@ -61,13 +61,30 @@ final class FinalVisualConsumerTests: XCTestCase {
             let normalizedMatches = matches.map {
                 (text: $0.text.replacingOccurrences(of: " ", with: ""), frame: $0.frame)
             }
+            let settingsProgressBoundary = size.width * 0.8
+            let repeatSettingsBounds = CGRect(
+                x: size.width * 0.55,
+                y: 0,
+                width: settingsProgressBoundary - size.width * 0.55,
+                height: ClickerVisualTheme.compactHeaderHeight
+            )
+            let settingsProgressBounds = CGRect(
+                x: settingsProgressBoundary,
+                y: 0,
+                width: size.width - settingsProgressBoundary,
+                height: ClickerVisualTheme.compactHeaderHeight
+            )
             let infinite = try XCTUnwrap(
-                normalizedMatches.first { $0.text.contains("无限") },
-                "The real infinite-repeat label must remain visibly rendered"
+                normalizedMatches.first {
+                    $0.text.contains("无限") && repeatSettingsBounds.contains($0.frame)
+                },
+                "The real infinite-repeat label must be visible inside repeat settings"
             )
             let progress = try XCTUnwrap(
-                normalizedMatches.first { $0.text.contains("第2轮") },
-                "The real infinite playback progress must keep its existing copy"
+                normalizedMatches.first {
+                    $0.text.contains("第2轮") && settingsProgressBounds.contains($0.frame)
+                },
+                "The real progress copy must be visible after interval settings"
             )
             let headerBounds = CGRect(
                 x: 0,
@@ -78,6 +95,8 @@ final class FinalVisualConsumerTests: XCTestCase {
 
             XCTAssertTrue(headerBounds.contains(infinite.frame))
             XCTAssertTrue(headerBounds.contains(progress.frame))
+            XCTAssertTrue(repeatSettingsBounds.contains(infinite.frame))
+            XCTAssertTrue(settingsProgressBounds.contains(progress.frame))
             XCTAssertTrue(hosting.bounds.contains(infinite.frame))
             XCTAssertTrue(hosting.bounds.contains(progress.frame))
         }
@@ -148,27 +167,31 @@ final class FinalVisualConsumerTests: XCTestCase {
             )
 
             let controls = nativeControls(in: hosting)
+            let primaryButtons = controls
+                .compactMap { $0 as? NSButton }
+                .filter { !($0 is NSPopUpButton) }
+            let recognizedText = try recognizedTextFrames(in: bitmap, logicalSize: size)
             let recordButton = try XCTUnwrap(
                 nativeButton(
-                    accessibilityLabel: "开始录制",
-                    phase: .idle,
-                    hasPlayableScript: true,
-                    in: controls
+                    recognizing: "录制",
+                    among: primaryButtons,
+                    recognizedText: recognizedText,
+                    in: hosting
                 ),
-                "The accessibility-labeled record action must map to its rendered NSButton"
+                "OCR inside a real NSButton frame must identify the rendered record action"
             )
             let playbackButton = try XCTUnwrap(
                 nativeButton(
-                    accessibilityLabel: "开始回放",
-                    phase: .idle,
-                    hasPlayableScript: true,
-                    in: controls
+                    recognizing: "回放",
+                    among: primaryButtons,
+                    recognizedText: recognizedText,
+                    in: hosting
                 ),
-                "The accessibility-labeled playback action must map to its rendered NSButton"
+                "OCR inside a real NSButton frame must identify the rendered playback action"
             )
-            let primaryButtons = [recordButton, playbackButton]
+            XCTAssertFalse(recordButton === playbackButton)
             let headerBounds = CGRect(x: 0, y: 0, width: size.width, height: headerHeight)
-            for button in primaryButtons {
+            for button in [recordButton, playbackButton] {
                 let frame = hosting.convert(button.bounds, from: button)
                 XCTAssertGreaterThanOrEqual(frame.width, 44)
                 XCTAssertGreaterThanOrEqual(frame.height, 44)
@@ -413,24 +436,19 @@ final class FinalVisualConsumerTests: XCTestCase {
         return nil
     }
 
-    private func nativeButton(
-        accessibilityLabel: String,
-        phase: AppPhase,
-        hasPlayableScript: Bool,
-        in controls: [NSView]
+    private func nativeButton<V: View>(
+        recognizing expectedText: String,
+        among buttons: [NSButton],
+        recognizedText: [(text: String, frame: CGRect)],
+        in hosting: NSHostingView<V>
     ) -> NSButton? {
-        let buttons = controls
-            .compactMap { $0 as? NSButton }
-            .filter { !($0 is NSPopUpButton) }
-            .sorted {
-                $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX
+        buttons.first { button in
+            let buttonFrame = hosting.convert(button.bounds, from: button)
+            return recognizedText.contains { match in
+                match.text.replacingOccurrences(of: " ", with: "").contains(expectedText)
+                    && buttonFrame.contains(match.frame)
             }
-        let labels = PrimaryActionPresentation.pair(
-            phase: phase,
-            hasPlayableScript: hasPlayableScript
-        ).map(\.accessibilityLabel)
-        guard buttons.count == labels.count else { return nil }
-        return Dictionary(uniqueKeysWithValues: zip(labels, buttons))[accessibilityLabel]
+        }
     }
 
     private func color(
