@@ -1,7 +1,6 @@
 import AppKit
 import ClickerCore
 import SwiftUI
-import Vision
 import XCTest
 @testable import Clicker
 
@@ -50,7 +49,17 @@ final class FinalVisualConsumerTests: XCTestCase {
 
         let bitmap = try bitmap(for: hosting)
         let recognizedText = try recognizedTextFrames(in: bitmap, logicalSize: size)
-        let headerBounds = CGRect(x: 0, y: 0, width: size.width, height: 96)
+        let renderedViews = descendants(of: hosting)
+        let actionList = try XCTUnwrap(
+            renderedViews.compactMap { $0 as? NSOutlineView }.first,
+            "The extreme-progress consumer must retain its real action list"
+        )
+        let actionListFrame = hosting.convert(actionList.bounds, from: actionList)
+        XCTAssertTrue(
+            (96 ... 104).contains(actionListFrame.minY),
+            "The measured header boundary is \(actionListFrame.minY)pt"
+        )
+        let headerBounds = CGRect(x: 0, y: 0, width: size.width, height: actionListFrame.minY)
         let title = try XCTUnwrap(
             recognizedText.first {
                 $0.text.replacingOccurrences(of: " ", with: "") == "边界任务"
@@ -70,7 +79,48 @@ final class FinalVisualConsumerTests: XCTestCase {
         XCTAssertTrue(headerBounds.contains(recordLabel.frame))
         XCTAssertTrue(headerBounds.contains(playbackLabel.frame))
 
-        let renderedViews = descendants(of: hosting)
+        let recordSearchRegion = recordLabel.frame
+            .insetBy(dx: -48, dy: -18)
+            .intersection(headerBounds)
+        let playbackSearchRegion = CGRect(
+            x: playbackLabel.frame.minX - 32,
+            y: playbackLabel.frame.minY - 18,
+            width: playbackLabel.frame.width + 56,
+            height: playbackLabel.frame.height + 36
+        )
+            .intersection(headerBounds)
+        let recordBounds = try XCTUnwrap(
+            visibleRecordCueBounds(
+                in: bitmap,
+                within: recordSearchRegion,
+                logicalSize: size
+            ),
+            "The disabled record action must retain its complete visible cue"
+        )
+        let playbackBounds = try XCTUnwrap(
+            visibleColorBounds(
+                in: bitmap,
+                near: ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance),
+                tolerance: 0.08,
+                within: playbackSearchRegion,
+                logicalSize: size
+            ),
+            "The enabled playback action must retain its complete visible fill"
+        )
+        for (name, bounds, label, searchRegion) in [
+            ("record", recordBounds, recordLabel.frame, recordSearchRegion),
+            ("playback", playbackBounds, playbackLabel.frame, playbackSearchRegion),
+        ] {
+            XCTAssertTrue((36 ... 40).contains(bounds.height), "\(name) height: \(bounds)")
+            XCTAssertTrue(bounds.contains(label), "\(name) label escaped its complete visual boundary")
+            XCTAssertGreaterThan(bounds.minX, searchRegion.minX, "\(name) boundary was clipped on the left")
+            XCTAssertLessThan(bounds.maxX, searchRegion.maxX, "\(name) boundary was clipped on the right")
+            XCTAssertGreaterThan(bounds.minY, searchRegion.minY, "\(name) boundary was clipped at the top")
+            XCTAssertLessThan(bounds.maxY, searchRegion.maxY, "\(name) boundary was clipped at the bottom")
+            XCTAssertTrue(headerBounds.contains(bounds), "\(name) boundary escaped the measured header")
+            XCTAssertTrue(hosting.bounds.contains(bounds), "\(name) boundary escaped the viewport")
+        }
+
         let textFields = renderedViews.compactMap { $0 as? NSTextField }
         var textFieldFrames: [String: CGRect] = [:]
         for placeholder in ["次数", "秒"] {
@@ -111,7 +161,7 @@ final class FinalVisualConsumerTests: XCTestCase {
             x: intervalFieldFrame.maxX - 2,
             y: 0,
             width: size.width - intervalFieldFrame.maxX + 2,
-            height: 96
+            height: headerBounds.height
         )
         let progressMatches = recognizedText.filter { progressRegion.contains($0.frame) }
         let visibleProgress = progressMatches
@@ -279,14 +329,23 @@ final class FinalVisualConsumerTests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
 
             let bitmap = try bitmap(for: hosting)
+            let controls = nativeControls(in: hosting)
+            let actionList = try XCTUnwrap(
+                controls.compactMap { $0 as? NSOutlineView }.first,
+                "The real selected-script action list must render"
+            )
+            let actionListFrame = hosting.convert(actionList.bounds, from: actionList)
+            XCTAssertTrue(
+                (96 ... 104).contains(actionListFrame.minY),
+                "The measured header boundary is \(actionListFrame.minY)pt in \(fixture.0.rawValue)"
+            )
             let headerBounds = CGRect(
                 x: 0,
                 y: 0,
                 width: size.width,
-                height: ClickerVisualTheme.compactHeaderHeight
+                height: actionListFrame.minY
             )
 
-            let controls = nativeControls(in: hosting)
             let recognizedText = try recognizedTextFrames(in: bitmap, logicalSize: size)
             let recordText = try XCTUnwrap(
                 recognizedText.first {
@@ -354,12 +413,7 @@ final class FinalVisualConsumerTests: XCTestCase {
                 )
             }
 
-            let actionList = try XCTUnwrap(
-                controls.compactMap { $0 as? NSOutlineView }.first,
-                "The real selected-script action list must render"
-            )
-            let actionListFrame = hosting.convert(actionList.bounds, from: actionList)
-            XCTAssertGreaterThanOrEqual(actionListFrame.minY, headerBounds.maxY)
+            XCTAssertTrue(hosting.bounds.contains(actionListFrame))
             XCTAssertGreaterThan(
                 actionListFrame.height,
                 316,
@@ -653,206 +707,4 @@ final class FinalVisualConsumerTests: XCTestCase {
         }
     }
 
-    @MainActor
-    private func renderBitmap<V: View>(
-        _ view: V,
-        appearance: NSAppearance,
-        size: CGSize
-    ) throws -> NSBitmapImageRep {
-        _ = NSApplication.shared
-        let hosting = NSHostingView(rootView: view)
-        hosting.appearance = appearance
-        hosting.frame = CGRect(origin: .zero, size: size)
-        hosting.layoutSubtreeIfNeeded()
-        hosting.displayIfNeeded()
-        let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
-        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-        return bitmap
-    }
-
-    @MainActor
-    private func bitmap(for hosting: NSHostingView<some View>) throws -> NSBitmapImageRep {
-        let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
-        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-        return bitmap
-    }
-
-    private func recognizedTextFrames(
-        in bitmap: NSBitmapImageRep,
-        logicalSize: CGSize
-    ) throws -> [(text: String, frame: CGRect)] {
-        let image = try XCTUnwrap(bitmap.cgImage)
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.recognitionLanguages = ["zh-Hans"]
-        request.usesLanguageCorrection = false
-        try VNImageRequestHandler(cgImage: image, orientation: .up).perform([request])
-
-        return (request.results ?? []).compactMap { observation in
-            guard let candidate = observation.topCandidates(1).first else { return nil }
-            let box = observation.boundingBox
-            return (
-                text: candidate.string,
-                frame: CGRect(
-                    x: box.minX * logicalSize.width,
-                    y: (1 - box.maxY) * logicalSize.height,
-                    width: box.width * logicalSize.width,
-                    height: box.height * logicalSize.height
-                )
-            )
-        }
-    }
-
-    @MainActor
-    private func nativeControls<V: View>(in hosting: NSHostingView<V>) -> [NSView] {
-        var controls: [ObjectIdentifier: NSView] = [:]
-        for y in stride(from: 0, through: Int(hosting.bounds.height), by: 4) {
-            for x in stride(from: 0, through: Int(hosting.bounds.width), by: 4) {
-                guard let view = hosting.hitTest(CGPoint(x: x, y: y)) else { continue }
-                controls[ObjectIdentifier(view)] = view
-            }
-        }
-        return Array(controls.values)
-    }
-
-    @MainActor
-    private func descendants(of root: NSView) -> [NSView] {
-        root.subviews.flatMap { [$0] + descendants(of: $0) }
-    }
-
-    private func controlLabel(_ view: NSView) -> String? {
-        if let label = view.accessibilityLabel(), !label.isEmpty { return label }
-        if let field = view as? NSTextField { return field.placeholderString }
-        if let button = view as? NSButton, !button.title.isEmpty { return button.title }
-        return nil
-    }
-
-    private func nativeButton<V: View>(
-        recognizing expectedText: String,
-        among buttons: [NSButton],
-        recognizedText: [(text: String, frame: CGRect)],
-        in hosting: NSHostingView<V>
-    ) -> NSButton? {
-        buttons.first { button in
-            let buttonFrame = hosting.convert(button.bounds, from: button)
-            return recognizedText.contains { match in
-                match.text.replacingOccurrences(of: " ", with: "").contains(expectedText)
-                    && buttonFrame.contains(match.frame)
-            }
-        }
-    }
-
-    private func color(
-        in bitmap: NSBitmapImageRep,
-        xFraction: CGFloat,
-        yFraction: CGFloat
-    ) throws -> NSColor {
-        try color(
-            in: bitmap,
-            x: min(bitmap.pixelsWide - 1, Int(CGFloat(bitmap.pixelsWide) * xFraction)),
-            y: min(bitmap.pixelsHigh - 1, Int(CGFloat(bitmap.pixelsHigh) * yFraction))
-        )
-    }
-
-    private func color(in bitmap: NSBitmapImageRep, x: Int, y: Int) throws -> NSColor {
-        try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
-    }
-
-    private func visibleColorBounds(
-        in bitmap: NSBitmapImageRep,
-        near target: NSColor,
-        tolerance: CGFloat,
-        within region: CGRect,
-        logicalSize: CGSize
-    ) -> CGRect? {
-        guard let target = target.usingColorSpace(.sRGB) else { return nil }
-        let scaleX = CGFloat(bitmap.pixelsWide) / logicalSize.width
-        let scaleY = CGFloat(bitmap.pixelsHigh) / logicalSize.height
-        let minX = max(0, Int((region.minX * scaleX).rounded(.down)))
-        let maxX = min(bitmap.pixelsWide, Int((region.maxX * scaleX).rounded(.up)))
-        let minY = max(0, Int((region.minY * scaleY).rounded(.down)))
-        let maxY = min(bitmap.pixelsHigh, Int((region.maxY * scaleY).rounded(.up)))
-        var matchedMinX = bitmap.pixelsWide
-        var matchedMaxX = -1
-        var matchedMinY = bitmap.pixelsHigh
-        var matchedMaxY = -1
-
-        for y in minY ..< maxY {
-            for x in minX ..< maxX {
-                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
-                    continue
-                }
-                if abs(color.redComponent - target.redComponent) <= tolerance,
-                   abs(color.greenComponent - target.greenComponent) <= tolerance,
-                   abs(color.blueComponent - target.blueComponent) <= tolerance {
-                    matchedMinX = min(matchedMinX, x)
-                    matchedMaxX = max(matchedMaxX, x)
-                    matchedMinY = min(matchedMinY, y)
-                    matchedMaxY = max(matchedMaxY, y)
-                }
-            }
-        }
-        guard matchedMaxX >= matchedMinX, matchedMaxY >= matchedMinY else { return nil }
-        return CGRect(
-            x: CGFloat(matchedMinX) / scaleX,
-            y: CGFloat(matchedMinY) / scaleY,
-            width: CGFloat(matchedMaxX - matchedMinX + 1) / scaleX,
-            height: CGFloat(matchedMaxY - matchedMinY + 1) / scaleY
-        )
-    }
-
-    private func visibleRecordCueBounds(
-        in bitmap: NSBitmapImageRep,
-        within region: CGRect,
-        logicalSize: CGSize
-    ) -> CGRect? {
-        let scaleX = CGFloat(bitmap.pixelsWide) / logicalSize.width
-        let scaleY = CGFloat(bitmap.pixelsHigh) / logicalSize.height
-        let minX = max(0, Int((region.minX * scaleX).rounded(.down)))
-        let maxX = min(bitmap.pixelsWide, Int((region.maxX * scaleX).rounded(.up)))
-        let minY = max(0, Int((region.minY * scaleY).rounded(.down)))
-        let maxY = min(bitmap.pixelsHigh, Int((region.maxY * scaleY).rounded(.up)))
-        var matchedMinX = bitmap.pixelsWide
-        var matchedMaxX = -1
-        var matchedMinY = bitmap.pixelsHigh
-        var matchedMaxY = -1
-
-        for y in minY ..< maxY {
-            for x in minX ..< maxX {
-                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
-                      color.redComponent - color.greenComponent > 0.2,
-                      color.redComponent - color.blueComponent > 0.35 else {
-                    continue
-                }
-                matchedMinX = min(matchedMinX, x)
-                matchedMaxX = max(matchedMaxX, x)
-                matchedMinY = min(matchedMinY, y)
-                matchedMaxY = max(matchedMaxY, y)
-            }
-        }
-        guard matchedMaxX >= matchedMinX, matchedMaxY >= matchedMinY else { return nil }
-        return CGRect(
-            x: CGFloat(matchedMinX) / scaleX,
-            y: CGFloat(matchedMinY) / scaleY,
-            width: CGFloat(matchedMaxX - matchedMinX + 1) / scaleX,
-            height: CGFloat(matchedMaxY - matchedMinY + 1) / scaleY
-        )
-    }
-
-    private func contrastRatio(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
-        let first = relativeLuminance(lhs)
-        let second = relativeLuminance(rhs)
-        return (max(first, second) + 0.05) / (min(first, second) + 0.05)
-    }
-
-    private func relativeLuminance(_ color: NSColor) -> CGFloat {
-        func linear(_ component: CGFloat) -> CGFloat {
-            component <= 0.04045
-                ? component / 12.92
-                : pow((component + 0.055) / 1.055, 2.4)
-        }
-        return 0.2126 * linear(color.redComponent)
-            + 0.7152 * linear(color.greenComponent)
-            + 0.0722 * linear(color.blueComponent)
-    }
 }
