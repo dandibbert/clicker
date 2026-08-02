@@ -76,6 +76,7 @@ struct ScriptSidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .tint(ClickerVisualTheme.selection)
         .scrollContentBackground(.hidden)
         .overlay {
             if scripts.isEmpty {

@@ -57,6 +57,18 @@ struct ScriptHeaderView: View {
     }
 
     var body: some View {
+        GeometryReader { geometry in
+            if geometry.size.width < 700 {
+                compactComposition
+            } else {
+                wideComposition
+            }
+        }
+        .frame(height: ClickerVisualTheme.compactHeaderHeight)
+        .background(ClickerVisualTheme.elevatedSurface)
+    }
+
+    private var wideComposition: some View {
         HStack(spacing: 18) {
             identity
                 .frame(minWidth: 130, maxWidth: .infinity, alignment: .leading)
@@ -73,7 +85,28 @@ struct ScriptHeaderView: View {
         .padding(.horizontal, 22)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: ClickerVisualTheme.compactHeaderHeight)
-        .background(ClickerVisualTheme.elevatedSurface)
+    }
+
+    private var compactComposition: some View {
+        VStack(spacing: ClickerVisualTheme.spacing4) {
+            HStack(spacing: ClickerVisualTheme.spacing12) {
+                identity
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                playbackProgress(width: 176)
+            }
+            HStack(spacing: ClickerVisualTheme.spacing12) {
+                PrimaryActionBar(
+                    phase: state.phase,
+                    hasPlayableScript: ScriptPlaybackEligibility.isPlayable(script)
+                )
+                .fixedSize(horizontal: true, vertical: false)
+                repeatSettings
+                    .fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.horizontal, ClickerVisualTheme.spacing12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private var identity: some View {
@@ -91,9 +124,15 @@ struct ScriptHeaderView: View {
 
     private var repeatParameters: some View {
         HStack(spacing: ClickerVisualTheme.spacing4) {
+            repeatSettings
+            playbackProgress(width: 144)
+        }
+    }
+
+    private var repeatSettings: some View {
+        HStack(spacing: ClickerVisualTheme.spacing4) {
             repeatControls
             intervalControls
-            playbackProgress
         }
     }
 
@@ -135,12 +174,12 @@ struct ScriptHeaderView: View {
     }
 
     @ViewBuilder
-    private var playbackProgress: some View {
+    private func playbackProgress(width: CGFloat) -> some View {
         if let playbackProgressText = presentation.playbackProgressText {
             Text(playbackProgressText)
                 .foregroundStyle(ClickerVisualTheme.playbackFill)
                 .lineLimit(4)
-                .frame(width: 144, alignment: .leading)
+                .frame(width: width, alignment: .leading)
                 .accessibilityLabel(playbackProgressText)
                 .help(playbackProgressText)
         }
