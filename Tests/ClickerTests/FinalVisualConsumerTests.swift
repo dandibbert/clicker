@@ -6,6 +6,111 @@ import XCTest
 
 final class FinalVisualConsumerTests: XCTestCase {
     @MainActor
+    func testSelectedScriptKeepsCompactHeaderControlsAndActionListVisibleAtMinimumWindowSize() throws {
+        _ = NSApplication.shared
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let state = AppState(store: ScriptStore(directory: directory))
+        let script = Script(
+            name: "发布网页并整理窗口",
+            blocks: [
+                .wait(WaitBlock(duration: 1)),
+                .click(ClickBlock(x: 320, y: 240, button: .left, clickCount: 1)),
+                .wait(WaitBlock(duration: 0.5)),
+            ],
+            repeatCount: 3,
+            repeatForever: false,
+            repeatInterval: 1.5
+        )
+        state.scripts = [script]
+        state.selectedScriptID = script.id
+        let size = CGSize(width: 760, height: 480)
+
+        for fixture in [
+            (NSAppearance.Name.aqua, ColorScheme.light),
+            (.darkAqua, .dark),
+        ] {
+            let appearance = try XCTUnwrap(NSAppearance(named: fixture.0))
+            let hosting = NSHostingView(
+                rootView: ScriptDetailView()
+                    .environmentObject(state)
+                    .environment(\.colorScheme, fixture.1)
+                    .frame(width: size.width, height: size.height)
+            )
+            hosting.appearance = appearance
+            hosting.frame = CGRect(origin: .zero, size: size)
+            let window = NSWindow(
+                contentRect: hosting.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.contentView = hosting
+            window.makeKeyAndOrderFront(nil)
+            defer { window.orderOut(nil) }
+            hosting.layoutSubtreeIfNeeded()
+            hosting.displayIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+            let bitmap = try bitmap(for: hosting)
+            let separator = ClickerVisualTheme.resolvedColor(for: .separator, appearance: appearance)
+            let primaryText = ClickerVisualTheme.resolvedColor(for: .primaryText, appearance: appearance)
+            let headerBottomPixel = try XCTUnwrap(
+                highestFullWidthSeparatorRow(in: bitmap, near: [separator, primaryText]),
+                "The real header consumer must keep a visible bottom separator"
+            )
+            let scale = CGFloat(bitmap.pixelsHigh) / size.height
+            let headerHeight = CGFloat(headerBottomPixel) / scale
+            XCTAssertLessThanOrEqual(
+                headerHeight,
+                104,
+                "The real header is \(headerHeight)pt tall in \(fixture.0.rawValue)"
+            )
+
+            let controls = nativeControls(in: hosting)
+            XCTAssertEqual(
+                PrimaryActionPresentation.pair(phase: .idle, hasPlayableScript: true).map(\.title),
+                ["录制", "回放"]
+            )
+            let primaryButtons = controls.compactMap { $0 as? NSButton }.filter {
+                !($0 is NSPopUpButton)
+            }
+            XCTAssertEqual(primaryButtons.count, 2, "Both labeled primary actions must render")
+            for button in primaryButtons {
+                let frame = hosting.convert(button.bounds, from: button)
+                XCTAssertGreaterThanOrEqual(frame.width, 44)
+                XCTAssertGreaterThanOrEqual(frame.height, 44)
+                XCTAssertLessThanOrEqual(frame.maxY, headerHeight)
+            }
+
+            for label in ["次数", "秒"] {
+                let element = try XCTUnwrap(
+                    controls.first { controlLabel($0) == label },
+                    "\(label) must remain rendered by the real repeat/interval controls"
+                )
+                XCTAssertTrue(
+                    hosting.bounds.contains(hosting.convert(element.bounds, from: element)),
+                    "\(label) must remain inside the 760×480 viewport"
+                )
+            }
+
+            let actionList = try XCTUnwrap(
+                controls.compactMap { $0 as? NSOutlineView }.first,
+                "The real selected-script action list must render"
+            )
+            let actionListFrame = hosting.convert(actionList.bounds, from: actionList)
+            XCTAssertGreaterThanOrEqual(actionListFrame.minY, headerHeight)
+            XCTAssertGreaterThan(
+                actionListFrame.height,
+                316,
+                "The compact header must expose more list pixels than the previous 316pt baseline"
+            )
+        }
+    }
+
+    @MainActor
     func testProminentButtonRendersReadableForegroundAgainstItsActualFill() throws {
         for fixture in [
             (NSAppearance.Name.aqua, ColorScheme.light),
@@ -137,6 +242,52 @@ final class FinalVisualConsumerTests: XCTestCase {
         let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
         hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
         return bitmap
+    }
+
+    @MainActor
+    private func bitmap(for hosting: NSHostingView<some View>) throws -> NSBitmapImageRep {
+        let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        return bitmap
+    }
+
+    private func highestFullWidthSeparatorRow(
+        in bitmap: NSBitmapImageRep,
+        near expected: [NSColor]
+    ) -> Int? {
+        let expectedSRGB = expected.compactMap { $0.usingColorSpace(.sRGB) }
+        return (1 ..< bitmap.pixelsHigh - 1).first { y in
+            let matchingPixels = (0 ..< bitmap.pixelsWide).reduce(into: 0) { count, x in
+                guard let pixel = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return }
+                if expectedSRGB.contains(where: { expected in
+                    abs(pixel.redComponent - expected.redComponent)
+                        + abs(pixel.greenComponent - expected.greenComponent)
+                        + abs(pixel.blueComponent - expected.blueComponent) < 0.3
+                }) {
+                    count += 1
+                }
+            }
+            return CGFloat(matchingPixels) / CGFloat(bitmap.pixelsWide) > 0.99
+        }
+    }
+
+    @MainActor
+    private func nativeControls<V: View>(in hosting: NSHostingView<V>) -> [NSView] {
+        var controls: [ObjectIdentifier: NSView] = [:]
+        for y in stride(from: 0, through: Int(hosting.bounds.height), by: 4) {
+            for x in stride(from: 0, through: Int(hosting.bounds.width), by: 4) {
+                guard let view = hosting.hitTest(CGPoint(x: x, y: y)) else { continue }
+                controls[ObjectIdentifier(view)] = view
+            }
+        }
+        return Array(controls.values)
+    }
+
+    private func controlLabel(_ view: NSView) -> String? {
+        if let label = view.accessibilityLabel(), !label.isEmpty { return label }
+        if let field = view as? NSTextField { return field.placeholderString }
+        if let button = view as? NSButton, !button.title.isEmpty { return button.title }
+        return nil
     }
 
     private func color(

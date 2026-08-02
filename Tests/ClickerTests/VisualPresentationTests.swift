@@ -79,6 +79,40 @@ final class VisualPresentationTests: XCTestCase {
         XCTAssertEqual(model.durationText, "约 0.0 秒")
     }
 
+    func testCompactHeaderCombinesActionCountAndDurationMetadata() {
+        let script = Script(
+            name: "录制 1",
+            blocks: [.wait(WaitBlock(duration: 1.5))],
+            trailingDelay: 0.5
+        )
+        let model = CompactScriptHeaderPresentation(script: script, phase: .idle)
+
+        XCTAssertEqual(model.title, "录制 1")
+        XCTAssertEqual(model.metadata, "1 个动作 · 约 2.0 秒")
+        XCTAssertFalse(model.showsPlaybackProgress)
+    }
+
+    func testCompactHeaderPreservesFiniteAndInfinitePlaybackProgressCopy() {
+        var finiteScript = Script(name: "有限回放", repeatCount: 3)
+        finiteScript.repeatForever = false
+        var infiniteScript = Script(name: "无限回放", repeatCount: 3)
+        infiniteScript.repeatForever = true
+        let phase = AppPhase.playing(iteration: 2, currentBlockID: nil)
+
+        let finite = CompactScriptHeaderPresentation(script: finiteScript, phase: phase)
+        let infinite = CompactScriptHeaderPresentation(script: infiniteScript, phase: phase)
+
+        XCTAssertTrue(finite.showsPlaybackProgress)
+        XCTAssertEqual(finite.playbackProgressText, "第 2/3 轮")
+        XCTAssertTrue(infinite.showsPlaybackProgress)
+        XCTAssertEqual(infinite.playbackProgressText, "第 2 轮")
+    }
+
+    func testCompactHeaderHeightStaysInsideApprovedRange() {
+        XCTAssertGreaterThanOrEqual(ClickerVisualTheme.compactHeaderHeight, 88)
+        XCTAssertLessThanOrEqual(ClickerVisualTheme.compactHeaderHeight, 104)
+    }
+
     func testTrailingOnlyScriptPresentsPlaybackAsEnabled() {
         let script = Script(name: "收尾等待", trailingDelay: 0.5)
 
@@ -360,7 +394,7 @@ final class VisualPresentationTests: XCTestCase {
         XCTAssertEqual(ClickerVisualTheme.spacing24, 24)
         XCTAssertEqual(ClickerVisualTheme.cardCornerRadius, 10)
         XCTAssertEqual(ClickerVisualTheme.panelCornerRadius, 14)
-        XCTAssertEqual(ClickerVisualTheme.primaryControlHeight, 34)
+        XCTAssertEqual(ClickerVisualTheme.primaryControlHeight, 44)
     }
 
     func testVisualThemeExportsRedOnlyForRecordingAndActiveFeedback() {

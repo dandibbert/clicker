@@ -36,7 +36,8 @@ enum ClickerVisualTheme {
     static let cardCornerRadius: CGFloat = 10
     static let panelCornerRadius: CGFloat = 14
     static let cardBorderWidth: CGFloat = 1
-    static let primaryControlHeight: CGFloat = 34
+    static let primaryControlHeight: CGFloat = 44
+    static let compactHeaderHeight: CGFloat = 96
 
     static func resolvedColor(for role: ColorRole, appearance: NSAppearance) -> NSColor {
         let palette = palette(for: role)

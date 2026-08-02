@@ -23,40 +23,73 @@ struct ScriptHeaderPresentation: Equatable {
     }
 }
 
+struct CompactScriptHeaderPresentation: Equatable {
+    let title: String
+    let metadata: String
+    let playbackProgressText: String?
+
+    var showsPlaybackProgress: Bool {
+        playbackProgressText != nil
+    }
+
+    init(script: Script, phase: AppPhase) {
+        let header = ScriptHeaderPresentation(script: script)
+        title = header.title
+        metadata = "\(header.actionCountText) · \(header.durationText)"
+
+        if case .playing(let iteration, _) = phase {
+            playbackProgressText = script.repeatForever
+                ? "第 \(iteration) 轮"
+                : "第 \(iteration)/\(script.repeatCount) 轮"
+        } else {
+            playbackProgressText = nil
+        }
+    }
+}
+
 struct ScriptHeaderView: View {
     @EnvironmentObject private var state: AppState
 
     let script: Script
 
-    private var presentation: ScriptHeaderPresentation {
-        ScriptHeaderPresentation(script: script)
+    private var presentation: CompactScriptHeaderPresentation {
+        CompactScriptHeaderPresentation(script: script, phase: state.phase)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing16) {
+        HStack(spacing: ClickerVisualTheme.spacing12) {
             VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing4) {
                 Text(presentation.title)
-                    .font(.title2.weight(.semibold))
+                    .font(.headline.weight(.semibold))
                     .foregroundStyle(ClickerVisualTheme.primaryText)
                     .lineLimit(1)
-                Text("\(presentation.actionCountText) · \(presentation.durationText)")
-                    .font(.callout)
+                    .layoutPriority(1)
+                Text(presentation.metadata)
+                    .font(.caption)
                     .foregroundStyle(ClickerVisualTheme.secondaryText)
+                    .lineLimit(1)
             }
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(0)
 
             PrimaryActionBar(
                 phase: state.phase,
                 hasPlayableScript: ScriptPlaybackEligibility.isPlayable(script)
             )
+            .frame(width: 200)
+            .layoutPriority(2)
 
-            HStack(spacing: ClickerVisualTheme.spacing16) {
+            HStack(spacing: ClickerVisualTheme.spacing8) {
                 repeatControls
                 intervalControls
-                Spacer()
                 playbackProgress
             }
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(2)
         }
-        .padding(ClickerVisualTheme.spacing16)
+        .padding(.horizontal, ClickerVisualTheme.spacing16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: ClickerVisualTheme.compactHeaderHeight)
         .background(ClickerVisualTheme.elevatedSurface)
     }
 
@@ -67,7 +100,8 @@ struct ScriptHeaderView: View {
                 get: { script.repeatCount },
                 set: { updateRepeatCount($0) }
             ), format: .number)
-                .frame(width: 50)
+                .frame(width: 48)
+                .frame(minHeight: ClickerVisualTheme.primaryControlHeight)
                 .disabled(script.repeatForever)
             Text("次")
             Toggle("无限", isOn: Binding(
@@ -75,7 +109,9 @@ struct ScriptHeaderView: View {
                 set: { updateRepeatForever($0) }
             ))
             .toggleStyle(.checkbox)
+            .frame(minHeight: ClickerVisualTheme.primaryControlHeight)
         }
+        .fixedSize(horizontal: true, vertical: false)
         .disabled(!state.canEditScripts)
     }
 
@@ -86,20 +122,23 @@ struct ScriptHeaderView: View {
                 get: { script.repeatInterval },
                 set: { updateRepeatInterval($0) }
             ), format: .number)
-                .frame(width: 50)
+                .frame(width: 48)
+                .frame(minHeight: ClickerVisualTheme.primaryControlHeight)
             Text("秒")
         }
+        .fixedSize(horizontal: true, vertical: false)
         .disabled(!state.canEditScripts)
     }
 
     @ViewBuilder
     private var playbackProgress: some View {
-        if case .playing(let iteration, _) = state.phase {
+        if let playbackProgressText = presentation.playbackProgressText {
             Label(
-                script.repeatForever ? "第 \(iteration) 轮" : "第 \(iteration)/\(script.repeatCount) 轮",
+                playbackProgressText,
                 systemImage: "play.fill"
             )
             .foregroundStyle(ClickerVisualTheme.playbackFill)
+            .lineLimit(1)
         }
     }
 
