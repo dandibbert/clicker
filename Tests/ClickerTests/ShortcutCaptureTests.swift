@@ -19,13 +19,40 @@ final class ShortcutCaptureTests: XCTestCase {
         XCTAssertEqual(model.keys, ["⌃", "⌥", "⇧", "⌘", "E"])
         XCTAssertEqual(model.title, "停止录制快捷键")
         XCTAssertEqual(model.instruction, "点击重新录入")
-        XCTAssertTrue(model.accessibilityLabel.contains(shortcut.displayName))
+        XCTAssertEqual(
+            model.accessibilityLabel,
+            "停止录制快捷键，⌃⌥⇧⌘E，点击重新录入"
+        )
     }
 
     func testCapturingPresentationPromptsForACombination() {
         let model = ShortcutKeycapPresentation(shortcut: .defaultValue, isCapturing: true)
 
         XCTAssertEqual(model.instruction, "请按下新的组合键…")
+    }
+
+    func testShortcutPresentationNamesEscapePlainTextAndUnknownKeys() {
+        XCTAssertEqual(
+            ShortcutKeycapPresentation(
+                shortcut: .defaultValue,
+                isCapturing: false
+            ).keys,
+            ["Esc"]
+        )
+        XCTAssertEqual(
+            ShortcutKeycapPresentation(
+                shortcut: RecordingStopShortcut(keyCode: 0, modifierFlags: 0),
+                isCapturing: false
+            ).keys,
+            ["A"]
+        )
+        XCTAssertEqual(
+            ShortcutKeycapPresentation(
+                shortcut: RecordingStopShortcut(keyCode: 999, modifierFlags: 0),
+                isCapturing: false
+            ).keys,
+            ["Key999"]
+        )
     }
 
     @MainActor

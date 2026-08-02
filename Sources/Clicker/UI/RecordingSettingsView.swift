@@ -145,12 +145,13 @@ struct RecordingSettingsView: View {
                         isCapturing: isCapturing,
                         action: { isCapturing = true }
                     )
-
-                    if isCapturing {
-                        ShortcutCaptureView(onCandidate: accept)
-                            .frame(width: 1, height: 1)
-                            .opacity(0)
-                            .accessibilityHidden(true)
+                    .background {
+                        if isCapturing {
+                            ShortcutCaptureView(onCandidate: accept)
+                                .frame(width: 1, height: 1)
+                                .opacity(0)
+                                .accessibilityHidden(true)
+                        }
                     }
 
                     RecordingSettingsMessage(message: editor.message)
