@@ -18,6 +18,8 @@ enum ClickerProminentButtonRole: Equatable {
 }
 
 struct ClickerProminentButton<Label: View>: View {
+    @Environment(\.isEnabled) private var isEnabled
+
     let role: ClickerProminentButtonRole
     let action: () -> Void
     @ViewBuilder let label: () -> Label
@@ -25,17 +27,46 @@ struct ClickerProminentButton<Label: View>: View {
     var body: some View {
         Button(action: action) {
             label()
-                .foregroundStyle(ClickerVisualTheme.color(for: role.foregroundRole))
         }
-        .buttonStyle(.borderedProminent)
-        .tint(ClickerVisualTheme.color(for: role.fillRole))
-        .overlay {
-            if let cueRole = role.cueRole {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(ClickerVisualTheme.color(for: cueRole), lineWidth: 2)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+        .buttonStyle(ClickerProminentButtonStyle(role: role, isEnabled: isEnabled))
+    }
+}
+
+private struct ClickerProminentButtonStyle: ButtonStyle {
+    let role: ClickerProminentButtonRole
+    let isEnabled: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.semibold))
+            .foregroundStyle(ClickerVisualTheme.color(for: role.foregroundRole))
+            .padding(.horizontal, ClickerVisualTheme.spacing12)
+            .frame(minHeight: ClickerVisualTheme.primaryControlHeight)
+            .background(
+                ClickerVisualTheme.color(for: role.fillRole),
+                in: RoundedRectangle(
+                    cornerRadius: ClickerVisualTheme.controlCornerRadius,
+                    style: .continuous
+                )
+            )
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: ClickerVisualTheme.controlCornerRadius,
+                    style: .continuous
+                )
+                .strokeBorder(
+                    ClickerVisualTheme.color(for: role.cueRole ?? .focusRing),
+                    lineWidth: role.cueRole == nil ? 1 : 2
+                )
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
-        }
+            .contentShape(
+                RoundedRectangle(
+                    cornerRadius: ClickerVisualTheme.controlCornerRadius,
+                    style: .continuous
+                )
+            )
+            .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.45)
     }
 }

@@ -180,7 +180,11 @@ final class VisualPresentationTests: XCTestCase {
                 size: CGSize(width: 100, height: 100)
             )
             XCTAssertTrue(
-                bitmapContainsVisibleRecordFill(bitmap),
+                pixelFraction(
+                    in: bitmap,
+                    near: ClickerVisualTheme.resolvedColor(for: .recordFill, appearance: appearance),
+                    tolerance: 0.01
+                ) > 0,
                 "The real indicator border must render recordFill in \(appearanceName.rawValue)"
             )
         }
@@ -326,7 +330,27 @@ final class VisualPresentationTests: XCTestCase {
         XCTAssertEqual(ClickerVisualTheme.spacing24, 24)
         XCTAssertEqual(ClickerVisualTheme.cardCornerRadius, 10)
         XCTAssertEqual(ClickerVisualTheme.panelCornerRadius, 14)
-        XCTAssertEqual(ClickerVisualTheme.primaryControlHeight, 44)
+        XCTAssertEqual(ClickerVisualTheme.sidebarIdealWidth, 230)
+        XCTAssertEqual(ClickerVisualTheme.compactHeaderHeight, 100)
+        XCTAssertEqual(ClickerVisualTheme.primaryControlHeight, 38)
+        XCTAssertEqual(ClickerVisualTheme.controlCornerRadius, 8)
+    }
+
+    func testOrdinarySelectionIsNeutralAndDistinctFromRecordingRed() throws {
+        let aqua = try XCTUnwrap(NSAppearance(named: .aqua))
+        let selection = ClickerVisualTheme.resolvedColor(for: .selection, appearance: aqua)
+        let recording = ClickerVisualTheme.resolvedColor(for: .recordFill, appearance: aqua)
+
+        XCTAssertLessThan(abs(selection.redComponent - selection.greenComponent), 0.06)
+        XCTAssertLessThan(abs(selection.greenComponent - selection.blueComponent), 0.06)
+        XCTAssertGreaterThan(recording.redComponent - recording.blueComponent, 0.35)
+    }
+
+    func testApprovedCompactGeometry() {
+        XCTAssertEqual(ClickerVisualTheme.sidebarIdealWidth, 230)
+        XCTAssertEqual(ClickerVisualTheme.primaryControlHeight, 38)
+        XCTAssertTrue((96 ... 104).contains(ClickerVisualTheme.compactHeaderHeight))
+        XCTAssertTrue((6 ... 10).contains(ClickerVisualTheme.controlCornerRadius))
     }
 
     func testVisualThemeExportsRedOnlyForRecordingAndActiveFeedback() {
@@ -343,12 +367,24 @@ final class VisualPresentationTests: XCTestCase {
 
     func testVisualThemeResolvesOnlyApprovedPaletteAcrossAppearances() throws {
         let approvedPalette: Set<UInt32> = [
-            0xF1_EA_DC,
-            0x17_16_19,
-            0xE7_38_36,
-            0x8B_84_7A,
-            0x15_14_18,
-            0x23_21_26,
+            0xF7_F7_F8,
+            0xF0_F0_F2,
+            0xE1_E1_E5,
+            0xF1_F1_F3,
+            0x74_74_7A,
+            0xE5_39_35,
+            0xF0_4A_45,
+            0x30_30_33,
+            0x1D_1D_1F,
+            0x3D_3D_43,
+            0x1C_1C_1E,
+            0x24_24_26,
+            0x38_38_3C,
+            0x2C_2C_2E,
+            0xA1_A1_A6,
+            0xFF_FF_FF,
+            0xF5_F5_F7,
+            0xD3_D3_D6,
         ]
         let lightAppearanceNames: [NSAppearance.Name] = [
             .aqua,
@@ -501,16 +537,6 @@ final class VisualPresentationTests: XCTestCase {
             let fill = ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance)
             XCTAssertGreaterThanOrEqual(try contrastRatio(cue, fill), 3)
         }
-        XCTAssertTrue(
-            String(reflecting: ClickerProminentButton<Text>.Body.self)
-                .contains("_ForegroundStyleModifier"),
-            "Removing foregroundStyle from the real shared button must fail this test"
-        )
-        XCTAssertTrue(
-            String(reflecting: ClickerProminentButton<Text>.Body.self)
-                .contains("_OverlayModifier"),
-            "Removing the recording cue overlay from the real shared button must fail this test"
-        )
     }
 
     @MainActor
@@ -554,17 +580,21 @@ final class VisualPresentationTests: XCTestCase {
         (role: ClickerVisualTheme.ColorRole, light: (UInt8, UInt8, UInt8), dark: (UInt8, UInt8, UInt8))
     ] {
         [
-            (.canvas, (0xF1, 0xEA, 0xDC), (0x15, 0x14, 0x18)),
-            (.cardSurface, (0xF1, 0xEA, 0xDC), (0x23, 0x21, 0x26)),
-            (.elevatedSurface, (0xF1, 0xEA, 0xDC), (0x23, 0x21, 0x26)),
-            (.primaryText, (0x17, 0x16, 0x19), (0xF1, 0xEA, 0xDC)),
-            (.secondaryText, (0x17, 0x16, 0x19), (0xF1, 0xEA, 0xDC)),
-            (.separator, (0x8B, 0x84, 0x7A), (0x8B, 0x84, 0x7A)),
-            (.selection, (0xF1, 0xEA, 0xDC), (0x23, 0x21, 0x26)),
-            (.recordFill, (0xE7, 0x38, 0x36), (0xE7, 0x38, 0x36)),
-            (.playbackFill, (0x17, 0x16, 0x19), (0xF1, 0xEA, 0xDC)),
-            (.prominentForeground, (0xF1, 0xEA, 0xDC), (0x17, 0x16, 0x19)),
-            (.activeTrail, (0xE7, 0x38, 0x36), (0xE7, 0x38, 0x36)),
+            (.windowBackground, (0xF7, 0xF7, 0xF8), (0x1C, 0x1C, 0x1E)),
+            (.sidebarBackground, (0xF0, 0xF0, 0xF2), (0x24, 0x24, 0x26)),
+            (.selection, (0xE1, 0xE1, 0xE5), (0x38, 0x38, 0x3C)),
+            (.controlSurface, (0xF1, 0xF1, 0xF3), (0x2C, 0x2C, 0x2E)),
+            (.focusRing, (0x74, 0x74, 0x7A), (0xA1, 0xA1, 0xA6)),
+            (.recordFill, (0xE5, 0x39, 0x35), (0xF0, 0x4A, 0x45)),
+            (.playbackFill, (0x30, 0x30, 0x33), (0xFF, 0xFF, 0xFF)),
+            (.canvas, (0xF7, 0xF7, 0xF8), (0x1C, 0x1C, 0x1E)),
+            (.cardSurface, (0xF1, 0xF1, 0xF3), (0x2C, 0x2C, 0x2E)),
+            (.elevatedSurface, (0xF1, 0xF1, 0xF3), (0x2C, 0x2C, 0x2E)),
+            (.primaryText, (0x1D, 0x1D, 0x1F), (0xF5, 0xF5, 0xF7)),
+            (.secondaryText, (0x3D, 0x3D, 0x43), (0xD3, 0xD3, 0xD6)),
+            (.separator, (0x74, 0x74, 0x7A), (0xA1, 0xA1, 0xA6)),
+            (.prominentForeground, (0xF5, 0xF5, 0xF7), (0x1D, 0x1D, 0x1F)),
+            (.activeTrail, (0xE5, 0x39, 0x35), (0xF0, 0x4A, 0x45)),
         ]
     }
 
@@ -633,23 +663,6 @@ final class VisualPresentationTests: XCTestCase {
         return bitmap
     }
 
-    private func bitmapContainsVisibleRecordFill(_ bitmap: NSBitmapImageRep) -> Bool {
-        for y in 0 ..< bitmap.pixelsHigh {
-            for x in 0 ..< bitmap.pixelsWide {
-                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
-                    continue
-                }
-                if abs(color.redComponent - CGFloat(0xE7) / 255) < 0.01,
-                   abs(color.greenComponent - CGFloat(0x38) / 255) < 0.01,
-                   abs(color.blueComponent - CGFloat(0x36) / 255) < 0.01,
-                   color.alphaComponent > 0.8 {
-                    return true
-                }
-            }
-        }
-        return false
-    }
-
     private func pixelFraction(
         in bitmap: NSBitmapImageRep,
         near target: NSColor,
@@ -703,9 +716,9 @@ final class VisualPresentationTests: XCTestCase {
 
     private func isTrailRed(_ color: NSColor) -> Bool {
         guard let sRGB = color.usingColorSpace(.sRGB) else { return false }
-        return sRGB.redComponent == CGFloat(0xE7) / 255
-            && sRGB.greenComponent == CGFloat(0x38) / 255
-            && sRGB.blueComponent == CGFloat(0x36) / 255
+        return sRGB.redComponent == CGFloat(0xE5) / 255
+            && sRGB.greenComponent == CGFloat(0x39) / 255
+            && sRGB.blueComponent == CGFloat(0x35) / 255
     }
 
     private func contrastRatio(_ lhs: NSColor, _ rhs: NSColor) throws -> CGFloat {

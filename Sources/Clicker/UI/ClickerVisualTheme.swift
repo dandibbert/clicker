@@ -3,6 +3,10 @@ import SwiftUI
 
 enum ClickerVisualTheme {
     enum ColorRole: String, CaseIterable {
+        case windowBackground
+        case sidebarBackground
+        case controlSurface
+        case focusRing
         case canvas
         case cardSurface
         case elevatedSurface
@@ -16,6 +20,10 @@ enum ClickerVisualTheme {
         case activeTrail
     }
 
+    static let windowBackground = color(for: .windowBackground)
+    static let sidebarBackground = color(for: .sidebarBackground)
+    static let controlSurface = color(for: .controlSurface)
+    static let focusRing = color(for: .focusRing)
     static let canvas = color(for: .canvas)
     static let cardSurface = color(for: .cardSurface)
     static let elevatedSurface = color(for: .elevatedSurface)
@@ -36,8 +44,10 @@ enum ClickerVisualTheme {
     static let cardCornerRadius: CGFloat = 10
     static let panelCornerRadius: CGFloat = 14
     static let cardBorderWidth: CGFloat = 1
-    static let primaryControlHeight: CGFloat = 44
-    static let compactHeaderHeight: CGFloat = 96
+    static let sidebarIdealWidth: CGFloat = 230
+    static let compactHeaderHeight: CGFloat = 100
+    static let primaryControlHeight: CGFloat = 38
+    static let controlCornerRadius: CGFloat = 8
 
     static func resolvedColor(for role: ColorRole, appearance: NSAppearance) -> NSColor {
         let palette = palette(for: role)
@@ -56,22 +66,28 @@ enum ClickerVisualTheme {
 
     private static func palette(for role: ColorRole) -> (light: RGB, dark: RGB) {
         switch role {
-        case .canvas:
-            (.warmWhite, .darkCanvas)
-        case .cardSurface, .elevatedSurface, .selection:
-            (.warmWhite, .darkCard)
+        case .windowBackground, .canvas:
+            (.windowLight, .windowDark)
+        case .sidebarBackground:
+            (.sidebarLight, .sidebarDark)
+        case .selection:
+            (.selectionLight, .selectionDark)
+        case .controlSurface, .cardSurface, .elevatedSurface:
+            (.controlLight, .controlDark)
+        case .focusRing:
+            (.focusLight, .focusDark)
         case .primaryText:
-            (.inkBlack, .warmWhite)
+            (.primaryLight, .primaryDark)
         case .secondaryText:
-            (.inkBlack, .warmWhite)
+            (.secondaryLight, .secondaryDark)
         case .separator:
-            (.warmGray, .warmGray)
+            (.separatorLight, .separatorDark)
         case .recordFill, .activeTrail:
-            (.trailRed, .trailRed)
+            (.recordRedLight, .recordRedDark)
         case .playbackFill:
-            (.inkBlack, .warmWhite)
+            (.playbackLight, .playbackDark)
         case .prominentForeground:
-            (.warmWhite, .inkBlack)
+            (.primaryDark, .primaryLight)
         }
     }
 
@@ -88,11 +104,25 @@ enum ClickerVisualTheme {
             NSColor(red: red, green: green, blue: blue, alpha: 1)
         }
 
-        static let warmWhite = RGB(red: 0xF1 / 255, green: 0xEA / 255, blue: 0xDC / 255)
-        static let inkBlack = RGB(red: 0x17 / 255, green: 0x16 / 255, blue: 0x19 / 255)
-        static let trailRed = RGB(red: 0xE7 / 255, green: 0x38 / 255, blue: 0x36 / 255)
-        static let warmGray = RGB(red: 0x8B / 255, green: 0x84 / 255, blue: 0x7A / 255)
-        static let darkCanvas = RGB(red: 0x15 / 255, green: 0x14 / 255, blue: 0x18 / 255)
-        static let darkCard = RGB(red: 0x23 / 255, green: 0x21 / 255, blue: 0x26 / 255)
+        static let windowLight = RGB(red: 0xF7 / 255, green: 0xF7 / 255, blue: 0xF8 / 255)
+        static let windowDark = RGB(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255)
+        static let sidebarLight = RGB(red: 0xF0 / 255, green: 0xF0 / 255, blue: 0xF2 / 255)
+        static let sidebarDark = RGB(red: 0x24 / 255, green: 0x24 / 255, blue: 0x26 / 255)
+        static let selectionLight = RGB(red: 0xE1 / 255, green: 0xE1 / 255, blue: 0xE5 / 255)
+        static let selectionDark = RGB(red: 0x38 / 255, green: 0x38 / 255, blue: 0x3C / 255)
+        static let controlLight = RGB(red: 0xF1 / 255, green: 0xF1 / 255, blue: 0xF3 / 255)
+        static let controlDark = RGB(red: 0x2C / 255, green: 0x2C / 255, blue: 0x2E / 255)
+        static let focusLight = RGB(red: 0x74 / 255, green: 0x74 / 255, blue: 0x7A / 255)
+        static let focusDark = RGB(red: 0xA1 / 255, green: 0xA1 / 255, blue: 0xA6 / 255)
+        static let recordRedLight = RGB(red: 0xE5 / 255, green: 0x39 / 255, blue: 0x35 / 255)
+        static let recordRedDark = RGB(red: 0xF0 / 255, green: 0x4A / 255, blue: 0x45 / 255)
+        static let playbackLight = RGB(red: 0x30 / 255, green: 0x30 / 255, blue: 0x33 / 255)
+        static let playbackDark = RGB(red: 0xFF / 255, green: 0xFF / 255, blue: 0xFF / 255)
+        static let primaryLight = RGB(red: 0x1D / 255, green: 0x1D / 255, blue: 0x1F / 255)
+        static let primaryDark = RGB(red: 0xF5 / 255, green: 0xF5 / 255, blue: 0xF7 / 255)
+        static let secondaryLight = RGB(red: 0x3D / 255, green: 0x3D / 255, blue: 0x43 / 255)
+        static let secondaryDark = RGB(red: 0xD3 / 255, green: 0xD3 / 255, blue: 0xD6 / 255)
+        static let separatorLight = RGB(red: 0x74 / 255, green: 0x74 / 255, blue: 0x7A / 255)
+        static let separatorDark = RGB(red: 0xA1 / 255, green: 0xA1 / 255, blue: 0xA6 / 255)
     }
 }

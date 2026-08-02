@@ -18,17 +18,10 @@ struct PrimaryActionBar: View {
                     post(action)
                 } label: {
                     Label(action.title, systemImage: action.systemImage)
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: ClickerVisualTheme.primaryControlHeight)
                 }
                 .disabled(!action.isEnabled)
                 .accessibilityLabel(action.accessibilityLabel)
                 .help(action.accessibilityLabel)
-                .frame(maxWidth: .infinity)
-                .frame(
-                    minWidth: 96,
-                    minHeight: ClickerVisualTheme.primaryControlHeight
-                )
             }
         }
     }

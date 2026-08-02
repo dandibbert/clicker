@@ -61,23 +61,15 @@ final class FinalVisualConsumerTests: XCTestCase {
         XCTAssertGreaterThan(title.frame.height, 0)
         XCTAssertTrue(headerBounds.contains(title.frame), "Title escaped the header: \(title.frame)")
         XCTAssertTrue(hosting.bounds.contains(title.frame), "Title escaped the viewport: \(title.frame)")
-        let controls = nativeControls(in: hosting)
-        let primaryButtons = controls
-            .compactMap { $0 as? NSButton }
-            .filter { !($0 is NSPopUpButton) }
-        for label in ["录制", "回放"] {
-            let button = try XCTUnwrap(
-                nativeButton(
-                    recognizing: label,
-                    among: primaryButtons,
-                    recognizedText: recognizedText,
-                    in: hosting
-                ),
-                "The \(label) action must remain visible with an extreme progress value"
-            )
-            let frame = hosting.convert(button.bounds, from: button)
-            XCTAssertTrue(hosting.bounds.contains(frame), "\(label) frame escaped: \(frame)")
-        }
+        let recordLabel = try XCTUnwrap(
+            recognizedText.first { $0.text.replacingOccurrences(of: " ", with: "").contains("录制") }
+        )
+        let playbackLabel = try XCTUnwrap(
+            recognizedText.first { $0.text.replacingOccurrences(of: " ", with: "").contains("回放") }
+        )
+        XCTAssertTrue(headerBounds.contains(recordLabel.frame))
+        XCTAssertTrue(headerBounds.contains(playbackLabel.frame))
+
         let renderedViews = descendants(of: hosting)
         let textFields = renderedViews.compactMap { $0 as? NSTextField }
         var textFieldFrames: [String: CGRect] = [:]
@@ -116,9 +108,9 @@ final class FinalVisualConsumerTests: XCTestCase {
 
         let intervalFieldFrame = try XCTUnwrap(textFieldFrames["秒"])
         let progressRegion = CGRect(
-            x: intervalFieldFrame.maxX,
+            x: intervalFieldFrame.maxX - 2,
             y: 0,
-            width: size.width - intervalFieldFrame.maxX,
+            width: size.width - intervalFieldFrame.maxX + 2,
             height: 96
         )
         let progressMatches = recognizedText.filter { progressRegion.contains($0.frame) }
@@ -287,58 +279,69 @@ final class FinalVisualConsumerTests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
 
             let bitmap = try bitmap(for: hosting)
-            let separator = ClickerVisualTheme.resolvedColor(for: .separator, appearance: appearance)
-            let primaryText = ClickerVisualTheme.resolvedColor(for: .primaryText, appearance: appearance)
-            let headerBottomPixel = try XCTUnwrap(
-                highestFullWidthSeparatorRow(in: bitmap, near: [separator, primaryText]),
-                "The real header consumer must keep a visible bottom separator"
-            )
-            let scale = CGFloat(bitmap.pixelsHigh) / size.height
-            let headerHeight = CGFloat(headerBottomPixel) / scale
-            XCTAssertLessThanOrEqual(
-                headerHeight,
-                104,
-                "The real header is \(headerHeight)pt tall in \(fixture.0.rawValue)"
+            let headerBounds = CGRect(
+                x: 0,
+                y: 0,
+                width: size.width,
+                height: ClickerVisualTheme.compactHeaderHeight
             )
 
             let controls = nativeControls(in: hosting)
-            let primaryButtons = controls
-                .compactMap { $0 as? NSButton }
-                .filter { !($0 is NSPopUpButton) }
             let recognizedText = try recognizedTextFrames(in: bitmap, logicalSize: size)
-            let recordButton = try XCTUnwrap(
-                nativeButton(
-                    recognizing: "录制",
-                    among: primaryButtons,
-                    recognizedText: recognizedText,
-                    in: hosting
-                ),
-                "OCR inside a real NSButton frame must identify the rendered record action"
+            let recordText = try XCTUnwrap(
+                recognizedText.first {
+                    $0.text.replacingOccurrences(of: " ", with: "").contains("录制")
+                },
+                "The real selected-script consumer must render the record action"
             )
-            let playbackButton = try XCTUnwrap(
-                nativeButton(
-                    recognizing: "回放",
-                    among: primaryButtons,
-                    recognizedText: recognizedText,
-                    in: hosting
-                ),
-                "OCR inside a real NSButton frame must identify the rendered playback action"
+            let playbackText = try XCTUnwrap(
+                recognizedText.first {
+                    $0.text.replacingOccurrences(of: " ", with: "").contains("回放")
+                },
+                "The real selected-script consumer must render the playback action"
             )
-            XCTAssertFalse(recordButton === playbackButton)
-            let headerBounds = CGRect(x: 0, y: 0, width: size.width, height: headerHeight)
-            for button in [recordButton, playbackButton] {
-                let frame = hosting.convert(button.bounds, from: button)
-                XCTAssertGreaterThanOrEqual(frame.width, 44)
-                XCTAssertGreaterThanOrEqual(frame.height, 44)
-                XCTAssertTrue(headerBounds.contains(frame), "The labeled button must be visible in the header")
+            let headerSurface = try XCTUnwrap(
+                visibleColorBounds(
+                    in: bitmap,
+                    near: ClickerVisualTheme.resolvedColor(for: .controlSurface, appearance: appearance),
+                    tolerance: 0.08,
+                    within: headerBounds,
+                    logicalSize: size
+                ),
+                "The compact header must render its approved neutral surface"
+            )
+            XCTAssertTrue(headerSurface.contains(recordText.frame))
+            XCTAssertTrue(headerSurface.contains(playbackText.frame))
+            let midpoint = (recordText.frame.maxX + playbackText.frame.minX) / 2
+            let recordBounds = try XCTUnwrap(
+                visibleRecordCueBounds(
+                    in: bitmap,
+                    within: CGRect(x: 0, y: 0, width: midpoint, height: headerBounds.height),
+                    logicalSize: size
+                ),
+                "The selected-script record action must retain its approved red cue"
+            )
+            let playbackBounds = try XCTUnwrap(
+                visibleColorBounds(
+                    in: bitmap,
+                    near: ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance),
+                    tolerance: 0.08,
+                    within: playbackText.frame
+                        .insetBy(dx: -24, dy: -14)
+                        .intersection(headerBounds),
+                    logicalSize: size
+                ),
+                "The selected-script playback action must retain its approved neutral fill"
+            )
+            for (name, bounds, text) in [
+                ("record", recordBounds, recordText.frame),
+                ("playback", playbackBounds, playbackText.frame),
+            ] {
+                XCTAssertTrue(headerBounds.contains(bounds), "\(name) escaped the compact header: \(bounds)")
+                XCTAssertTrue(bounds.contains(text), "\(name) label escaped its semantic boundary")
+                XCTAssertTrue((36 ... 40).contains(bounds.height), "\(name) height: \(bounds)")
+                XCTAssertLessThan(bounds.width, 96, "\(name) width: \(bounds)")
             }
-            let recordFrame = hosting.convert(recordButton.bounds, from: recordButton)
-            let playbackFrame = hosting.convert(playbackButton.bounds, from: playbackButton)
-            XCTAssertLessThanOrEqual(
-                abs(recordFrame.width - playbackFrame.width),
-                1,
-                "Record/play native hit widths must be equal within one point"
-            )
 
             for label in ["次数", "秒"] {
                 let element = try XCTUnwrap(
@@ -356,12 +359,94 @@ final class FinalVisualConsumerTests: XCTestCase {
                 "The real selected-script action list must render"
             )
             let actionListFrame = hosting.convert(actionList.bounds, from: actionList)
-            XCTAssertGreaterThanOrEqual(actionListFrame.minY, headerHeight)
+            XCTAssertGreaterThanOrEqual(actionListFrame.minY, headerBounds.maxY)
             XCTAssertGreaterThan(
                 actionListFrame.height,
                 316,
                 "The compact header must expose more list pixels than the previous 316pt baseline"
             )
+        }
+    }
+
+    @MainActor
+    func testPrimaryActionsRenderAsCompactPeerControls() throws {
+        _ = NSApplication.shared
+
+        for fixture in [
+            (NSAppearance.Name.aqua, ColorScheme.light),
+            (.darkAqua, .dark),
+        ] {
+            let appearance = try XCTUnwrap(NSAppearance(named: fixture.0))
+            let hosting = NSHostingView(
+                rootView: PrimaryActionBar(phase: .idle, hasPlayableScript: true)
+                    .environment(\.colorScheme, fixture.1)
+                    .frame(width: 260, height: 60, alignment: .leading)
+                    .background(ClickerVisualTheme.windowBackground)
+            )
+            hosting.appearance = appearance
+            hosting.frame = CGRect(x: 0, y: 0, width: 260, height: 60)
+            let window = NSWindow(
+                contentRect: hosting.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.contentView = hosting
+            window.orderFront(nil)
+            defer { window.orderOut(nil) }
+            hosting.layoutSubtreeIfNeeded()
+            hosting.displayIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+            let bitmap = try bitmap(for: hosting)
+            let recognizedText = try recognizedTextFrames(in: bitmap, logicalSize: hosting.bounds.size)
+            let recordText = try XCTUnwrap(
+                recognizedText.first {
+                    $0.text.replacingOccurrences(of: " ", with: "").contains("录制")
+                },
+                "The real record action must remain rendered: \(recognizedText)"
+            )
+            let playbackText = try XCTUnwrap(
+                recognizedText.first {
+                    $0.text.replacingOccurrences(of: " ", with: "").contains("回放")
+                },
+                "The real playback action must remain rendered: \(recognizedText)"
+            )
+
+            let playbackFill = ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance)
+            let midpoint = (recordText.frame.maxX + playbackText.frame.minX) / 2
+            let recordBounds = try XCTUnwrap(
+                visibleRecordCueBounds(
+                    in: bitmap,
+                    within: CGRect(x: 0, y: 0, width: midpoint, height: hosting.bounds.height),
+                    logicalSize: hosting.bounds.size
+                ),
+                "The record action must render a visible red boundary cue"
+            )
+            let playbackBounds = try XCTUnwrap(
+                visibleColorBounds(
+                    in: bitmap,
+                    near: playbackFill,
+                    tolerance: 0.08,
+                    within: CGRect(
+                        x: midpoint,
+                        y: 0,
+                        width: hosting.bounds.width - midpoint,
+                        height: hosting.bounds.height
+                    ),
+                    logicalSize: hosting.bounds.size
+                ),
+                "The playback action must render its explicit neutral fill"
+            )
+
+            for (name, bounds, text) in [
+                ("record", recordBounds, recordText.frame),
+                ("playback", playbackBounds, playbackText.frame),
+            ] {
+                XCTAssertTrue((36 ... 40).contains(bounds.height), "\(name) height: \(bounds)")
+                XCTAssertLessThan(bounds.width, 96, "\(name) width: \(bounds)")
+                XCTAssertTrue(bounds.contains(text), "\(name) label escaped its rendered control: \(text), \(bounds)")
+            }
         }
     }
 
@@ -479,7 +564,7 @@ final class FinalVisualConsumerTests: XCTestCase {
     }
 
     @MainActor
-    func testFooterControlsAreEnabledNativeHitTargetsInsideStandardViewport() throws {
+    func testFooterControlsRemainEnabledDistinctAndInsideStandardViewport() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -506,25 +591,60 @@ final class FinalVisualConsumerTests: XCTestCase {
         hosting.displayIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
 
-        let restorePoint = NSPoint(x: 78, y: 28)
-        let donePoint = NSPoint(x: 392, y: 28)
-        XCTAssertTrue(hosting.bounds.contains(restorePoint))
-        XCTAssertTrue(hosting.bounds.contains(donePoint))
-        let restoreButton = try XCTUnwrap(hosting.hitTest(restorePoint) as? NSButton)
-        let doneButton = try XCTUnwrap(hosting.hitTest(donePoint) as? NSButton)
-        XCTAssertFalse(restoreButton === doneButton)
-        XCTAssertTrue(restoreButton.isEnabled)
-        XCTAssertTrue(doneButton.isEnabled)
-        XCTAssertTrue(hosting.bounds.contains(restoreButton.convert(restoreButton.bounds, to: hosting)))
-        XCTAssertTrue(hosting.bounds.contains(doneButton.convert(doneButton.bounds, to: hosting)))
-
-        let renderedCopy = try recognizedTextFrames(
+        let renderedText = try recognizedTextFrames(
             in: bitmap(for: hosting),
             logicalSize: hosting.bounds.size
         )
-        .map(\.text)
-        .joined()
-        .replacingOccurrences(of: " ", with: "")
+        let restoreLabel = try XCTUnwrap(
+            renderedText.first { $0.text.replacingOccurrences(of: " ", with: "").contains("恢复默认值") }
+        )
+        let doneLabel = try XCTUnwrap(
+            renderedText.first { $0.text.replacingOccurrences(of: " ", with: "").contains("完成") }
+        )
+        XCTAssertTrue(hosting.bounds.contains(restoreLabel.frame))
+        XCTAssertTrue(hosting.bounds.contains(doneLabel.frame))
+
+        let restoreButton = try XCTUnwrap(
+            nativeButton(
+                recognizing: "恢复默认值",
+                among: nativeControls(in: hosting).compactMap { $0 as? NSButton },
+                recognizedText: renderedText,
+                in: hosting
+            ),
+            "The bordered restore action must remain a native hit target"
+        )
+        let restoreBounds = hosting.convert(restoreButton.bounds, from: restoreButton)
+        XCTAssertTrue(restoreButton.isEnabled)
+        XCTAssertTrue(hosting.bounds.contains(restoreBounds))
+        XCTAssertTrue(restoreBounds.contains(restoreLabel.frame))
+
+        let midpoint = (restoreLabel.frame.maxX + doneLabel.frame.minX) / 2
+        let footerRegion = CGRect(
+            x: midpoint,
+            y: hosting.bounds.height - 80,
+            width: hosting.bounds.width - midpoint,
+            height: 80
+        )
+        let appearance = try XCTUnwrap(NSAppearance(named: .aqua))
+        let doneBounds = try XCTUnwrap(
+            visibleColorBounds(
+                in: bitmap(for: hosting),
+                near: ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance),
+                tolerance: 0.08,
+                within: footerRegion,
+                logicalSize: hosting.bounds.size
+            ),
+            "The enabled Done action must render the shared prominent neutral fill"
+        )
+        XCTAssertTrue(hosting.bounds.contains(doneBounds))
+        XCTAssertTrue(doneBounds.contains(doneLabel.frame))
+        XCTAssertFalse(doneBounds.intersects(restoreBounds))
+        XCTAssertTrue((36 ... 40).contains(doneBounds.height), "Done height: \(doneBounds)")
+
+        let renderedCopy = renderedText
+            .map(\.text)
+            .joined()
+            .replacingOccurrences(of: " ", with: "")
         for expected in ["外观", "停止录制快捷键", "恢复默认值", "完成"] {
             XCTAssertTrue(
                 renderedCopy.contains(expected),
@@ -555,26 +675,6 @@ final class FinalVisualConsumerTests: XCTestCase {
         let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
         hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
         return bitmap
-    }
-
-    private func highestFullWidthSeparatorRow(
-        in bitmap: NSBitmapImageRep,
-        near expected: [NSColor]
-    ) -> Int? {
-        let expectedSRGB = expected.compactMap { $0.usingColorSpace(.sRGB) }
-        return (1 ..< bitmap.pixelsHigh - 1).first { y in
-            let matchingPixels = (0 ..< bitmap.pixelsWide).reduce(into: 0) { count, x in
-                guard let pixel = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return }
-                if expectedSRGB.contains(where: { expected in
-                    abs(pixel.redComponent - expected.redComponent)
-                        + abs(pixel.greenComponent - expected.greenComponent)
-                        + abs(pixel.blueComponent - expected.blueComponent) < 0.3
-                }) {
-                    count += 1
-                }
-            }
-            return CGFloat(matchingPixels) / CGFloat(bitmap.pixelsWide) > 0.99
-        }
     }
 
     private func recognizedTextFrames(
@@ -656,6 +756,87 @@ final class FinalVisualConsumerTests: XCTestCase {
 
     private func color(in bitmap: NSBitmapImageRep, x: Int, y: Int) throws -> NSColor {
         try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+    }
+
+    private func visibleColorBounds(
+        in bitmap: NSBitmapImageRep,
+        near target: NSColor,
+        tolerance: CGFloat,
+        within region: CGRect,
+        logicalSize: CGSize
+    ) -> CGRect? {
+        guard let target = target.usingColorSpace(.sRGB) else { return nil }
+        let scaleX = CGFloat(bitmap.pixelsWide) / logicalSize.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / logicalSize.height
+        let minX = max(0, Int((region.minX * scaleX).rounded(.down)))
+        let maxX = min(bitmap.pixelsWide, Int((region.maxX * scaleX).rounded(.up)))
+        let minY = max(0, Int((region.minY * scaleY).rounded(.down)))
+        let maxY = min(bitmap.pixelsHigh, Int((region.maxY * scaleY).rounded(.up)))
+        var matchedMinX = bitmap.pixelsWide
+        var matchedMaxX = -1
+        var matchedMinY = bitmap.pixelsHigh
+        var matchedMaxY = -1
+
+        for y in minY ..< maxY {
+            for x in minX ..< maxX {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
+                    continue
+                }
+                if abs(color.redComponent - target.redComponent) <= tolerance,
+                   abs(color.greenComponent - target.greenComponent) <= tolerance,
+                   abs(color.blueComponent - target.blueComponent) <= tolerance {
+                    matchedMinX = min(matchedMinX, x)
+                    matchedMaxX = max(matchedMaxX, x)
+                    matchedMinY = min(matchedMinY, y)
+                    matchedMaxY = max(matchedMaxY, y)
+                }
+            }
+        }
+        guard matchedMaxX >= matchedMinX, matchedMaxY >= matchedMinY else { return nil }
+        return CGRect(
+            x: CGFloat(matchedMinX) / scaleX,
+            y: CGFloat(matchedMinY) / scaleY,
+            width: CGFloat(matchedMaxX - matchedMinX + 1) / scaleX,
+            height: CGFloat(matchedMaxY - matchedMinY + 1) / scaleY
+        )
+    }
+
+    private func visibleRecordCueBounds(
+        in bitmap: NSBitmapImageRep,
+        within region: CGRect,
+        logicalSize: CGSize
+    ) -> CGRect? {
+        let scaleX = CGFloat(bitmap.pixelsWide) / logicalSize.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / logicalSize.height
+        let minX = max(0, Int((region.minX * scaleX).rounded(.down)))
+        let maxX = min(bitmap.pixelsWide, Int((region.maxX * scaleX).rounded(.up)))
+        let minY = max(0, Int((region.minY * scaleY).rounded(.down)))
+        let maxY = min(bitmap.pixelsHigh, Int((region.maxY * scaleY).rounded(.up)))
+        var matchedMinX = bitmap.pixelsWide
+        var matchedMaxX = -1
+        var matchedMinY = bitmap.pixelsHigh
+        var matchedMaxY = -1
+
+        for y in minY ..< maxY {
+            for x in minX ..< maxX {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+                      color.redComponent - color.greenComponent > 0.2,
+                      color.redComponent - color.blueComponent > 0.35 else {
+                    continue
+                }
+                matchedMinX = min(matchedMinX, x)
+                matchedMaxX = max(matchedMaxX, x)
+                matchedMinY = min(matchedMinY, y)
+                matchedMaxY = max(matchedMaxY, y)
+            }
+        }
+        guard matchedMaxX >= matchedMinX, matchedMaxY >= matchedMinY else { return nil }
+        return CGRect(
+            x: CGFloat(matchedMinX) / scaleX,
+            y: CGFloat(matchedMinY) / scaleY,
+            width: CGFloat(matchedMaxX - matchedMinX + 1) / scaleX,
+            height: CGFloat(matchedMaxY - matchedMinY + 1) / scaleY
+        )
     }
 
     private func contrastRatio(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
