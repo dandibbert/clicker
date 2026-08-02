@@ -69,7 +69,7 @@ struct ScriptHeaderView: View {
                     .foregroundStyle(ClickerVisualTheme.secondaryText)
                     .lineLimit(1)
             }
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: 96, maxWidth: .infinity, alignment: .leading)
             .layoutPriority(0)
 
             PrimaryActionBar(
@@ -139,6 +139,7 @@ struct ScriptHeaderView: View {
             .foregroundStyle(ClickerVisualTheme.playbackFill)
             .lineLimit(1)
             .truncationMode(.middle)
+            .frame(maxWidth: 144, alignment: .leading)
             .accessibilityLabel(playbackProgressText)
             .help(playbackProgressText)
         }

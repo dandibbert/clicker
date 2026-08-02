@@ -50,6 +50,17 @@ final class FinalVisualConsumerTests: XCTestCase {
 
         let bitmap = try bitmap(for: hosting)
         let recognizedText = try recognizedTextFrames(in: bitmap, logicalSize: size)
+        let headerBounds = CGRect(x: 0, y: 0, width: size.width, height: 96)
+        let title = try XCTUnwrap(
+            recognizedText.first {
+                $0.text.replacingOccurrences(of: " ", with: "") == "边界任务"
+            },
+            "The unique short script title must remain fully rendered: \(recognizedText)"
+        )
+        XCTAssertGreaterThan(title.frame.width, 0)
+        XCTAssertGreaterThan(title.frame.height, 0)
+        XCTAssertTrue(headerBounds.contains(title.frame), "Title escaped the header: \(title.frame)")
+        XCTAssertTrue(hosting.bounds.contains(title.frame), "Title escaped the viewport: \(title.frame)")
         let controls = nativeControls(in: hosting)
         let primaryButtons = controls
             .compactMap { $0 as? NSButton }
@@ -82,7 +93,6 @@ final class FinalVisualConsumerTests: XCTestCase {
             textFieldFrames[placeholder] = frame
         }
 
-        let headerBounds = CGRect(x: 0, y: 0, width: size.width, height: 96)
         _ = try XCTUnwrap(
             recognizedText.first {
                 $0.text.replacingOccurrences(of: " ", with: "").contains("无限")
@@ -177,7 +187,16 @@ final class FinalVisualConsumerTests: XCTestCase {
             let normalizedMatches = matches.map {
                 (text: $0.text.replacingOccurrences(of: " ", with: ""), frame: $0.frame)
             }
-            let settingsProgressBoundary = size.width * 0.8
+            let intervalField = try XCTUnwrap(
+                descendants(of: hosting).compactMap { $0 as? NSTextField }.first {
+                    $0.placeholderString == "秒"
+                },
+                "The real interval NSTextField must remain hosted"
+            )
+            let settingsProgressBoundary = hosting.convert(
+                intervalField.bounds,
+                from: intervalField
+            ).maxX
             let repeatSettingsBounds = CGRect(
                 x: size.width * 0.55,
                 y: 0,
@@ -200,7 +219,7 @@ final class FinalVisualConsumerTests: XCTestCase {
                 normalizedMatches.first {
                     $0.text.contains("第2轮") && settingsProgressBounds.contains($0.frame)
                 },
-                "The real progress copy must be visible after interval settings"
+                "The real progress copy must be visible after interval settings: \(normalizedMatches)"
             )
             let headerBounds = CGRect(
                 x: 0,
