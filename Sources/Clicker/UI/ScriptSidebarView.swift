@@ -67,6 +67,11 @@ struct ScriptSidebarView: View {
             ForEach(scripts) { script in
                 ScriptSidebarRow(script: script)
                     .tag(script.id)
+                    .listRowBackground(
+                        selectedScriptID == script.id
+                            ? ClickerVisualTheme.selection
+                            : Color.clear
+                    )
                     .contextMenu { contextMenu(for: script) }
             }
         }

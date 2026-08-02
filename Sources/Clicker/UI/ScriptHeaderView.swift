@@ -57,39 +57,44 @@ struct ScriptHeaderView: View {
     }
 
     var body: some View {
-        HStack(spacing: ClickerVisualTheme.spacing12) {
-            VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing4) {
-                Text(presentation.title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(ClickerVisualTheme.primaryText)
-                    .lineLimit(1)
-                    .layoutPriority(1)
-                Text(presentation.metadata)
-                    .font(.caption)
-                    .foregroundStyle(ClickerVisualTheme.secondaryText)
-                    .lineLimit(1)
-            }
-            .frame(minWidth: 96, maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(0)
+        HStack(spacing: 18) {
+            identity
+                .frame(minWidth: 130, maxWidth: .infinity, alignment: .leading)
 
             PrimaryActionBar(
                 phase: state.phase,
                 hasPlayableScript: ScriptPlaybackEligibility.isPlayable(script)
             )
-            .frame(width: 200)
-            .layoutPriority(2)
+            .fixedSize(horizontal: true, vertical: false)
 
-            HStack(spacing: ClickerVisualTheme.spacing8) {
-                repeatControls
-                intervalControls
-                playbackProgress
-            }
-            .layoutPriority(2)
+            repeatParameters
+                .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(.horizontal, ClickerVisualTheme.spacing16)
+        .padding(.horizontal, 22)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: ClickerVisualTheme.compactHeaderHeight)
         .background(ClickerVisualTheme.elevatedSurface)
+    }
+
+    private var identity: some View {
+        VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing4) {
+            Text(presentation.title)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(ClickerVisualTheme.primaryText)
+                .lineLimit(1)
+            Text(presentation.metadata)
+                .font(.caption)
+                .foregroundStyle(ClickerVisualTheme.secondaryText)
+                .lineLimit(1)
+        }
+    }
+
+    private var repeatParameters: some View {
+        HStack(spacing: ClickerVisualTheme.spacing4) {
+            repeatControls
+            intervalControls
+            playbackProgress
+        }
     }
 
     private var repeatControls: some View {
@@ -99,7 +104,7 @@ struct ScriptHeaderView: View {
                 get: { script.repeatCount },
                 set: { updateRepeatCount($0) }
             ), format: .number)
-                .frame(width: 48)
+                .frame(width: ClickerVisualTheme.primaryControlHeight)
                 .frame(minHeight: ClickerVisualTheme.primaryControlHeight)
                 .disabled(script.repeatForever)
             Text("次")
@@ -121,7 +126,7 @@ struct ScriptHeaderView: View {
                 get: { script.repeatInterval },
                 set: { updateRepeatInterval($0) }
             ), format: .number)
-                .frame(width: 48)
+                .frame(width: ClickerVisualTheme.primaryControlHeight)
                 .frame(minHeight: ClickerVisualTheme.primaryControlHeight)
             Text("秒")
         }
@@ -132,16 +137,12 @@ struct ScriptHeaderView: View {
     @ViewBuilder
     private var playbackProgress: some View {
         if let playbackProgressText = presentation.playbackProgressText {
-            Label(
-                playbackProgressText,
-                systemImage: "play.fill"
-            )
-            .foregroundStyle(ClickerVisualTheme.playbackFill)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .frame(maxWidth: 144, alignment: .leading)
-            .accessibilityLabel(playbackProgressText)
-            .help(playbackProgressText)
+            Text(playbackProgressText)
+                .foregroundStyle(ClickerVisualTheme.playbackFill)
+                .lineLimit(4)
+                .frame(width: 144, alignment: .leading)
+                .accessibilityLabel(playbackProgressText)
+                .help(playbackProgressText)
         }
     }
 

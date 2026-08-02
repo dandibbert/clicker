@@ -168,9 +168,13 @@ final class FinalVisualConsumerTests: XCTestCase {
             .map(\.text)
             .joined()
             .replacingOccurrences(of: " ", with: "")
-        XCTAssertTrue(
-            visibleProgress.contains("第") && visibleProgress.contains("轮"),
-            "Extreme progress must retain its prefix and suffix in \(progressRegion): \(recognizedText)"
+            .replacingOccurrences(of: "秒", with: "")
+        let progressGlyphs = visibleProgress.filter { "第0123456789/轮".contains($0) }
+        let expectedProgress = "第\(Int.max)/\(Int.max)轮"
+        XCTAssertEqual(
+            progressGlyphs,
+            expectedProgress,
+            "Extreme progress must remain fully visible as \(expectedProgress) in \(progressRegion): \(recognizedText)"
         )
     }
 
@@ -229,20 +233,37 @@ final class FinalVisualConsumerTests: XCTestCase {
             let normalizedMatches = matches.map {
                 (text: $0.text.replacingOccurrences(of: " ", with: ""), frame: $0.frame)
             }
+            let normalizedHeaderCopy = normalizedMatches
+                .filter { $0.frame.minY < ClickerVisualTheme.compactHeaderHeight }
+                .map(\.text)
+                .joined()
+            for expected in ["定时任务", "录制", "回放", "重复", "无限", "间隔", "第2轮"] {
+                XCTAssertTrue(
+                    normalizedHeaderCopy.contains(expected),
+                    "The infinite fixture must keep \(expected) visible: \(normalizedMatches)"
+                )
+            }
+            let textFields = descendants(of: hosting).compactMap { $0 as? NSTextField }
+            let countField = try XCTUnwrap(
+                textFields.first { $0.placeholderString == "次数" },
+                "The real count NSTextField must remain hosted"
+            )
             let intervalField = try XCTUnwrap(
-                descendants(of: hosting).compactMap { $0 as? NSTextField }.first {
-                    $0.placeholderString == "秒"
-                },
+                textFields.first { $0.placeholderString == "秒" },
                 "The real interval NSTextField must remain hosted"
             )
+            let repeatSettingsStart = hosting.convert(
+                countField.bounds,
+                from: countField
+            ).minX - 44
             let settingsProgressBoundary = hosting.convert(
                 intervalField.bounds,
                 from: intervalField
             ).maxX
             let repeatSettingsBounds = CGRect(
-                x: size.width * 0.55,
+                x: repeatSettingsStart,
                 y: 0,
-                width: settingsProgressBoundary - size.width * 0.55,
+                width: settingsProgressBoundary - repeatSettingsStart,
                 height: ClickerVisualTheme.compactHeaderHeight
             )
             let settingsProgressBounds = CGRect(

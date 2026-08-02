@@ -10,7 +10,11 @@ struct MainView: View {
             if state.hasPermission {
                 NavigationSplitView {
                     ScriptListView()
-                        .navigationSplitViewColumnWidth(min: 210, ideal: 240)
+                        .navigationSplitViewColumnWidth(
+                            min: 210,
+                            ideal: ClickerVisualTheme.sidebarIdealWidth,
+                            max: 250
+                        )
                 } detail: {
                     if state.selectedScript == nil {
                         ClickerEmptyStateView(kind: .noSelection)
