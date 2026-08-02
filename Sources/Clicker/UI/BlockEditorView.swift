@@ -27,7 +27,9 @@ struct BlockEditorView: View {
             Form { formFields }
                 .formStyle(.grouped)
                 .scrollContentBackground(.hidden)
-                .background(ClickerVisualTheme.windowBackground)
+                .background {
+                    Rectangle().fill(ClickerVisualTheme.windowBackground)
+                }
             Divider()
             HStack {
                 Spacer()
@@ -41,10 +43,14 @@ struct BlockEditorView: View {
                     .keyboardShortcut(.defaultAction)
             }
             .padding(ClickerVisualTheme.spacing12)
-            .background(ClickerVisualTheme.windowBackground)
+            .background {
+                Rectangle().fill(ClickerVisualTheme.windowBackground)
+            }
         }
         .frame(width: 380)
-        .background(ClickerVisualTheme.windowBackground)
+        .background {
+            Rectangle().fill(ClickerVisualTheme.windowBackground)
+        }
         .onAppear(perform: load)
     }
 

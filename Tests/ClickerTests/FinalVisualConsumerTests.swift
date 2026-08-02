@@ -6,64 +6,13 @@ import XCTest
 
 final class FinalVisualConsumerTests: XCTestCase {
     @MainActor
+    func testPermissionSecondaryActionRemainsBorderedAndLowEmphasis() throws {
+        try assertPermissionActionHierarchy()
+    }
+
+    @MainActor
     func testAuxiliarySurfacesUseApprovedNeutralSystem() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let permissionState = AppState(store: ScriptStore(directory: directory))
-        let noSelectionState = AppState(store: ScriptStore(directory: directory))
-        noSelectionState.hasPermission = true
-        let emptyScriptState = AppState(store: ScriptStore(directory: directory))
-        emptyScriptState.hasPermission = true
-        let emptyScript = Script(name: "空动作", blocks: [])
-        emptyScriptState.scripts = [emptyScript]
-        emptyScriptState.selectedScriptID = emptyScript.id
-        let surfaces: [(String, [String], (ColorScheme) -> AnyView)] = [
-            ("permission", ["需要辅助功能权限", "打开系统设置", "重新检测"], { scheme in
-                AnyView(PermissionGuideView().environmentObject(permissionState).environment(\.colorScheme, scheme))
-            }),
-            ("empty library", ["还没有脚本", "开始录制"], { scheme in
-                AnyView(ScriptSidebarView(scripts: [], selectedScriptID: .constant(nil), canEditScripts: true, canStartRecording: true, onRename: { _, _ in }, onDuplicate: { _ in }, onDelete: { _ in }, onRecord: {}).environment(\.colorScheme, scheme))
-            }),
-            ("no selection", ["选择一个脚本"], { scheme in
-                AnyView(MainView().environmentObject(noSelectionState).environment(\.colorScheme, scheme))
-            }),
-            ("empty script", ["这个脚本还没有动作", "开始录制"], { scheme in
-                AnyView(ScriptDetailView().environmentObject(emptyScriptState).environment(\.colorScheme, scheme))
-            }),
-            ("block editor", ["点击", "取消", "保存"], { scheme in
-                AnyView(BlockEditorView(block: .click(ClickBlock(x: 80, y: 120, button: .left, clickCount: 1)), onSave: { _ in }).environment(\.colorScheme, scheme))
-            }),
-        ]
-
-        for appearanceFixture in [(NSAppearance.Name.aqua, ColorScheme.light), (.darkAqua, .dark)] {
-            let appearance = try XCTUnwrap(NSAppearance(named: appearanceFixture.0))
-            let windowBackground = ClickerVisualTheme.resolvedColor(for: .windowBackground, appearance: appearance)
-
-            for surface in surfaces {
-                let fixture = try HostedViewFixture(
-                    rootView: surface.2(appearanceFixture.1),
-                    appearance: appearance,
-                    size: CGSize(width: 480, height: 320)
-                )
-                defer { fixture.tearDown() }
-                let bitmap = try bitmap(for: fixture.hosting)
-                let recognizedText = try recognizedTextFrames(in: bitmap, logicalSize: fixture.hosting.bounds.size)
-                let renderedCopy = recognizedText
-                    .map(\.text).joined().replacingOccurrences(of: " ", with: "")
-
-                XCTAssertGreaterThan(
-                    renderedPixelFraction(in: bitmap, logicalSize: fixture.hosting.bounds.size, region: fixture.hosting.bounds, near: windowBackground, tolerance: 0.04),
-                    0.5,
-                    "\(surface.0) must use the neutral window background in \(appearanceFixture.0.rawValue)"
-                )
-                XCTAssertEqual(systemBluePixelCount(in: bitmap), 0, "\(surface.0) must not restore a system-blue action")
-                XCTAssertEqual(legacyWarmPixelCount(in: bitmap), 0, "\(surface.0) must not restore the warm-yellow system")
-                for label in surface.1 {
-                    XCTAssertTrue(renderedCopy.contains(label), "\(surface.0) must visibly render \(label): \(renderedCopy)")
-                }
-            }
-        }
+        try assertAuxiliarySurfaceSystem()
     }
 
     @MainActor

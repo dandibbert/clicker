@@ -18,41 +18,46 @@ struct ClickerEmptyStateView: View {
     }
 
     var body: some View {
-        VStack(spacing: ClickerVisualTheme.spacing12) {
-            Image(systemName: presentation.systemImage)
-                .font(.system(size: 34, weight: .medium))
-                .foregroundStyle(ClickerVisualTheme.primaryText)
+        ZStack {
+            Rectangle().fill(ClickerVisualTheme.windowBackground)
                 .accessibilityHidden(true)
 
-            VStack(spacing: ClickerVisualTheme.spacing4) {
-                Text(presentation.title)
-                    .font(.title3.weight(.semibold))
+            VStack(spacing: ClickerVisualTheme.spacing12) {
+                Image(systemName: presentation.systemImage)
+                    .font(.system(size: 34, weight: .medium))
                     .foregroundStyle(ClickerVisualTheme.primaryText)
-                Text(presentation.description)
-                    .font(.callout)
-                    .foregroundStyle(ClickerVisualTheme.secondaryText)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 300)
-            }
+                    .accessibilityHidden(true)
 
-            HStack(spacing: ClickerVisualTheme.spacing8) {
-                if let actionTitle = presentation.actionTitle, let action {
-                    ClickerProminentButton(role: primaryActionRole, action: action) {
-                        Text(actionTitle)
-                    }
+                VStack(spacing: ClickerVisualTheme.spacing4) {
+                    Text(presentation.title)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(ClickerVisualTheme.primaryText)
+                    Text(presentation.description)
+                        .font(.callout)
+                        .foregroundStyle(ClickerVisualTheme.secondaryText)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 300)
                 }
 
-                if let secondaryActionTitle = presentation.secondaryActionTitle,
-                   let secondaryAction {
-                    ClickerProminentButton(role: .neutral, action: secondaryAction) {
-                        Text(secondaryActionTitle)
+                HStack(spacing: ClickerVisualTheme.spacing8) {
+                    if let actionTitle = presentation.actionTitle, let action {
+                        ClickerProminentButton(role: primaryActionRole, action: action) {
+                            Text(actionTitle)
+                        }
+                    }
+
+                    if let secondaryActionTitle = presentation.secondaryActionTitle,
+                       let secondaryAction {
+                        Button(secondaryActionTitle, action: secondaryAction)
+                            .buttonStyle(.bordered)
+                            .tint(ClickerVisualTheme.focusRing)
+                            .foregroundStyle(ClickerVisualTheme.primaryText)
                     }
                 }
             }
+            .padding(ClickerVisualTheme.spacing24)
         }
-        .padding(ClickerVisualTheme.spacing24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(ClickerVisualTheme.windowBackground)
     }
 
     private var primaryActionRole: ClickerProminentButtonRole {

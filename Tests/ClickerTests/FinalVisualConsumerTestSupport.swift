@@ -87,6 +87,166 @@ final class HostedViewFixture {
 
 extension FinalVisualConsumerTests {
     @MainActor
+    func assertAuxiliarySurfaceSystem() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let permissionState = AppState(store: ScriptStore(directory: directory))
+        let noSelectionState = AppState(store: ScriptStore(directory: directory))
+        noSelectionState.hasPermission = true
+        let emptyScriptState = AppState(store: ScriptStore(directory: directory))
+        emptyScriptState.hasPermission = true
+        let emptyScript = Script(name: "空动作", blocks: [])
+        emptyScriptState.scripts = [emptyScript]
+        emptyScriptState.selectedScriptID = emptyScript.id
+        let surfaces: [(String, [String], (ColorScheme) -> AnyView)] = [
+            ("permission", ["需要辅助功能权限", "打开系统设置", "重新检测"], { scheme in
+                AnyView(PermissionGuideView().environmentObject(permissionState).environment(\.colorScheme, scheme))
+            }),
+            ("empty library", ["还没有脚本", "开始录制"], { scheme in
+                AnyView(ScriptSidebarView(scripts: [], selectedScriptID: .constant(nil), canEditScripts: true, canStartRecording: true, onRename: { _, _ in }, onDuplicate: { _ in }, onDelete: { _ in }, onRecord: {}).environment(\.colorScheme, scheme))
+            }),
+            ("no selection", ["选择一个脚本"], { scheme in
+                AnyView(MainView().environmentObject(noSelectionState).environment(\.colorScheme, scheme))
+            }),
+            ("empty script", ["这个脚本还没有动作", "开始录制"], { scheme in
+                AnyView(ScriptDetailView().environmentObject(emptyScriptState).environment(\.colorScheme, scheme))
+            }),
+            ("block editor", ["点击", "取消", "保存"], { scheme in
+                AnyView(BlockEditorView(block: .click(ClickBlock(x: 80, y: 120, button: .left, clickCount: 1)), onSave: { _ in }).environment(\.colorScheme, scheme))
+            }),
+        ]
+
+        for appearanceFixture in [(NSAppearance.Name.aqua, ColorScheme.light), (.darkAqua, .dark)] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceFixture.0))
+            for surface in surfaces {
+                let fixture = try HostedViewFixture(rootView: surface.2(appearanceFixture.1), appearance: appearance, size: CGSize(width: 480, height: 320))
+                defer { fixture.tearDown() }
+                let bitmap = try bitmap(for: fixture.hosting)
+                let renderedCopy = try recognizedTextFrames(in: bitmap, logicalSize: fixture.hosting.bounds.size).map(\.text).joined().replacingOccurrences(of: " ", with: "")
+                XCTAssertEqual(systemBluePixelCount(in: bitmap), 0, "\(surface.0) must not restore a system-blue action")
+                XCTAssertEqual(legacyWarmPixelCount(in: bitmap), 0, "\(surface.0) must not restore the warm-yellow system")
+                for label in surface.1 {
+                    XCTAssertTrue(renderedCopy.contains(label), "\(surface.0) must visibly render \(label): \(renderedCopy)")
+                }
+            }
+            try assertEmptyContentRegion(appearance: appearance, scheme: appearanceFixture.1)
+            try assertEditorFormRegion(appearance: appearance, scheme: appearanceFixture.1)
+        }
+    }
+
+    @MainActor
+    private func assertEmptyContentRegion(appearance: NSAppearance, scheme: ColorScheme) throws {
+        let size = CGSize(width: 480, height: 320)
+        let window = ClickerVisualTheme.resolvedColor(for: .windowBackground, appearance: appearance)
+        for kind in [
+            ClickerEmptyStateKind.permissionRequired,
+            .emptyLibrary,
+            .noSelection,
+            .emptyScript,
+        ] {
+            let fixture = try HostedViewFixture(
+                rootView: AnyView(
+                    ZStack {
+                        ClickerVisualTheme.controlSurface
+                        ClickerEmptyStateView(kind: kind, action: {}, secondaryAction: {})
+                            .environment(\.colorScheme, scheme)
+                    }
+                    .frame(width: size.width, height: size.height)
+                ),
+                appearance: appearance,
+                size: size
+            )
+            defer { fixture.tearDown() }
+            let bitmap = try bitmap(for: fixture.hosting)
+            let contentCorners = [
+                CGRect(x: 12, y: 12, width: 32, height: 32),
+                CGRect(x: size.width - 44, y: 12, width: 32, height: 32),
+                CGRect(x: 12, y: size.height - 44, width: 32, height: 32),
+                CGRect(x: size.width - 44, y: size.height - 44, width: 32, height: 32),
+            ]
+            for corner in contentCorners {
+                XCTAssertGreaterThan(
+                    renderedPixelFraction(in: bitmap, logicalSize: size, region: corner, near: window, tolerance: 0.04),
+                    0.98,
+                    "\(kind) must own the neutral background at its unobstructed content corners"
+                )
+            }
+        }
+    }
+
+    @MainActor
+    private func assertEditorFormRegion(appearance: NSAppearance, scheme: ColorScheme) throws {
+        let size = CGSize(width: 380, height: 320)
+        let fixture = try HostedViewFixture(rootView: AnyView(ZStack { ClickerVisualTheme.controlSurface; BlockEditorView(block: .click(ClickBlock(x: 80, y: 120, button: .left, clickCount: 1)), onSave: { _ in }).environment(\.colorScheme, scheme) }.frame(width: size.width, height: size.height)), appearance: appearance, size: size)
+        defer { fixture.tearDown() }
+        let form = try XCTUnwrap(descendants(of: fixture.hosting).compactMap { $0 as? NSScrollView }.first)
+        let bitmap = try bitmap(for: fixture.hosting)
+        let formBounds = fixture.hosting.convert(form.bounds, from: form)
+        let subcontrolBounds = descendants(of: form)
+            .compactMap { $0 as? NSControl }
+            .map { fixture.hosting.convert($0.bounds, from: $0).insetBy(dx: -2, dy: -2) }
+        let formEdges = [
+            CGRect(x: formBounds.minX + 2, y: formBounds.minY + 2, width: formBounds.width - 4, height: 4),
+            CGRect(x: formBounds.minX + 2, y: formBounds.maxY - 6, width: formBounds.width - 4, height: 4),
+            CGRect(x: formBounds.minX + 2, y: formBounds.minY + 6, width: 4, height: formBounds.height - 12),
+            CGRect(x: formBounds.maxX - 6, y: formBounds.minY + 6, width: 4, height: formBounds.height - 12),
+        ]
+        XCTAssertFalse(form.drawsBackground, "The real editor scroll content must remain transparent")
+        XCTAssertFalse(form.contentView.drawsBackground, "The real editor clip view must remain transparent")
+        let window = ClickerVisualTheme.resolvedColor(for: .windowBackground, appearance: appearance)
+        for edge in formEdges {
+            XCTAssertGreaterThan(
+                renderedPixelFraction(
+                    in: bitmap,
+                    logicalSize: size,
+                    region: edge,
+                    near: window,
+                    tolerance: 0.04,
+                    excluding: subcontrolBounds
+                ),
+                0.85,
+                "Editor form edge outside real subcontrols must use windowBackground: \(edge)"
+            )
+        }
+    }
+
+    @MainActor
+    func assertPermissionActionHierarchy() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let state = AppState(store: ScriptStore(directory: directory))
+        let size = CGSize(width: 480, height: 320)
+
+        for fixture in [(NSAppearance.Name.aqua, ColorScheme.light), (.darkAqua, .dark)] {
+            let appearance = try XCTUnwrap(NSAppearance(named: fixture.0))
+            let hosted = try HostedViewFixture(
+                rootView: AnyView(PermissionGuideView().environmentObject(state).environment(\.colorScheme, fixture.1)),
+                appearance: appearance,
+                size: size
+            )
+            defer { hosted.tearDown() }
+            let bitmap = try bitmap(for: hosted.hosting)
+            let text = try recognizedTextFrames(in: bitmap, logicalSize: size)
+            let primary = try XCTUnwrap(text.first { $0.text.contains("打开系统设置") }).frame
+            let secondary = try XCTUnwrap(text.first { $0.text.contains("重新检测") }).frame
+            let fill = ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance)
+
+            XCTAssertGreaterThan(
+                renderedPixelFraction(in: bitmap, logicalSize: size, region: primary.insetBy(dx: -12, dy: -10), near: fill, tolerance: 0.08),
+                0.2,
+                "The permission primary action must retain the explicit prominent fill"
+            )
+            XCTAssertLessThan(
+                renderedPixelFraction(in: bitmap, logicalSize: size, region: secondary.insetBy(dx: -12, dy: -10), near: fill, tolerance: 0.08),
+                0.08,
+                "The permission secondary action must remain bordered and low-emphasis"
+            )
+        }
+    }
+
+    @MainActor
     func renderBitmap<V: View>(
         _ view: V,
         appearance: NSAppearance,
@@ -277,7 +437,8 @@ extension FinalVisualConsumerTests {
         logicalSize: CGSize,
         region: CGRect,
         near target: NSColor,
-        tolerance: CGFloat
+        tolerance: CGFloat,
+        excluding excludedRegions: [CGRect] = []
     ) -> CGFloat {
         guard let target = target.usingColorSpace(.sRGB) else { return 0 }
         let scaleX = CGFloat(bitmap.pixelsWide) / logicalSize.width
@@ -288,8 +449,12 @@ extension FinalVisualConsumerTests {
         let maxY = min(bitmap.pixelsHigh, Int((region.maxY * scaleY).rounded(.up)))
         guard minX < maxX, minY < maxY else { return 0 }
         var matches = 0
+        var sampled = 0
         for y in minY ..< maxY {
             for x in minX ..< maxX {
+                let logicalPoint = CGPoint(x: CGFloat(x) / scaleX, y: CGFloat(y) / scaleY)
+                guard !excludedRegions.contains(where: { $0.contains(logicalPoint) }) else { continue }
+                sampled += 1
                 guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
                     continue
                 }
@@ -300,7 +465,7 @@ extension FinalVisualConsumerTests {
                 }
             }
         }
-        return CGFloat(matches) / CGFloat((maxX - minX) * (maxY - minY))
+        return sampled == 0 ? 0 : CGFloat(matches) / CGFloat(sampled)
     }
 
     func renderedColorDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
