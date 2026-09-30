@@ -17,6 +17,7 @@ final class HostedScriptDetailFixture {
         script: Script,
         size: CGSize,
         phase: AppPhase = .idle,
+        playbackScript: Script? = nil,
         appearanceName: NSAppearance.Name = .aqua,
         colorScheme: ColorScheme = .light
     ) throws {
@@ -24,9 +25,22 @@ final class HostedScriptDetailFixture {
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        state = AppState(store: ScriptStore(directory: directory))
+        state = AppState(
+            store: ScriptStore(directory: directory),
+            application: VisualFixtureApplicationController(),
+            playbackEngine: VisualFixturePlaybackEngine()
+        )
+        state.hasPermission = true
         state.scripts = [script]
+        if let playbackScript, playbackScript.id != script.id {
+            state.scripts.append(playbackScript)
+        }
         state.selectedScriptID = script.id
+        if case .playing = phase {
+            // Establish the real session identity before freezing its visual progress.
+            // The fixture engine never posts input or completes the session on its own.
+            state.playScriptFromShortcut(id: playbackScript?.id ?? script.id)
+        }
         state.phase = phase
         appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
         hosting = NSHostingView(
@@ -54,12 +68,49 @@ final class HostedScriptDetailFixture {
         hosting.layoutSubtreeIfNeeded()
         hosting.displayIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        hosting.layoutSubtreeIfNeeded()
+        hosting.displayIfNeeded()
+    }
+
+    /// Pump native layout/scroll updates until the measured result is ready, rather
+    /// than assuming every CI host completes an animated scroll within 50ms.
+    func settle(until isReady: () -> Bool, timeout: TimeInterval = 2) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            hosting.layoutSubtreeIfNeeded()
+            hosting.displayIfNeeded()
+            if isReady() || Date() >= deadline { return }
+            _ = RunLoop.current.run(
+                mode: .default,
+                before: min(deadline, Date().addingTimeInterval(0.01))
+            )
+        }
     }
 
     func tearDown() {
+        if case .playing = state.phase { state.togglePlay() }
         window.orderOut(nil)
         try? FileManager.default.removeItem(at: directory)
     }
+}
+
+@MainActor
+private final class VisualFixturePlaybackEngine: PlaybackControlling {
+    func play(
+        script: Script,
+        onIteration: @escaping (Int) -> Void,
+        onBlock: @escaping (UUID?) -> Void,
+        onFinish: @escaping () -> Void
+    ) {}
+
+    func stop() {}
+}
+
+@MainActor
+private final class VisualFixtureApplicationController: ApplicationControlling {
+    func activateExternalApplication(bundleIdentifier: String) -> Bool { false }
+    func hideClicker() {}
+    func restoreClicker() {}
 }
 
 @MainActor
