@@ -233,7 +233,7 @@ final class PlaybackEngineTests: XCTestCase {
             ]
         )
         let poster = RecordingPlaybackPoster { action in
-            guard case .keyDown(keyCode: 4, _, _) = action, !didReplace else { return }
+            guard case .keyDown(keyCode: 4, _, _, _) = action, !didReplace else { return }
             didReplace = true
             engine.play(
                 script: replacement,
@@ -303,6 +303,58 @@ final class PlaybackEngineTests: XCTestCase {
         XCTAssertEqual(stopMonitor.stopCount, stopCountBeforeTrigger + 1)
         XCTAssertFalse(stopMonitor.isStarted)
         XCTAssertFalse(engine.isPlaying)
+    }
+
+    func testQueuedStopCallbackFromReplacedSessionCannotStopActiveSession() throws {
+        let stopMonitor = RecordingPlaybackStopMonitor()
+        let poster = RecordingPlaybackPoster()
+        let engine = PlaybackEngine(
+            timing: TestPlaybackTiming(),
+            poster: poster,
+            stopMonitor: stopMonitor
+        )
+        defer { engine.stop() }
+        let script = Script(name: "monitored wait", blocks: [.wait(WaitBlock(duration: 1))])
+        var originalFinishCount = 0
+        var replacementFinishCount = 0
+
+        engine.play(
+            script: script,
+            onIteration: { _ in },
+            onBlock: { _ in },
+            onFinish: { originalFinishCount += 1 }
+        )
+        let queuedOriginalStop = try XCTUnwrap(stopMonitor.callbacks.first)
+        engine.stop()
+        engine.play(
+            script: script,
+            onIteration: { _ in },
+            onBlock: { _ in },
+            onFinish: { replacementFinishCount += 1 }
+        )
+        let stopCountBeforeStaleCallback = stopMonitor.stopCount
+
+        // Simulate the old monitor's already-enqueued main-actor callback.
+        // No yields are needed, so the session transition is deterministic.
+        queuedOriginalStop()
+        queuedOriginalStop()
+
+        XCTAssertTrue(engine.isPlaying)
+        XCTAssertTrue(stopMonitor.isStarted)
+        XCTAssertEqual(stopMonitor.stopCount, stopCountBeforeStaleCallback)
+        XCTAssertEqual(originalFinishCount, 0)
+        XCTAssertEqual(replacementFinishCount, 0)
+        XCTAssertTrue(poster.actions.isEmpty)
+
+        // The replacement's own callback still stops and finishes exactly once.
+        stopMonitor.triggerStop()
+        stopMonitor.triggerStop()
+        queuedOriginalStop()
+        XCTAssertFalse(engine.isPlaying)
+        XCTAssertFalse(stopMonitor.isStarted)
+        XCTAssertEqual(stopMonitor.stopCount, stopCountBeforeStaleCallback + 1)
+        XCTAssertEqual(originalFinishCount, 0)
+        XCTAssertEqual(replacementFinishCount, 1)
     }
 
     func testTargetedScriptPlaysWithInputDependenciesOnly() async {
@@ -412,11 +464,13 @@ private final class NoopPlaybackStopMonitor: PlaybackStopMonitoring {
 private final class RecordingPlaybackStopMonitor: PlaybackStopMonitoring {
     private var onStop: (() -> Void)?
     private(set) var stopCount = 0
+    private(set) var callbacks: [() -> Void] = []
 
     var isStarted: Bool { onStop != nil }
 
     func start(onStop: @escaping () -> Void) {
         self.onStop = onStop
+        callbacks.append(onStop)
     }
 
     func stop() {

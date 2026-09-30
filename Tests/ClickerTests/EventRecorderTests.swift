@@ -4,6 +4,57 @@ import XCTest
 import ClickerCore
 
 final class EventRecorderTests: XCTestCase {
+    func testCapturesUnicodeLongerThanFourUTF16CodeUnits() throws {
+        try assertCapturedUnicode("abcdefghi")
+    }
+
+    func testCapturesEmojiAndMixedUnicodeWithoutSplittingSurrogates() throws {
+        try assertCapturedUnicode("A🙂界🚀Z")
+    }
+
+    func testCapturesEmptyUnicodeWithoutReadingABuffer() throws {
+        try assertCapturedUnicode("")
+    }
+
+    func testUnicodeCaptureStillFiltersControlCharacters() throws {
+        try assertCapturedUnicode("a\n\tb\r\u{7F}c", expected: "abc")
+    }
+
+    func testAutorepeatSurvivesCaptureGroupingAndEventConstructionWithoutPosting() throws {
+        let eventTap = StubEventTapSession()
+        var now: CGEventTimestamp = 1_000_000_000
+        let recorder = EventRecorder(
+            eventTap: eventTap,
+            stopHotKey: StubRecordingStopHotKeyMonitor(),
+            timestampNow: { now }
+        )
+        XCTAssertTrue(recorder.start(stopShortcut: .defaultValue))
+
+        for (index, isRepeat) in [false, true, true].enumerated() {
+            let event = try keyEvent(keyCode: 0)
+            event.timestamp = now + UInt64(index) * 100_000_000
+            event.keyboardSetUnicodeString(stringLength: 1, unicodeString: Array("a".utf16))
+            event.setIntegerValueField(.keyboardEventAutorepeat, value: isRepeat ? 1 : 0)
+            eventTap.emit(type: .keyDown, event: event)
+        }
+        let up = try keyEvent(keyCode: 0, keyDown: false)
+        now += 500_000_000
+        up.timestamp = now
+        eventTap.emit(type: .keyUp, event: up)
+
+        let capture = recorder.stop()
+        XCTAssertEqual(capture.events.map(\.isRepeat), [false, true, true, false])
+        let timeline = EventGrouper.group(capture)
+        let plan = BlockExpander.plan(blocks: timeline.blocks)
+        let constructedEvents = try plan.steps.map { step in
+            try XCTUnwrap(EventPoster.makeEvent(for: step.action))
+        }
+        XCTAssertEqual(constructedEvents.map(\.type), [.keyDown, .keyDown, .keyDown, .keyUp])
+        XCTAssertEqual(constructedEvents.prefix(3).map {
+            $0.getIntegerValueField(.keyboardEventAutorepeat)
+        }, [0, 1, 1])
+    }
+
     func testStartRegistersIndependentGlobalStopHotKey() {
         let eventTap = StubEventTapSession(requiresListenAccess: true)
         let stopHotKey = StubRecordingStopHotKeyMonitor()
@@ -201,6 +252,32 @@ final class EventRecorderTests: XCTestCase {
 
         await fulfillment(of: [requested], timeout: 1)
         XCTAssertEqual(recorder.stop().events.count, 1)
+    }
+
+    private func assertCapturedUnicode(
+        _ text: String,
+        expected: String? = nil,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let eventTap = StubEventTapSession()
+        let recorder = EventRecorder(
+            eventTap: eventTap,
+            stopHotKey: StubRecordingStopHotKeyMonitor(),
+            timestampNow: { 1_000_000_000 }
+        )
+        XCTAssertTrue(recorder.start(stopShortcut: .defaultValue), file: file, line: line)
+        let event = try keyEvent(keyCode: 0)
+        event.timestamp = 1_100_000_000
+        let utf16 = Array(text.utf16)
+        event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+        eventTap.emit(type: .keyDown, event: event)
+
+        let capture = recorder.stop()
+        XCTAssertEqual(capture.events.count, 1, file: file, line: line)
+        let captured = try XCTUnwrap(capture.events.first, file: file, line: line)
+        XCTAssertEqual(captured.chars, expected ?? text, file: file, line: line)
+        XCTAssertEqual(captured.keyCode, 0, file: file, line: line)
     }
 
     private func mouseEvent(

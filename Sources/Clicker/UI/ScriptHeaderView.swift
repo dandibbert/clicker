@@ -32,15 +32,17 @@ struct CompactScriptHeaderPresentation: Equatable {
         playbackProgressText != nil
     }
 
-    init(script: Script, phase: AppPhase) {
+    init(script: Script, phase: AppPhase, activePlaybackScript: Script? = nil) {
         let header = ScriptHeaderPresentation(script: script)
         title = header.title
         metadata = "\(header.actionCountText) · \(header.durationText)"
 
         if case .playing(let iteration, _) = phase {
-            playbackProgressText = script.repeatForever
+            let playing = activePlaybackScript ?? script
+            let progress = playing.repeatForever
                 ? "第 \(iteration) 轮"
-                : "第 \(iteration)/\(script.repeatCount) 轮"
+                : "第 \(iteration)/\(playing.repeatCount) 轮"
+            playbackProgressText = playing.id == script.id ? progress : nil
         } else {
             playbackProgressText = nil
         }
@@ -54,7 +56,9 @@ struct ScriptHeaderView: View {
     let script: Script
 
     private var presentation: CompactScriptHeaderPresentation {
-        CompactScriptHeaderPresentation(script: script, phase: state.phase)
+        CompactScriptHeaderPresentation(
+            script: script, phase: state.phase, activePlaybackScript: state.activePlaybackScript
+        )
     }
 
     private var layoutPolicy: ClickerPresentationLayoutPolicy {

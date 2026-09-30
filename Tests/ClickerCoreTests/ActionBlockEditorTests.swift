@@ -293,7 +293,7 @@ final class ActionBlockEditorTests: XCTestCase {
         }
         XCTAssertEqual(editedText.text, "edited")
         XCTAssertEqual(editedText.startOffset, 3)
-        XCTAssertEqual(editedText.duration, 0.5)
+        XCTAssertEqual(editedText.duration, 0.32, accuracy: 0.000_001)
 
         let shortcut = ActionBlock.shortcut(ShortcutBlock(
             keyCode: 8,

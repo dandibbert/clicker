@@ -16,46 +16,56 @@ enum EventPoster {
     }
 
     static func post(_ action: StepAction) {
+        makeEvent(for: action)?.post(tap: .cghidEventTap)
+    }
+
+    /// Build without posting so event fields can be verified without OS input.
+    static func makeEvent(for action: StepAction) -> CGEvent? {
         switch action {
         case .mouseMove(let x, let y, let flags):
             guard let e = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved,
                                   mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: .left)
-            else { return }
+            else { return nil }
             e.flags = CGEventFlags(rawValue: flags)
-            mark(e); e.post(tap: .cghidEventTap)
+            mark(e)
+            return e
 
         case .mouseDown(let x, let y, let button, let clickCount, let flags):
             let type: CGEventType = button == .left ? .leftMouseDown : .rightMouseDown
             let cgButton: CGMouseButton = button == .left ? .left : .right
             guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                                   mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: cgButton)
-            else { return }
+            else { return nil }
             e.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
             e.flags = CGEventFlags(rawValue: flags)
-            mark(e); e.post(tap: .cghidEventTap)
+            mark(e)
+            return e
 
         case .mouseUp(let x, let y, let button, let clickCount, let flags):
             let type: CGEventType = button == .left ? .leftMouseUp : .rightMouseUp
             let cgButton: CGMouseButton = button == .left ? .left : .right
             guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                                   mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: cgButton)
-            else { return }
+            else { return nil }
             e.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
             e.flags = CGEventFlags(rawValue: flags)
-            mark(e); e.post(tap: .cghidEventTap)
+            mark(e)
+            return e
 
         case .mouseDrag(let x, let y, let button, let flags):
             let type: CGEventType = button == .left ? .leftMouseDragged : .rightMouseDragged
             let cgButton: CGMouseButton = button == .left ? .left : .right
             guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                                   mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: cgButton)
-            else { return }
+            else { return nil }
             e.flags = CGEventFlags(rawValue: flags)
-            mark(e); e.post(tap: .cghidEventTap)
+            mark(e)
+            return e
 
-        case .keyDown(let keyCode, let flags, let chars):
+        case .keyDown(let keyCode, let flags, let chars, let isRepeat):
             guard let e = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode),
-                                  keyDown: true) else { return }
+                                  keyDown: true) else { return nil }
+            e.setIntegerValueField(.keyboardEventAutorepeat, value: isRepeat ? 1 : 0)
             if !chars.isEmpty {
                 // unicode 注入路径：keyboardSetUnicodeString 覆盖字符解释但保留 keyCode，
                 // 录制的字符（含大小写、移位符号）按原样重放。
@@ -64,21 +74,24 @@ enum EventPoster {
                 e.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
             }
             e.flags = CGEventFlags(rawValue: flags)
-            mark(e); e.post(tap: .cghidEventTap)
+            mark(e)
+            return e
 
         case .keyUp(let keyCode, let flags):
             guard let e = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode),
-                                  keyDown: false) else { return }
+                                  keyDown: false) else { return nil }
             e.flags = CGEventFlags(rawValue: flags)
-            mark(e); e.post(tap: .cghidEventTap)
+            mark(e)
+            return e
 
         case .scroll(let x, let y, let dx, let dy, let flags):
             guard let e = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
                                   wheel1: scrollDelta(dy), wheel2: scrollDelta(dx), wheel3: 0)
-            else { return }
+            else { return nil }
             e.location = CGPoint(x: x, y: y)
             e.flags = CGEventFlags(rawValue: flags)
-            mark(e); e.post(tap: .cghidEventTap)
+            mark(e)
+            return e
         }
     }
 }

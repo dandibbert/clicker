@@ -13,7 +13,7 @@ struct PressedInputTracker {
 
     mutating func observe(_ action: StepAction) {
         switch action {
-        case .keyDown(let keyCode, let flags, _):
+        case .keyDown(let keyCode, let flags, _, _):
             heldKeyFlags[keyCode] = flags
         case .keyUp(let keyCode, _):
             heldKeyFlags.removeValue(forKey: keyCode)

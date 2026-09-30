@@ -15,6 +15,8 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
     public var trailingDelay: TimeInterval
     public var targetBundleIdentifier: String?
     public var playbackShortcut: ScriptShortcut?
+    /// Nil for complete recordings; persisted so a partial capture is never mistaken for a complete script.
+    public var recordingInterruption: String?
 
     public init(
         id: UUID = UUID(),
@@ -28,7 +30,8 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         schemaVersion _: Int = Script.currentSchemaVersion,
         trailingDelay: TimeInterval = 0,
         targetBundleIdentifier: String? = nil,
-        playbackShortcut: ScriptShortcut? = nil
+        playbackShortcut: ScriptShortcut? = nil,
+        recordingInterruption: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -42,12 +45,13 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         self.trailingDelay = trailingDelay
         self.targetBundleIdentifier = targetBundleIdentifier
         self.playbackShortcut = playbackShortcut
+        self.recordingInterruption = recordingInterruption
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, createdAt, modifiedAt, blocks
         case repeatCount, repeatForever, repeatInterval
-        case schemaVersion, trailingDelay, targetBundleIdentifier, playbackShortcut
+        case schemaVersion, trailingDelay, targetBundleIdentifier, playbackShortcut, recordingInterruption
     }
 
     public init(from decoder: Decoder) throws {
@@ -77,6 +81,7 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
             String.self,
             forKey: .targetBundleIdentifier
         )
+        recordingInterruption = try container.decodeIfPresent(String.self, forKey: .recordingInterruption)
         playbackShortcut = try container.decodeIfPresent(
             ScriptShortcut.self,
             forKey: .playbackShortcut
@@ -97,6 +102,7 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         try container.encode(trailingDelay, forKey: .trailingDelay)
         try container.encodeIfPresent(targetBundleIdentifier, forKey: .targetBundleIdentifier)
         try container.encodeIfPresent(playbackShortcut, forKey: .playbackShortcut)
+        try container.encodeIfPresent(recordingInterruption, forKey: .recordingInterruption)
     }
 
     private static func migrateLegacyBlocks(_ legacyBlocks: [ActionBlock]) -> [ActionBlock] {

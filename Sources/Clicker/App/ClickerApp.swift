@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct ClickerApp: App {
+    @NSApplicationDelegateAdaptor(ClickerApplicationDelegate.self) private var appDelegate
     @StateObject private var state: AppState
     private let applicationServices: ApplicationServiceCoordinator
 
@@ -18,7 +19,10 @@ struct ClickerApp: App {
                 .environmentObject(state)
                 .preferredColorScheme(state.appearancePreference.colorScheme)
                 .frame(minWidth: 760, minHeight: 480)
-                .onAppear { applicationServices.start() }
+                .onAppear {
+                    appDelegate.state = state
+                    applicationServices.start()
+                }
         }
 
         Settings {

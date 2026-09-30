@@ -44,7 +44,9 @@ final class PlaybackEngine: PlaybackControlling {
         pressedInputs = PressedInputTracker()
 
         stopMonitor.start { [weak self] in
-            guard let self, self.isPlaying else { return }
+            // Removing the monitor cannot cancel a callback already queued on
+            // the main actor. A previous session must not stop its replacement.
+            guard let self, self.isPlaying, self.activeGeneration == gen else { return }
             self.stop()
             onFinish()
         }
