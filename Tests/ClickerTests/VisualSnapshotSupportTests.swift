@@ -22,6 +22,8 @@ final class VisualSnapshotSupportTests: XCTestCase {
     func testMetadataNormalizationAcceptsVisionTraditionalGlyphButPreservesContent() {
         XCTAssertEqual(normalizedVisualText("1 个动作 • 約 1.0 秒"), "1个动作•约1.0秒")
         XCTAssertEqual(normalizedVisualText("1 个动作 • 约 1.0 秒"), "1个动作•约1.0秒")
+        XCTAssertEqual(normalizedVisualText("◎ 录制"), "录制")
+        XCTAssertNotEqual(normalizedVisualText("录制1"), "录制")
         XCTAssertNotEqual(normalizedVisualText("2个动作•約1.0秒"), "1个动作•约1.0秒")
     }
 }

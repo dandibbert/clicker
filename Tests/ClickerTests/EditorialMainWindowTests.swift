@@ -394,7 +394,7 @@ final class EditorialMainWindowTests: XCTestCase {
     ) throws -> CGRect {
         try XCTUnwrap(
             frames.first {
-                let normalized = $0.text.replacingOccurrences(of: " ", with: "")
+                let normalized = normalizedVisualText($0.text)
                 return (requiresExactMatch ? normalized == expected : normalized.contains(expected))
                     && region.contains($0.frame)
             }?.frame,

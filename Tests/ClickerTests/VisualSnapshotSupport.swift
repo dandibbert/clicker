@@ -23,8 +23,10 @@ func retinaBitmap(for view: NSView) throws -> NSBitmapImageRep {
     return bitmap
 }
 
-/// Vision may return a Traditional glyph even when asked to recognize zh-Hans.
+/// Vision may return a Traditional glyph or join an adjacent SF Symbol to the label.
+/// Trim only edge symbols: e.g. "录制1" must not become an exact match for "录制".
 func normalizedVisualText(_ text: String) -> String {
     text.replacingOccurrences(of: " ", with: "")
         .replacingOccurrences(of: "約", with: "约")
+        .trimmingCharacters(in: CharacterSet.punctuationCharacters.union(.symbols))
 }
