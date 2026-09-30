@@ -145,9 +145,9 @@ struct ScriptHeaderView: View {
                 .foregroundStyle(ClickerVisualTheme.primaryText)
                 .lineLimit(1)
             Text(presentation.metadata)
-                .font(.caption)
-                .foregroundStyle(ClickerVisualTheme.secondaryText)
-                .lineLimit(1)
+            .font(.caption)
+            .foregroundStyle(ClickerVisualTheme.secondaryText)
+            .lineLimit(1)
         }
     }
 

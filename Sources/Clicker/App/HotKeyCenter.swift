@@ -36,6 +36,7 @@ final class HotKeyCenter {
     static let recordKeyCode = UInt32(kVK_ANSI_R)   // 15
     static let playKeyCode = UInt32(kVK_ANSI_P)     // 35
     static let modifiers = UInt32(optionKey | cmdKey)
+    static let signature = OSType(0x434C4B52) // "CLKR"
 
     private var hotKeyRefs: [EventHotKeyRef?] = []
     private var handlerRef: EventHandlerRef?
@@ -54,6 +55,9 @@ final class HotKeyCenter {
             GetEventParameter(event, EventParamName(kEventParamDirectObject),
                               EventParamType(typeEventHotKeyID), nil,
                               MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
+            guard hotKeyID.signature == HotKeyCenter.signature else {
+                return OSStatus(eventNotHandledErr)
+            }
             DispatchQueue.main.async {
                 switch hotKeyID.id {
                 case 1: NotificationCenter.default.post(name: .toggleRecord, object: ["source": "hotkey"])
@@ -78,7 +82,7 @@ final class HotKeyCenter {
             let result = registerHotKey(
                 keyCode,
                 Self.modifiers,
-                EventHotKeyID(signature: OSType(0x434C4B52), id: id)
+                EventHotKeyID(signature: Self.signature, id: id)
             )
             if result.status == noErr {
                 references.append(result.reference)

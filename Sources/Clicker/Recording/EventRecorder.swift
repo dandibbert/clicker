@@ -5,6 +5,9 @@ import ClickerCore
 /// CGEventTap 监听（listenOnly），把系统事件转成 RecordedEvent。
 final class EventRecorder: EventRecording {
     private let eventTap: EventTapSession
+    private let stopHotKey: RecordingStopHotKeyMonitoring
+    private let hasListenAccess: () -> Bool
+    private let requestListenAccess: () -> Bool
     private let timestampNow: () -> CGEventTimestamp
     private let timestampInterval: (CGEventTimestamp, CGEventTimestamp) -> TimeInterval
     private var startTimestamp: CGEventTimestamp?
@@ -23,6 +26,9 @@ final class EventRecorder: EventRecording {
 
     init(
         eventTap: EventTapSession = CoreGraphicsEventTapSession(),
+        stopHotKey: RecordingStopHotKeyMonitoring = CarbonRecordingStopHotKeyMonitor(),
+        hasListenAccess: @escaping () -> Bool = CGPreflightListenEventAccess,
+        requestListenAccess: @escaping () -> Bool = CGRequestListenEventAccess,
         timestampNow: @escaping () -> CGEventTimestamp = {
             clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         },
@@ -33,6 +39,9 @@ final class EventRecorder: EventRecording {
         }
     ) {
         self.eventTap = eventTap
+        self.stopHotKey = stopHotKey
+        self.hasListenAccess = hasListenAccess
+        self.requestListenAccess = requestListenAccess
         self.timestampNow = timestampNow
         timestampInterval = elapsedTime
     }
@@ -41,6 +50,11 @@ final class EventRecorder: EventRecording {
         events = []
         stopRequested = false
         self.stopShortcut = nil
+        stopHotKey.stop()
+        guard !eventTap.requiresListenAccess || hasListenAccess() || requestListenAccess() else {
+            startTimestamp = nil
+            return false
+        }
         let start = timestampNow()
         guard eventTap.start(handler: { [weak self] type, event in
             self?.handle(type: type, cgEvent: event)
@@ -50,11 +64,15 @@ final class EventRecorder: EventRecording {
         }
         self.stopShortcut = stopShortcut
         startTimestamp = start
+        _ = stopHotKey.start(shortcut: stopShortcut) { [weak self] in
+            self?.requestStop()
+        }
         return true
     }
 
     func stop() -> RecordingCapture {
         let end = timestampNow()
+        stopHotKey.stop()
         eventTap.stop()
         defer { startTimestamp = nil }
         return RecordingCapture(
@@ -88,8 +106,7 @@ final class EventRecorder: EventRecording {
                 keyCode: UInt16(cgEvent.getIntegerValueField(.keyboardEventKeycode)),
                 flags: cgEvent.flags.rawValue
            ) {
-            stopRequested = true
-            DispatchQueue.main.async { [weak self] in self?.onStopRequest?() }
+            requestStop()
             return
         }
 
@@ -144,5 +161,11 @@ final class EventRecorder: EventRecording {
     private func elapsedTime(at timestamp: CGEventTimestamp) -> TimeInterval {
         guard let startTimestamp, timestamp >= startTimestamp else { return 0 }
         return timestampInterval(startTimestamp, timestamp)
+    }
+
+    private func requestStop() {
+        guard !stopRequested else { return }
+        stopRequested = true
+        DispatchQueue.main.async { [weak self] in self?.onStopRequest?() }
     }
 }

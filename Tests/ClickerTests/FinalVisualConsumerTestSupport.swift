@@ -100,7 +100,7 @@ extension FinalVisualConsumerTests {
         emptyScriptState.scripts = [emptyScript]
         emptyScriptState.selectedScriptID = emptyScript.id
         let surfaces: [(String, [String], (ColorScheme) -> AnyView)] = [
-            ("permission", ["需要辅助功能权限", "打开系统设置", "重新检测"], { scheme in
+            ("permission", ["需要系统权限", "打开系统设置", "重新检测"], { scheme in
                 AnyView(PermissionGuideView().environmentObject(permissionState).environment(\.colorScheme, scheme))
             }),
             ("empty library", ["还没有脚本", "开始录制"], { scheme in

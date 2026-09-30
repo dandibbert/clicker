@@ -2,6 +2,7 @@ import CoreGraphics
 
 protocol EventTapSession: AnyObject {
     var isRunning: Bool { get }
+    var requiresListenAccess: Bool { get }
 
     func start(handler: @escaping (CGEventType, CGEvent) -> Void) -> Bool
     func reenable() -> Bool
@@ -9,6 +10,7 @@ protocol EventTapSession: AnyObject {
 }
 
 extension EventTapSession {
+    var requiresListenAccess: Bool { false }
     func reenable() -> Bool { true }
 }
 
@@ -18,6 +20,7 @@ final class CoreGraphicsEventTapSession: EventTapSession {
     private var handler: ((CGEventType, CGEvent) -> Void)?
 
     var isRunning: Bool { tap != nil }
+    var requiresListenAccess: Bool { true }
 
     func start(handler: @escaping (CGEventType, CGEvent) -> Void) -> Bool {
         stop()

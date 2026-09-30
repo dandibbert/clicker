@@ -185,8 +185,8 @@ struct ClickerEmptyStatePresentation: Equatable {
             secondaryActionTitle = nil
         case .permissionRequired:
             systemImage = "hand.raised.circle"
-            title = "需要辅助功能权限"
-            description = "Clicker 需要在「系统设置 → 隐私与安全性 → 辅助功能」中获得授权，才能录制和回放鼠标键盘操作。授权后回到本窗口自动生效。"
+            title = "需要系统权限"
+            description = "请在「系统设置 → 隐私与安全性」中为 Clicker 开启辅助功能和输入监控，才能完整录制、停止和回放鼠标键盘操作。授权后回到本窗口重新检测。"
             actionTitle = "打开系统设置"
             secondaryActionTitle = "重新检测"
         case .emptyScript:

@@ -3,11 +3,16 @@ import SwiftUI
 
 struct ShortcutKeycapPresentation: Equatable {
     let keys: [String]
-    let title = "停止录制快捷键"
+    let title: String
     let instruction: String
     let accessibilityLabel: String
 
-    init(shortcut: RecordingStopShortcut, isCapturing: Bool) {
+    init(
+        shortcut: RecordingStopShortcut,
+        isCapturing: Bool,
+        title: String = "停止录制快捷键"
+    ) {
+        self.title = title
         let modifiers: [(mask: UInt64, symbol: String)] = [
             (KeyCodeMap.maskControl, "⌃"),
             (KeyCodeMap.maskOption, "⌥"),
@@ -18,7 +23,7 @@ struct ShortcutKeycapPresentation: Equatable {
             shortcut.modifierFlags & modifier.mask == 0 ? nil : modifier.symbol
         } + [KeyCodeMap.name(for: shortcut.keyCode)]
         instruction = isCapturing ? "请按下新的组合键…" : "点击重新录入"
-        accessibilityLabel = "停止录制快捷键，\(shortcut.displayName)，\(instruction)"
+        accessibilityLabel = "\(title)，\(shortcut.displayName)，\(instruction)"
     }
 }
 
@@ -30,10 +35,15 @@ struct ShortcutCaptureCard: View {
 
     let shortcut: RecordingStopShortcut
     let isCapturing: Bool
+    var title = "停止录制快捷键"
     let action: () -> Void
 
     private var presentation: ShortcutKeycapPresentation {
-        ShortcutKeycapPresentation(shortcut: shortcut, isCapturing: isCapturing)
+        ShortcutKeycapPresentation(
+            shortcut: shortcut,
+            isCapturing: isCapturing,
+            title: title
+        )
     }
 
     private var layoutPolicy: ClickerPresentationLayoutPolicy {
@@ -60,7 +70,7 @@ struct ShortcutCaptureCard: View {
     private var cardContent: some View {
         if layoutPolicy.usesAccessibilityLayout {
             VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing8) {
-                title
+                titleView
                 keycaps
                 instruction
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -75,7 +85,7 @@ struct ShortcutCaptureCard: View {
         } else {
             HStack(spacing: ClickerVisualTheme.spacing12) {
                 VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing4) {
-                    title
+                    titleView
                     keycaps
                 }
 
@@ -93,7 +103,7 @@ struct ShortcutCaptureCard: View {
         }
     }
 
-    private var title: some View {
+    private var titleView: some View {
         Text(presentation.title)
             .font(.headline)
             .foregroundStyle(ClickerVisualTheme.primaryText)

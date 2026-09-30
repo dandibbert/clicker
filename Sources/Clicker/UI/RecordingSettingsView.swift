@@ -25,7 +25,20 @@ struct RecordingShortcutEditor {
     }
 
     @discardableResult
-    mutating func accept(_ candidate: RecordingStopShortcut) -> Bool {
+    mutating func accept(
+        _ candidate: RecordingStopShortcut,
+        scripts: [Script] = []
+    ) -> Bool {
+        let candidateScriptShortcut = ScriptShortcut(
+            keyCode: candidate.keyCode,
+            modifierFlags: candidate.modifierFlags
+        )
+        if let conflict = scripts.first(where: {
+            $0.playbackShortcut == candidateScriptShortcut
+        }) {
+            message = "与脚本「\(conflict.name)」的回放快捷键冲突"
+            return false
+        }
         switch candidate.validation(
             globalRecord: Self.globalRecord,
             globalPlay: Self.globalPlay
@@ -195,7 +208,7 @@ struct RecordingSettingsView: View {
     }
 
     private func accept(_ candidate: RecordingStopShortcut) {
-        if editor.accept(candidate) {
+        if editor.accept(candidate, scripts: state.scripts) {
             state.recordingStopShortcut = editor.shortcut
         }
         isCapturing = false

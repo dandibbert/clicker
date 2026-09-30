@@ -17,10 +17,11 @@ final class AppState: ObservableObject {
     @Published var phase: AppPhase = .idle
     @Published var scripts: [Script] = []
     @Published var selectedScriptID: UUID?
-    @Published var hasPermission = Permissions.hasAccessibility
+    @Published var hasPermission = Permissions.hasRequiredAccess
     @Published var corruptFileNames: [String] = []
     @Published var persistenceIssue: ScriptStoreIssue?
     @Published var hotKeyRegistrationIssues: [HotKeyRegistrationIssue] = []
+    @Published var scriptHotKeyRegistrationIssues: [ScriptHotKeyRegistrationIssue] = []
     @Published var appearancePreference: AppAppearancePreference {
         didSet { appearancePreferenceStore.preference = appearancePreference }
     }
@@ -139,6 +140,7 @@ final class AppState: ObservableObject {
         s.name += " 副本"
         s.createdAt = Date()
         s.modifiedAt = Date()
+        s.playbackShortcut = nil
         // 块 ID 需要重新生成，避免与原脚本冲突；绝对时间轴保持不变。
         s.blocks = s.blocks.map { $0.duplicated() }
         if create(s) {
@@ -147,11 +149,15 @@ final class AppState: ObservableObject {
     }
 
     func refreshPermission() {
-        hasPermission = Permissions.hasAccessibility
+        hasPermission = Permissions.hasRequiredAccess
     }
 
     func reportHotKeyRegistrationIssues(_ issues: [HotKeyRegistrationIssue]) {
         hotKeyRegistrationIssues = issues
+    }
+
+    func reportScriptHotKeyRegistrationIssues(_ issues: [ScriptHotKeyRegistrationIssue]) {
+        scriptHotKeyRegistrationIssues = issues
     }
 
     // MARK: - Recording
@@ -227,7 +233,7 @@ final class AppState: ObservableObject {
 
     private func startCountdown() {
         guard hasPermission else {
-            Permissions.requestAccessibility()
+            Permissions.requestRequiredAccess()
             refreshPermission()
             return
         }
@@ -305,7 +311,7 @@ final class AppState: ObservableObject {
             stopPlaybackIfNeeded()
         case .idle:
             guard hasPermission else {
-                Permissions.requestAccessibility()
+                Permissions.requestRequiredAccess()
                 refreshPermission()
                 return
             }
@@ -313,40 +319,65 @@ final class AppState: ObservableObject {
             guard ScriptPlaybackEligibility.isPlayable(script) else { return }
             let fallback = externalApplicationTracker.mostRecentExternalBundleIdentifier
             application.hideClicker()
-            activatePlaybackTarget(
+            startPlayback(
+                script: script,
                 saved: script.targetBundleIdentifier,
-                fallback: fallback
+                fallback: fallback,
+                restoresClicker: true
             )
-            playbackGeneration += 1
-            let generation = playbackGeneration
-            playbackFocusGeneration = generation
-            phase = .playing(iteration: 1, currentBlockID: nil)
-            playbackEngine.play(script: script) { [weak self] iteration in
-                Task { @MainActor in
-                    guard let self,
-                          self.playbackGeneration == generation,
-                          case .playing = self.phase else { return }
-                    self.phase = .playing(iteration: iteration, currentBlockID: nil)
-                }
-            } onBlock: { [weak self] blockID in
-                Task { @MainActor in
-                    guard let self,
-                          self.playbackGeneration == generation,
-                          case .playing(let it, _) = self.phase else { return }
-                    self.phase = .playing(iteration: it, currentBlockID: blockID)
-                }
-            } onFinish: { [weak self] in
-                Task { @MainActor in
-                    guard let self,
-                          self.playbackGeneration == generation,
-                          case .playing = self.phase else { return }
-                    self.playbackGeneration += 1
-                    self.phase = .idle
-                    self.restorePlaybackFocus(ownedBy: generation)
-                }
-            }
         case .countdown, .recording:
             break
+        }
+    }
+
+    /// 脚本全局快捷键入口：不改变选择、不显隐 Clicker，结束后也不抢回焦点。
+    func playScriptFromShortcut(id: UUID) {
+        guard phase == .idle,
+              hasPermission,
+              let script = scripts.first(where: { $0.id == id }),
+              ScriptPlaybackEligibility.isPlayable(script) else { return }
+        startPlayback(
+            script: script,
+            saved: script.targetBundleIdentifier,
+            fallback: nil,
+            restoresClicker: false
+        )
+    }
+
+    private func startPlayback(
+        script: Script,
+        saved: String?,
+        fallback: String?,
+        restoresClicker: Bool
+    ) {
+        activatePlaybackTarget(saved: saved, fallback: fallback)
+        playbackGeneration += 1
+        let generation = playbackGeneration
+        playbackFocusGeneration = restoresClicker ? generation : nil
+        phase = .playing(iteration: 1, currentBlockID: nil)
+        playbackEngine.play(script: script) { [weak self] iteration in
+            Task { @MainActor in
+                guard let self,
+                      self.playbackGeneration == generation,
+                      case .playing = self.phase else { return }
+                self.phase = .playing(iteration: iteration, currentBlockID: nil)
+            }
+        } onBlock: { [weak self] blockID in
+            Task { @MainActor in
+                guard let self,
+                      self.playbackGeneration == generation,
+                      case .playing(let iteration, _) = self.phase else { return }
+                self.phase = .playing(iteration: iteration, currentBlockID: blockID)
+            }
+        } onFinish: { [weak self] in
+            Task { @MainActor in
+                guard let self,
+                      self.playbackGeneration == generation,
+                      case .playing = self.phase else { return }
+                self.playbackGeneration += 1
+                self.phase = .idle
+                self.restorePlaybackFocus(ownedBy: generation)
+            }
         }
     }
 

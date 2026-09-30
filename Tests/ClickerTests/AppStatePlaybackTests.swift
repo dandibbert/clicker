@@ -6,6 +6,46 @@ import ClickerCore
 
 @MainActor
 final class AppStatePlaybackTests: XCTestCase {
+    func testScriptShortcutStartsExactScriptWithoutHidingOrRestoringClicker() async {
+        let first = playableScript(targetBundleIdentifier: "com.example.first")
+        let second = Script(
+            name: "second",
+            blocks: [.wait(WaitBlock(duration: 1))],
+            targetBundleIdentifier: "com.example.second"
+        )
+        let context = makeContext(script: first, recentTarget: "com.example.recent")
+        defer { try? FileManager.default.removeItem(at: context.directory) }
+        context.state.scripts = [first, second]
+        context.state.selectedScriptID = first.id
+
+        context.state.playScriptFromShortcut(id: second.id)
+
+        XCTAssertEqual(context.playback.playedScripts, [second])
+        XCTAssertEqual(context.application.activationAttempts, ["com.example.second"])
+        XCTAssertEqual(context.application.hideCallCount, 0)
+        XCTAssertEqual(context.state.selectedScriptID, first.id)
+
+        context.playback.finish(session: 0)
+        await Task.yield()
+        XCTAssertEqual(context.application.restoreCallCount, 0)
+    }
+
+    func testScriptShortcutIgnoresUnknownUnplayableAndBusyRequests() {
+        let playable = playableScript()
+        let empty = Script(name: "empty")
+        let context = makeContext(script: playable)
+        defer { try? FileManager.default.removeItem(at: context.directory) }
+        context.state.scripts = [playable, empty]
+
+        context.state.playScriptFromShortcut(id: UUID())
+        context.state.playScriptFromShortcut(id: empty.id)
+        XCTAssertTrue(context.playback.playedScripts.isEmpty)
+
+        context.state.playScriptFromShortcut(id: playable.id)
+        context.state.playScriptFromShortcut(id: playable.id)
+        XCTAssertEqual(context.playback.playedScripts, [playable])
+    }
+
     func testTrailingOnlyScriptCanStartPlayback() {
         let context = makeContext()
         defer { try? FileManager.default.removeItem(at: context.directory) }

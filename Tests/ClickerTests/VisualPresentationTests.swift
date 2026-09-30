@@ -75,7 +75,8 @@ final class VisualPresentationTests: XCTestCase {
     func testPermissionPresentationKeepsPrimaryAndSecondaryActions() {
         let model = ClickerEmptyStatePresentation(kind: .permissionRequired)
 
-        XCTAssertEqual(model.title, "需要辅助功能权限")
+        XCTAssertEqual(model.title, "需要系统权限")
+        XCTAssertTrue(model.description.contains("输入监控"))
         XCTAssertEqual(model.actionTitle, "打开系统设置")
         XCTAssertEqual(model.secondaryActionTitle, "重新检测")
     }

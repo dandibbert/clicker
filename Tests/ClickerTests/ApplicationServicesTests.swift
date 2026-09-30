@@ -54,6 +54,29 @@ final class ApplicationServicesTests: XCTestCase {
         XCTAssertEqual(hotKeyRegistrationCount, 1)
         XCTAssertEqual(state.hotKeyRegistrationIssues, [issue])
     }
+
+    func testScriptHotKeysRefreshWheneverLibraryChanges() {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Clicker-ScriptHotKeys-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let state = AppState(store: ScriptStore(directory: directory))
+        var refreshedLibraries: [[Script]] = []
+        let services = ApplicationServiceCoordinator(
+            state: state,
+            makeStatusItem: { NSObject() },
+            registerHotKeys: { [] },
+            refreshScriptHotKeys: { scripts in
+                refreshedLibraries.append(scripts)
+                return []
+            }
+        )
+        services.start()
+        let script = Script(name: "快捷回放")
+
+        XCTAssertTrue(state.create(script))
+
+        XCTAssertEqual(refreshedLibraries, [[], [script]])
+    }
 }
 
 private final class StubExternalApplicationTracker: ExternalApplicationTracking {

@@ -351,6 +351,29 @@ final class ActionBlockTests: XCTestCase {
         XCTAssertEqual(script.repeatInterval, 0)
         XCTAssertEqual(script.trailingDelay, 0)
         XCTAssertNil(script.targetBundleIdentifier)
+        XCTAssertNil(script.playbackShortcut)
         XCTAssertTrue(script.blocks.isEmpty)
+    }
+
+    func testPlaybackShortcutRoundTripsAndOlderScriptsDefaultToNil() throws {
+        let shortcut = ScriptShortcut(
+            keyCode: 18,
+            modifierFlags: KeyCodeMap.maskControl | KeyCodeMap.maskOption
+        )
+        let script = Script(name: "快捷回放", playbackShortcut: shortcut)
+
+        let data = try JSONEncoder().encode(script)
+        let decoded = try JSONDecoder().decode(Script.self, from: data)
+
+        XCTAssertEqual(decoded.playbackShortcut, shortcut)
+        XCTAssertEqual(shortcut.displayName, "⌃⌥1")
+
+        var legacyObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        legacyObject["schemaVersion"] = 4
+        legacyObject.removeValue(forKey: "playbackShortcut")
+        let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
+        XCTAssertNil(try JSONDecoder().decode(Script.self, from: legacyData).playbackShortcut)
     }
 }

@@ -14,6 +14,7 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
     public var schemaVersion: Int
     public var trailingDelay: TimeInterval
     public var targetBundleIdentifier: String?
+    public var playbackShortcut: ScriptShortcut?
 
     public init(
         id: UUID = UUID(),
@@ -26,7 +27,8 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         repeatInterval: TimeInterval = 0,
         schemaVersion _: Int = Script.currentSchemaVersion,
         trailingDelay: TimeInterval = 0,
-        targetBundleIdentifier: String? = nil
+        targetBundleIdentifier: String? = nil,
+        playbackShortcut: ScriptShortcut? = nil
     ) {
         self.id = id
         self.name = name
@@ -39,12 +41,13 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         schemaVersion = Self.currentSchemaVersion
         self.trailingDelay = trailingDelay
         self.targetBundleIdentifier = targetBundleIdentifier
+        self.playbackShortcut = playbackShortcut
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, createdAt, modifiedAt, blocks
         case repeatCount, repeatForever, repeatInterval
-        case schemaVersion, trailingDelay, targetBundleIdentifier
+        case schemaVersion, trailingDelay, targetBundleIdentifier, playbackShortcut
     }
 
     public init(from decoder: Decoder) throws {
@@ -74,6 +77,10 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
             String.self,
             forKey: .targetBundleIdentifier
         )
+        playbackShortcut = try container.decodeIfPresent(
+            ScriptShortcut.self,
+            forKey: .playbackShortcut
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -89,6 +96,7 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         try container.encode(Self.currentSchemaVersion, forKey: .schemaVersion)
         try container.encode(trailingDelay, forKey: .trailingDelay)
         try container.encodeIfPresent(targetBundleIdentifier, forKey: .targetBundleIdentifier)
+        try container.encodeIfPresent(playbackShortcut, forKey: .playbackShortcut)
     }
 
     private static func migrateLegacyBlocks(_ legacyBlocks: [ActionBlock]) -> [ActionBlock] {
@@ -109,5 +117,32 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
                 .clearingLegacyTiming()
                 .assigningLegacyOrdinals(next: &nextOrdinal)
         }
+    }
+}
+
+public struct ScriptShortcut: Codable, Equatable, Hashable, Sendable {
+    public static let supportedModifierMask = KeyCodeMap.maskControl
+        | KeyCodeMap.maskOption
+        | KeyCodeMap.maskShift
+        | KeyCodeMap.maskCommand
+
+    public let keyCode: UInt16
+    public let modifierFlags: UInt64
+
+    public init(keyCode: UInt16, modifierFlags: UInt64) {
+        self.keyCode = keyCode
+        self.modifierFlags = modifierFlags & Self.supportedModifierMask
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            keyCode: try container.decode(UInt16.self, forKey: .keyCode),
+            modifierFlags: try container.decode(UInt64.self, forKey: .modifierFlags)
+        )
+    }
+
+    public var displayName: String {
+        KeyCodeMap.shortcutDisplay(keyCode: keyCode, flags: modifierFlags)
     }
 }

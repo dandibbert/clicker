@@ -193,6 +193,25 @@ final class ShortcutCaptureTests: XCTestCase {
         XCTAssertEqual(editor.message, "裸文本键可能在输入文字时误触发")
     }
 
+    func testRecordingStopShortcutRejectsScriptPlaybackConflict() {
+        let shortcut = RecordingStopShortcut(
+            keyCode: 18,
+            modifierFlags: KeyCodeMap.maskControl | KeyCodeMap.maskOption
+        )
+        let script = Script(
+            name: "日报",
+            playbackShortcut: ScriptShortcut(
+                keyCode: shortcut.keyCode,
+                modifierFlags: shortcut.modifierFlags
+            )
+        )
+        var editor = RecordingShortcutEditor(shortcut: .defaultValue)
+
+        XCTAssertFalse(editor.accept(shortcut, scripts: [script]))
+        XCTAssertEqual(editor.shortcut, .defaultValue)
+        XCTAssertEqual(editor.message, "与脚本「日报」的回放快捷键冲突")
+    }
+
     func testRestoreDefaultSavesEscape() {
         var editor = RecordingShortcutEditor(shortcut: RecordingStopShortcut(
             keyCode: 1,

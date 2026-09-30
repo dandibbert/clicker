@@ -4,6 +4,62 @@ import XCTest
 import ClickerCore
 
 final class EventRecorderTests: XCTestCase {
+    func testStartRegistersIndependentGlobalStopHotKey() {
+        let eventTap = StubEventTapSession(requiresListenAccess: true)
+        let stopHotKey = StubRecordingStopHotKeyMonitor()
+        let recorder = EventRecorder(
+            eventTap: eventTap,
+            stopHotKey: stopHotKey,
+            hasListenAccess: { true }
+        )
+        let shortcut = RecordingStopShortcut(
+            keyCode: 1,
+            modifierFlags: KeyCodeMap.maskOption | KeyCodeMap.maskCommand
+        )
+
+        XCTAssertTrue(recorder.start(stopShortcut: shortcut))
+
+        XCTAssertEqual(stopHotKey.startedShortcuts, [shortcut])
+    }
+
+    func testGlobalStopHotKeyRequestsStopOnlyOnceAndIsRemovedOnStop() async {
+        let stopHotKey = StubRecordingStopHotKeyMonitor()
+        let recorder = EventRecorder(
+            eventTap: StubEventTapSession(),
+            stopHotKey: stopHotKey,
+            hasListenAccess: { true }
+        )
+        let requested = expectation(description: "stop requested")
+        recorder.onStopRequest = { requested.fulfill() }
+        XCTAssertTrue(recorder.start(stopShortcut: .defaultValue))
+
+        stopHotKey.trigger()
+        stopHotKey.trigger()
+
+        await fulfillment(of: [requested], timeout: 1)
+        _ = recorder.stop()
+        XCTAssertEqual(stopHotKey.stopCallCount, 2)
+    }
+
+    func testStartRequestsInputMonitoringBeforeCreatingEventTap() {
+        let eventTap = StubEventTapSession(requiresListenAccess: true)
+        var requestCount = 0
+        let recorder = EventRecorder(
+            eventTap: eventTap,
+            stopHotKey: StubRecordingStopHotKeyMonitor(),
+            hasListenAccess: { false },
+            requestListenAccess: {
+                requestCount += 1
+                return false
+            }
+        )
+
+        XCTAssertFalse(recorder.start(stopShortcut: .defaultValue))
+
+        XCTAssertEqual(requestCount, 1)
+        XCTAssertFalse(eventTap.isRunning)
+    }
+
     func testStopReturnsFinalDuration() {
         var now: CGEventTimestamp = 1_000_000_000
         let eventTap = StubEventTapSession()
@@ -178,7 +234,12 @@ final class EventRecorderTests: XCTestCase {
 
 private final class StubEventTapSession: EventTapSession {
     private(set) var isRunning = false
+    let requiresListenAccess: Bool
     private var handler: ((CGEventType, CGEvent) -> Void)?
+
+    init(requiresListenAccess: Bool = false) {
+        self.requiresListenAccess = requiresListenAccess
+    }
 
     func start(handler: @escaping (CGEventType, CGEvent) -> Void) -> Bool {
         self.handler = handler
@@ -193,5 +254,26 @@ private final class StubEventTapSession: EventTapSession {
 
     func emit(type: CGEventType, event: CGEvent) {
         handler?(type, event)
+    }
+}
+
+private final class StubRecordingStopHotKeyMonitor: RecordingStopHotKeyMonitoring {
+    private(set) var startedShortcuts: [RecordingStopShortcut] = []
+    private(set) var stopCallCount = 0
+    private var onStop: (() -> Void)?
+
+    func start(shortcut: RecordingStopShortcut, onStop: @escaping () -> Void) -> Bool {
+        startedShortcuts.append(shortcut)
+        self.onStop = onStop
+        return true
+    }
+
+    func stop() {
+        stopCallCount += 1
+        onStop = nil
+    }
+
+    func trigger() {
+        onStop?()
     }
 }
