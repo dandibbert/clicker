@@ -85,7 +85,7 @@ public enum ActionBlock: Codable, Equatable, Sendable, Identifiable {
         case .scroll(let block):
             latestAtom = block.steps.map { TimelineValue.time($0.t) }.max() ?? 0
         case .typeText(let block):
-            latestAtom = block.keystrokes.map {
+            latestAtom = block.playbackKeystrokes.map {
                 max(TimelineValue.time($0.t), TimelineValue.time($0.upT))
             }.max() ?? 0
         case .shortcut, .wait:
@@ -155,7 +155,7 @@ public enum ActionBlock: Codable, Equatable, Sendable, Identifiable {
         case .scroll(let block):
             block.steps.map(\.ordinal)
         case .typeText(let block):
-            block.keystrokes.flatMap { [$0.downOrdinal, $0.upOrdinal] }
+            block.playbackKeystrokes.flatMap { [$0.downOrdinal, $0.upOrdinal] }
         case .shortcut(let block):
             [block.downOrdinal, block.upOrdinal]
         case .wait:
@@ -190,6 +190,7 @@ public enum ActionBlock: Codable, Equatable, Sendable, Identifiable {
             }
             return .scroll(block)
         case .typeText(var block):
+            block.keystrokes = block.playbackKeystrokes
             for index in block.keystrokes.indices {
                 block.keystrokes[index].downOrdinal = replacement(
                     for: block.keystrokes[index].downOrdinal
@@ -248,6 +249,7 @@ public enum ActionBlock: Codable, Equatable, Sendable, Identifiable {
             }
             return .scroll(block)
         case .typeText(var block):
+            block.keystrokes = block.playbackKeystrokes
             for index in block.keystrokes.indices {
                 block.keystrokes[index].downOrdinal = next
                 next += 1

@@ -133,11 +133,7 @@ final class EventRecorder: EventRecording {
         if kind == .keyDown || kind == .keyUp || kind == .flagsChanged {
             keyCode = UInt16(cgEvent.getIntegerValueField(.keyboardEventKeycode))
             if kind == .keyDown {
-                var length = 0
-                var buffer = [UniChar](repeating: 0, count: 4)
-                cgEvent.keyboardGetUnicodeString(maxStringLength: 4, actualStringLength: &length,
-                                                 unicodeString: &buffer)
-                chars = String(utf16CodeUnits: buffer, count: length)
+                chars = Self.unicodeString(from: cgEvent)
                 // 过滤控制字符（回车、删除等本身有 keyCode，不需要 chars）
                 chars = chars.filter { ch in
                     if ch.isNewline { return false }
@@ -156,6 +152,32 @@ final class EventRecorder: EventRecording {
             isRepeat: kind == .keyDown
                 && cgEvent.getIntegerValueField(.keyboardEventAutorepeat) != 0
         ))
+    }
+
+    private static func unicodeString(from event: CGEvent) -> String {
+        // actualStringLength reports the event's full length, even when no buffer
+        // is supplied. Query first so multi-unit input is not truncated.
+        var requiredLength = 0
+        event.keyboardGetUnicodeString(
+            maxStringLength: 0,
+            actualStringLength: &requiredLength,
+            unicodeString: nil
+        )
+        guard requiredLength > 0 else { return "" }
+
+        var buffer = [UniChar](repeating: 0, count: requiredLength)
+        var actualLength = 0
+        buffer.withUnsafeMutableBufferPointer { units in
+            event.keyboardGetUnicodeString(
+                maxStringLength: units.count,
+                actualStringLength: &actualLength,
+                unicodeString: units.baseAddress
+            )
+        }
+        // The reported length is not a promise that this many units were copied.
+        // Only decode units inside the supplied buffer, including if it changed.
+        let copiedLength = min(buffer.count, max(0, actualLength))
+        return String(decoding: buffer.prefix(copiedLength), as: UTF16.self)
     }
 
     private func elapsedTime(at timestamp: CGEventTimestamp) -> TimeInterval {

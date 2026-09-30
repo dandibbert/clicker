@@ -94,6 +94,12 @@ final class EventGrouperV4Tests: XCTestCase {
         let plan = BlockExpander.plan(blocks: timeline.blocks)
         XCTAssertEqual(plan.steps.map(\.t), [0, 0.1, 0.2, 0.5])
         XCTAssertEqual(plan.steps.map(\.ordinal), [0, 1, 2, 3])
+        XCTAssertEqual(plan.steps.map(\.action), [
+            .keyDown(keyCode: 0, flags: 0, chars: "a"),
+            .keyDown(keyCode: 0, flags: 0, chars: "a", isRepeat: true),
+            .keyDown(keyCode: 0, flags: 0, chars: "a", isRepeat: true),
+            .keyUp(keyCode: 0, flags: 7),
+        ])
         XCTAssertEqual(plan.steps.filter { step in
             if case .keyUp = step.action { return true }
             return false
@@ -141,9 +147,36 @@ final class EventGrouperV4Tests: XCTestCase {
         let plan = BlockExpander.plan(blocks: timeline.blocks)
         XCTAssertEqual(plan.steps.map(\.t), [0, 0.1, 0.3])
         XCTAssertEqual(plan.steps.map(\.ordinal), [0, 1, 2])
+        XCTAssertEqual(plan.steps.map(\.action), [
+            .keyDown(keyCode: 8, flags: command, chars: ""),
+            .keyDown(keyCode: 8, flags: command, chars: "", isRepeat: true),
+            .keyUp(keyCode: 8, flags: command),
+        ])
         XCTAssertEqual(plan.steps.filter { step in
             if case .keyUp = step.action { return true }
             return false
         }.count, 1)
+    }
+
+    func testRecordingBeginningWithAutorepeatPreservesItsFlagAndOneRelease() {
+        for flags in [UInt64(0), KeyCodeMap.maskCommand] {
+            let timeline = EventGrouper.group(RecordingCapture(
+                events: [
+                    event(0, .keyDown, keyCode: 0, flags: flags, chars: "a", isRepeat: true),
+                    event(0.1, .keyDown, keyCode: 0, flags: flags, chars: "a", isRepeat: true),
+                    event(0.3, .keyUp, keyCode: 0, flags: flags),
+                ],
+                duration: 0.3
+            ))
+
+            let plan = BlockExpander.plan(blocks: timeline.blocks)
+            let chars = flags == 0 ? "a" : ""
+            XCTAssertEqual(plan.steps.map(\.t), [0, 0.1, 0.3])
+            XCTAssertEqual(plan.steps.map(\.action), [
+                .keyDown(keyCode: 0, flags: flags, chars: chars, isRepeat: true),
+                .keyDown(keyCode: 0, flags: flags, chars: chars, isRepeat: true),
+                .keyUp(keyCode: 0, flags: flags),
+            ])
+        }
     }
 }

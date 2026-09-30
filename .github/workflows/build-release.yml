@@ -56,6 +56,9 @@ jobs:
         run: python3 -B -m unittest discover -s Tests/Packaging -v
       - name: Run Swift tests
         run: swift test
+      - name: Check Unicode capture with AddressSanitizer
+        if: matrix.arch == 'arm64'
+        run: swift test --sanitize=address --scratch-path .build-address-sanitizer --filter EventRecorderTests
       - name: Build release archive
         run: ./scripts/package-release.sh
       - name: Verify packaged binary and checksum

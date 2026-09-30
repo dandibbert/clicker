@@ -30,7 +30,11 @@ struct ScriptDetailView: View {
                           let index = current.blocks.firstIndex(where: { $0.id == target.id }) else {
                         return
                     }
-                    current.blocks[index] = updated
+                    current.blocks = TimelineMutation.replacing(
+                        at: index,
+                        with: updated,
+                        in: current.blocks
+                    )
                     state.update(current)
                 }
             }
@@ -49,7 +53,8 @@ struct ScriptDetailView: View {
     @ViewBuilder
     private func blockList(_ script: Script) -> some View {
         let activeID: UUID? = {
-            if case .playing(_, let id) = state.phase { return id }
+            if state.activePlaybackScript?.id == script.id,
+               case .playing(_, let id) = state.phase { return id }
             return nil
         }()
         ZStack {

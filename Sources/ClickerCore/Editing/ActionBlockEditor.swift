@@ -171,13 +171,15 @@ public enum ActionBlockEditor {
         _ original: TypeTextBlock,
         text: String
     ) -> TypeTextBlock {
-        TypeTextBlock(
+        guard text != original.text else { return original }
+        // A substantive replacement is new input, not a view over hidden raw
+        // captured text. Rebuild both its atoms and duration from the new value.
+        return TypeTextBlock(
             id: original.id,
             text: text,
-            keystrokes: original.keystrokes,
+            keystrokes: [],
             delayBefore: original.delayBefore,
-            startOffset: original.startOffset,
-            duration: original.duration
+            startOffset: original.startOffset
         )
     }
 
@@ -228,8 +230,15 @@ public enum ActionBlockEditor {
         duration: TimeInterval
     ) -> DragBlock {
         let newDuration = sanitizedDuration(duration)
+        if newDuration == original.duration,
+           let first = original.points.first, let last = original.points.last,
+           first.x == startX, first.y == startY, last.x == endX, last.y == endY {
+            return original
+        }
         let positionedPoints: [TrackPoint]
-        if let onlyPoint = original.points.first, original.points.count == 1 {
+        if let onlyPoint = original.points.first, original.points.count == 1,
+           startX != onlyPoint.x || startY != onlyPoint.y
+            || endX != onlyPoint.x || endY != onlyPoint.y {
             positionedPoints = [
                 TrackPoint(
                     t: 0,
@@ -257,7 +266,7 @@ public enum ActionBlockEditor {
                 endY: endY
             )
         }
-        let points = original.points.count == 1
+        let points = original.points.count == 1 && positionedPoints.count == 2
             ? positionedPoints
             : rescaledPoints(
                 positionedPoints,
@@ -312,6 +321,7 @@ public enum ActionBlockEditor {
         fromDuration oldDuration: TimeInterval,
         toDuration newDuration: TimeInterval
     ) -> [TrackPoint] {
+        if oldDuration == newDuration { return points }
         let oldDuration = sanitizedDuration(oldDuration)
         if oldDuration > 0 {
             let ratio = newDuration / oldDuration
@@ -360,6 +370,9 @@ public enum ActionBlockEditor {
               points.count >= 2 else {
             return points
         }
+        if first.x == startX, first.y == startY, last.x == endX, last.y == endY {
+            return points
+        }
         let oldSpanX = last.x - first.x
         let oldSpanY = last.y - first.y
         let newSpanX = endX - startX
@@ -376,16 +389,35 @@ public enum ActionBlockEditor {
             } else {
                 fallbackProgress = Double(index) / Double(points.count - 1)
             }
-            let fractionX = oldSpanX == 0
-                ? fallbackProgress
-                : (point.x - first.x) / oldSpanX
-            let fractionY = oldSpanY == 0
-                ? fallbackProgress
-                : (point.y - first.y) / oldSpanY
+            let progress = fallbackProgress.isFinite ? min(1, max(0, fallbackProgress)) : 0
+            func coordinate(
+                _ value: Double,
+                oldStart: Double,
+                oldEnd: Double,
+                newStart: Double,
+                newEnd: Double,
+                oldSpan: Double,
+                newSpan: Double
+            ) -> Double {
+                if oldStart == newStart, oldEnd == newEnd { return value }
+                let startDelta = newStart - oldStart
+                let endDelta = newEnd - oldEnd
+                if startDelta == endDelta { return value + startDelta }
+                // A closed axis can still contain a curve. Preserve its residual
+                // motion and interpolate the requested endpoint displacements.
+                if oldSpan == 0 {
+                    return value + startDelta * (1 - progress) + endDelta * progress
+                }
+                return newStart + (value - oldStart) / oldSpan * newSpan
+            }
             return TrackPoint(
                 t: point.t,
-                x: startX + fractionX * newSpanX,
-                y: startY + fractionY * newSpanY,
+                x: coordinate(point.x, oldStart: first.x, oldEnd: last.x,
+                              newStart: startX, newEnd: endX,
+                              oldSpan: oldSpanX, newSpan: newSpanX),
+                y: coordinate(point.y, oldStart: first.y, oldEnd: last.y,
+                              newStart: startY, newEnd: endY,
+                              oldSpan: oldSpanY, newSpan: newSpanY),
                 flags: point.flags,
                 ordinal: point.ordinal
             )

@@ -20,6 +20,10 @@ final class AppState: ObservableObject {
     @Published var hasPermission = Permissions.hasRequiredAccess
     @Published var corruptFileNames: [String] = []
     @Published var persistenceIssue: ScriptStoreIssue?
+    @Published private(set) var unsavedRecording: Script?
+    @Published var recordingNotice: RecordingNotice?
+    /// Immutable session snapshot, independent of the selection in the sidebar.
+    @Published private(set) var activePlaybackScript: Script?
     @Published var hotKeyRegistrationIssues: [HotKeyRegistrationIssue] = []
     @Published var scriptHotKeyRegistrationIssues: [ScriptHotKeyRegistrationIssue] = []
     @Published var appearancePreference: AppAppearancePreference {
@@ -77,7 +81,7 @@ final class AppState: ObservableObject {
     }
 
     var canStartRecording: Bool {
-        phase == .idle
+        phase == .idle && unsavedRecording == nil
     }
 
     var recordingStopShortcut: RecordingStopShortcut {
@@ -206,6 +210,14 @@ final class AppState: ObservableObject {
     func toggleRecord(source: RecordingStopSource) {
         switch phase {
         case .idle:
+            guard unsavedRecording == nil else {
+                recordingNotice = RecordingNotice(
+                    title: "有尚未保存的录制",
+                    message: "请先重试保存、另存或明确丢弃当前录制，再开始新的录制。"
+                )
+                application.restoreClicker()
+                return
+            }
             startCountdown()
         case .countdown:
             recordingCountdownGeneration += 1
@@ -237,6 +249,7 @@ final class AppState: ObservableObject {
             refreshPermission()
             return
         }
+        recordingNotice = nil
         recordingCountdownGeneration += 1
         let generation = recordingCountdownGeneration
         let target = externalApplicationTracker.mostRecentExternalBundleIdentifier
@@ -264,6 +277,10 @@ final class AppState: ObservableObject {
                     self.phase = .idle
                     self.recordingTargetBundleIdentifier = nil
                     self.refreshPermission()
+                    self.recordingNotice = RecordingNotice(
+                        title: "无法开始录制",
+                        message: "无法建立输入监听。请检查辅助功能和输入监控权限，然后重试；本次没有开始录制。"
+                    )
                     self.application.restoreClicker()
                 }
             }
@@ -274,7 +291,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func finishRecording(source: RecordingStopSource) {
+    private func finishRecording(source: RecordingStopSource, saveImmediately: Bool = true) {
         closeRecordingIndicator()
         let capture = recorder.stop()
         phase = .idle
@@ -285,14 +302,75 @@ final class AppState: ObservableObject {
             targetBundleIdentifier: recordingTargetBundleIdentifier
         )
         recordingTargetBundleIdentifier = nil
+        if let interruption = script.recordingInterruption {
+            recordingNotice = RecordingNotice(title: "录制意外中断", message: interruption)
+        }
         guard !script.blocks.isEmpty || script.trailingDelay > 0 else {
             application.restoreClicker()
             return
         }
-        if create(script) {
-            selectedScriptID = script.id
-        }
+        // Retain the only copy before attempting persistence. Dismissing an error cannot lose it.
+        unsavedRecording = script
+        if saveImmediately { retrySavingRecording() }
         application.restoreClicker()
+    }
+
+    @discardableResult
+    func retrySavingRecording() -> Bool {
+        guard let script = unsavedRecording, phase == .idle else { return false }
+        guard create(script) else { return false }
+        selectedScriptID = script.id
+        unsavedRecording = nil
+        return true
+    }
+
+    @discardableResult
+    func exportUnsavedRecording(to url: URL) -> Bool {
+        guard let script = unsavedRecording, phase == .idle else { return false }
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .millisecondsSince1970
+            try encoder.encode(script).write(to: url, options: .atomic)
+            unsavedRecording = nil
+            persistenceIssue = nil
+            return true
+        } catch {
+            persistenceIssue = makePersistenceIssue(from: error, fallback: .temporaryWrite)
+            return false
+        }
+    }
+
+    /// Called only after an explicit discard decision in the recovery UI or termination dialog.
+    func discardUnsavedRecording() {
+        guard phase == .idle else { return }
+        unsavedRecording = nil
+        persistenceIssue = nil
+    }
+
+    /// Freeze capture before presenting a quit dialog, so the dialog itself is not recorded.
+    func stageRecordingForTermination(cutoff: RecordingCutoff? = nil) {
+        stopPlaybackIfNeeded()
+        if phase == .recording {
+            let source = cutoff.map { RecordingStopSource.menubar(cutoff: $0) } ?? .ui
+            finishRecording(source: source, saveImmediately: false)
+        }
+    }
+
+    /// A failed save always cancels termination and preserves the exact draft for retry/export.
+    func prepareForTermination(_ decision: RecordingTerminationDecision = .save) -> Bool {
+        stageRecordingForTermination()
+        if unsavedRecording != nil {
+            switch decision {
+            case .cancel: return false
+            case .save:
+                guard retrySavingRecording() else { return false }
+            case .discard: discardUnsavedRecording()
+            }
+        }
+        if case .countdown = phase { toggleRecord(source: .ui) }
+        stopPlaybackIfNeeded()
+        return true
     }
 
     private func closeRecordingIndicator() {
@@ -354,6 +432,7 @@ final class AppState: ObservableObject {
         playbackGeneration += 1
         let generation = playbackGeneration
         playbackFocusGeneration = restoresClicker ? generation : nil
+        activePlaybackScript = script
         phase = .playing(iteration: 1, currentBlockID: nil)
         playbackEngine.play(script: script) { [weak self] iteration in
             Task { @MainActor in
@@ -376,6 +455,7 @@ final class AppState: ObservableObject {
                       case .playing = self.phase else { return }
                 self.playbackGeneration += 1
                 self.phase = .idle
+                self.activePlaybackScript = nil
                 self.restorePlaybackFocus(ownedBy: generation)
             }
         }
@@ -387,6 +467,7 @@ final class AppState: ObservableObject {
         playbackGeneration += 1
         playbackEngine.stop()
         phase = .idle
+        activePlaybackScript = nil
         restorePlaybackFocus(ownedBy: generation)
     }
 

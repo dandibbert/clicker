@@ -10,6 +10,54 @@ public enum TimelineMutation {
         splicing(block, at: requestedIndex, in: blocks)
     }
 
+    /// Replace an edited value without moving its start. The original overlap
+    /// cohort (including holds from earlier blocks) keeps its absolute starts.
+    /// Only the following non-overlapping suffix follows the change in that
+    /// cohort's end; its gaps and internal overlaps remain intact.
+    public static func replacing(
+        at index: Int,
+        with replacement: ActionBlock,
+        in blocks: [ActionBlock]
+    ) -> [ActionBlock] {
+        guard blocks.indices.contains(index) else { return blocks }
+        let original = blocks[index]
+        let updated = replacement.withStartOffset(original.startOffset)
+        guard updated != original else { return blocks }
+
+        var result = blocks
+        result[index] = updated
+        var suffixIndex = index + 1
+        var oldCohortEnd = blocks[...index].map(\.timelineEndOffset).max() ?? 0
+        // Equality is a sequential boundary, not an overlap. In particular a
+        // zero-duration wait can grow and push a following action at its start.
+        while suffixIndex < blocks.count,
+              blocks[suffixIndex].startOffset < oldCohortEnd {
+            oldCohortEnd = max(oldCohortEnd, blocks[suffixIndex].timelineEndOffset)
+            suffixIndex += 1
+        }
+        let newCohortEnd = result[..<suffixIndex].map(\.timelineEndOffset).max() ?? 0
+        let suffix = translated(
+            Array(result[suffixIndex...]),
+            from: oldCohortEnd,
+            to: newCohortEnd
+        )
+        result.replaceSubrange(suffixIndex..., with: suffix)
+
+        let replacedText: Bool
+        if case .typeText(let oldText) = original,
+           case .typeText(let newText) = updated {
+            replacedText = oldText.text != newText.text
+        } else {
+            replacedText = false
+        }
+        // Duration-only changes retain captured equal-time ordering. New text
+        // atoms need fresh ordinals on both sides of the edit's splice boundary.
+        if replacedText || original.atomOrdinals != updated.atomOrdinals {
+            result = rebasedReplacement(at: index, original: original, in: result)
+        }
+        return result
+    }
+
     public static func deleting(
         at requestedIndex: Int,
         in blocks: [ActionBlock]
@@ -21,7 +69,7 @@ public enum TimelineMutation {
         guard let suffixAnchor = suffix.first?.startOffset else { return prefix }
 
         let prefixEnd = prefix.map(\.timelineEndOffset).max() ?? 0
-        let translatedSuffix = translated(suffix, by: prefixEnd - suffixAnchor)
+        let translatedSuffix = translated(suffix, from: suffixAnchor, to: prefixEnd)
         return prefix + rebasedGroup(translatedSuffix, avoiding: prefix)
     }
 
@@ -93,13 +141,53 @@ public enum TimelineMutation {
         guard let suffixAnchor = suffix.first?.startOffset else {
             return prefix + [inserted]
         }
-        let shift = inserted.timelineEndOffset - suffixAnchor
-        let translatedSuffix = translated(suffix, by: shift)
+        let translatedSuffix = translated(
+            suffix,
+            from: suffixAnchor,
+            to: inserted.timelineEndOffset
+        )
         let rebasedSuffix = rebasedGroup(
             translatedSuffix,
             avoiding: prefix + [inserted]
         )
         return prefix + [inserted] + rebasedSuffix
+    }
+
+    /// Retained events must share one mapping across both sides of an edit.
+    /// A held key's initial press and later autorepeat can live in different
+    /// blocks but still refer to the same captured keyUp ordinal.
+    private static func rebasedReplacement(
+        at index: Int,
+        original: ActionBlock,
+        in blocks: [ActionBlock]
+    ) -> [ActionBlock] {
+        let retained = blocks.enumerated().filter { $0.offset != index }.map(\.element)
+        let retainedOrdinals = Array(Set(retained.flatMap(\.atomOrdinals))).sorted()
+        let newOrdinals = Array(Set(blocks[index].atomOrdinals)).sorted()
+        let insertionAnchor = original.atomOrdinals.min()
+            ?? blocks[(index + 1)...].flatMap(\.atomOrdinals).min()
+        let insertionIndex = insertionAnchor.flatMap { anchor in
+            retainedOrdinals.firstIndex { $0 >= anchor }
+        } ?? retainedOrdinals.count
+        var retainedMapping: [Int: Int] = [:]
+        var replacementMapping: [Int: Int] = [:]
+        var nextOrdinal = 0
+
+        for ordinal in retainedOrdinals[..<insertionIndex] {
+            retainedMapping[ordinal] = nextOrdinal
+            nextOrdinal = TimelineValue.nextOrdinal(after: nextOrdinal)
+        }
+        for ordinal in newOrdinals {
+            replacementMapping[ordinal] = nextOrdinal
+            nextOrdinal = TimelineValue.nextOrdinal(after: nextOrdinal)
+        }
+        for ordinal in retainedOrdinals[insertionIndex...] {
+            retainedMapping[ordinal] = nextOrdinal
+            nextOrdinal = TimelineValue.nextOrdinal(after: nextOrdinal)
+        }
+        return blocks.enumerated().map { blockIndex, block in
+            block.rebasingAtomOrdinals(blockIndex == index ? replacementMapping : retainedMapping)
+        }
     }
 
     private static func rebasedGroup(
@@ -139,17 +227,32 @@ public enum TimelineMutation {
 
     private static func translated(
         _ blocks: [ActionBlock],
-        by delta: TimeInterval
+        from oldAnchor: TimeInterval,
+        to newAnchor: TimeInterval
     ) -> [ActionBlock] {
-        guard delta.isFinite, delta != 0 else { return blocks }
+        guard oldAnchor != newAnchor else { return blocks }
+        var translatedEnds: [TimeInterval: TimeInterval] = [oldAnchor: newAnchor]
         return blocks.map { block in
+            let relativeStart = block.startOffset - oldAnchor
             let translatedStart: TimeInterval
-            if delta > 0 {
-                translatedStart = TimelineValue.adding(block.startOffset, delta)
+            if let joinedEnd = translatedEnds[block.startOffset] {
+                translatedStart = joinedEnd
+            } else if relativeStart >= 0 {
+                // Anchoring the boundary directly avoids a rounded
+                // oldStart + (newEnd - oldEnd) ordering a new press before release.
+                translatedStart = TimelineValue.adding(newAnchor, relativeStart)
             } else {
-                translatedStart = max(0, block.startOffset - TimelineValue.time(-delta))
+                translatedStart = max(0, newAnchor - TimelineValue.time(-relativeStart))
             }
-            return block.withStartOffset(translatedStart)
+            let translatedBlock = block.withStartOffset(translatedStart)
+            // Preserve joins inside the suffix too, even after repeated moves.
+            // Overlapping blocks with the same old end can round to different
+            // new ends. A following press must wait for the latest release.
+            translatedEnds[block.timelineEndOffset] = max(
+                translatedEnds[block.timelineEndOffset] ?? 0,
+                translatedBlock.timelineEndOffset
+            )
+            return translatedBlock
         }
     }
 }

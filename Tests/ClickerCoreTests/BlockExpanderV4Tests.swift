@@ -104,8 +104,8 @@ final class BlockExpanderV4Tests: XCTestCase {
         XCTAssertEqual(plan.steps.map(\.ordinal), [0, 1, 2, 3])
         XCTAssertEqual(plan.steps.map(\.action), [
             .keyDown(keyCode: 0, flags: 0, chars: "a"),
-            .keyDown(keyCode: 0, flags: 0, chars: "a"),
-            .keyDown(keyCode: 0, flags: 0, chars: "a"),
+            .keyDown(keyCode: 0, flags: 0, chars: "a", isRepeat: true),
+            .keyDown(keyCode: 0, flags: 0, chars: "a", isRepeat: true),
             .keyUp(keyCode: 0, flags: 0),
         ])
     }
@@ -126,9 +126,32 @@ final class BlockExpanderV4Tests: XCTestCase {
 
         XCTAssertEqual(plan.steps.map(\.t), [2, 2.3])
         XCTAssertEqual(plan.steps.map(\.action), [
-            .keyDown(keyCode: 8, flags: 1, chars: ""),
+            .keyDown(keyCode: 8, flags: 1, chars: "", isRepeat: true),
             .keyUp(keyCode: 8, flags: 2),
         ])
+    }
+
+    func testGeneratedTextDoesNotInheritDiscardedRecordingAutorepeat() {
+        let block = TypeTextBlock(
+            text: "new🙂",
+            keystrokes: [Keystroke(
+                t: 0,
+                keyCode: 8,
+                chars: "c",
+                upT: 0.3,
+                isRepeat: true,
+                downOrdinal: 1,
+                upOrdinal: 2
+            )]
+        )
+
+        let plan = BlockExpander.plan(blocks: [.typeText(block)])
+        let repeatFlags = plan.steps.compactMap { step -> Bool? in
+            guard case .keyDown(_, _, _, let isRepeat) = step.action else { return nil }
+            return isRepeat
+        }
+
+        XCTAssertEqual(repeatFlags, [false, false, false, false])
     }
 
     func testEditedTextWithMaximumLegacyOrdinalDoesNotOverflow() {

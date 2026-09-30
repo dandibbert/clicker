@@ -16,7 +16,7 @@ final class PressedInputTrackerTests: XCTestCase {
         var tracker = PressedInputTracker()
 
         tracker.observe(.keyDown(keyCode: 4, flags: 11, chars: "h"))
-        tracker.observe(.keyDown(keyCode: 4, flags: 12, chars: "h"))
+        tracker.observe(.keyDown(keyCode: 4, flags: 12, chars: "h", isRepeat: true))
 
         XCTAssertEqual(tracker.releaseActions(), [
             .keyUp(keyCode: 4, flags: 12),

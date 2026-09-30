@@ -28,6 +28,19 @@ final class MenuBarRecordingCutoffControllerTests: XCTestCase {
         XCTAssertEqual(stoppedAt, [expected])
     }
 
+    func testQuitCanConsumeTheCutoffWithoutSavingAndOnlyOnce() {
+        let expected = RecordingCutoff(eventCount: 2, duration: 1)
+        var stops = 0
+        let controller = MenuBarRecordingCutoffController(
+            establishCutoff: { _ in expected }, stopRecording: { _ in stops += 1 }
+        )
+        controller.menuWillOpen(at: 5_000)
+        XCTAssertEqual(controller.takePendingCutoff(), expected)
+        XCTAssertNil(controller.takePendingCutoff())
+        controller.stopSelected()
+        XCTAssertEqual(stops, 0)
+    }
+
     func testMenuOpenKeepsCutoffEstablishedWhenPointerEnteredStatusItem() {
         let expected = RecordingCutoff(eventCount: 2, duration: 1)
         var establishedAt: [CGEventTimestamp] = []

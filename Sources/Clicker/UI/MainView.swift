@@ -31,6 +31,31 @@ struct MainView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                if let notice = state.recordingNotice {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(notice.title).font(.headline)
+                            Text(notice.message).font(.caption)
+                        }
+                        Spacer()
+                        Button("关闭提示") { state.recordingNotice = nil }
+                    }
+                    .padding(12)
+                    .background(ClickerVisualTheme.controlSurface)
+                }
+                RecordingRecoveryView()
+                PlaybackSessionBanner()
+                if let interruption = state.selectedScript?.recordingInterruption {
+                    Label("部分录制：\(interruption)", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(ClickerVisualTheme.controlSurface)
+                }
+            }
+        }
         .toolbar {
             ToolbarItem {
                 Button {
