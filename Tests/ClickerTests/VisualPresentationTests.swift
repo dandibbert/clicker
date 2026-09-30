@@ -605,9 +605,7 @@ final class VisualPresentationTests: XCTestCase {
         hosting.frame = CGRect(origin: .zero, size: size)
         hosting.layoutSubtreeIfNeeded()
         hosting.displayIfNeeded()
-        let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
-        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-        return bitmap
+        return try retinaBitmap(for: hosting)
     }
 
     private func pixelFraction(

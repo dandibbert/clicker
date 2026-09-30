@@ -296,16 +296,12 @@ extension FinalVisualConsumerTests {
         hosting.frame = CGRect(origin: .zero, size: size)
         hosting.layoutSubtreeIfNeeded()
         hosting.displayIfNeeded()
-        let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
-        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-        return bitmap
+        return try retinaBitmap(for: hosting)
     }
 
     @MainActor
     func bitmap(for hosting: NSHostingView<some View>) throws -> NSBitmapImageRep {
-        let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
-        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-        return bitmap
+        try retinaBitmap(for: hosting)
     }
 
     func recognizedTextFrames(

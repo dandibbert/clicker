@@ -107,7 +107,7 @@ final class EditorialMainWindowTests: XCTestCase {
         )
         let headerMetadata = try XCTUnwrap(
             recognizedText.first { match in
-                let normalized = match.text.replacingOccurrences(of: " ", with: "")
+                let normalized = normalizedVisualText(match.text)
                 return normalized.contains("1个动作")
                     && normalized.contains("约1.0秒")
                     && headerBounds.contains(match.frame)
@@ -409,9 +409,7 @@ final class EditorialMainWindowTests: XCTestCase {
 
     @MainActor
     private func bitmap(for hosting: NSView) throws -> NSBitmapImageRep {
-        let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
-        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-        return bitmap
+        try retinaBitmap(for: hosting)
     }
 
     private func recognizedTextFrames(
