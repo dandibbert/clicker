@@ -1,5 +1,16 @@
 .build/
 dist/
 .worktrees/
+.omc/
+# Local agent handoff notes contain machine/session paths.
+docs/superpowers/clicker-handoff.md
+# Local credentials and signing material must never be published.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
 .DS_Store
 *.xcodeproj

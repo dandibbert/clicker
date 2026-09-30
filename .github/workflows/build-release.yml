@@ -1,0 +1,113 @@
+name: Build and Release
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Never cancel a tag release halfway through publishing.
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  build:
+    name: Test and package (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+      CLICKER_BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Verify toolchain and release version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          test "$(uname -m)" = "$EXPECTED_ARCH"
+          swift --version
+          version=1.0.0
+          if [[ "$REF_TYPE" == tag ]]; then
+            if [[ ! "$REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Release tags must have the form vX.Y.Z" >&2
+              exit 1
+            fi
+            version="${REF_NAME#v}"
+          fi
+          echo "CLICKER_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Check shell scripts
+        run: bash -n scripts/build-app.sh scripts/build-icon.sh scripts/package-release.sh
+      - name: Test packaging contracts
+        run: python3 -B -m unittest discover -s Tests/Packaging -v
+      - name: Run Swift tests
+        run: swift test
+      - name: Build release archive
+        run: ./scripts/package-release.sh
+      - name: Verify packaged binary and checksum
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          test "$(lipo -archs dist/Clicker.app/Contents/MacOS/Clicker)" = "$EXPECTED_ARCH"
+          codesign --verify --deep --strict dist/Clicker.app
+          cd dist
+          shasum -a 256 -c ./*.sha256
+      - name: Upload archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: Clicker-macos-${{ matrix.arch }}
+          path: |
+            dist/Clicker-*-macos-${{ matrix.arch }}.zip
+            dist/Clicker-*-macos-${{ matrix.arch }}.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download both architecture archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: Clicker-macos-*
+          path: release-assets
+          merge-multiple: true
+      - name: Validate assets and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd release-assets
+          version="${RELEASE_TAG#v}"
+          for arch in arm64 x86_64; do
+            test -s "Clicker-${version}-macos-${arch}.zip"
+            test -s "Clicker-${version}-macos-${arch}.zip.sha256"
+          done
+          shasum -a 256 -c ./*.sha256
+          # A rerun updates assets instead of failing on an existing release.
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag \
+              --title "Clicker $RELEASE_TAG" --generate-notes --draft
+          fi
+          gh release upload "$RELEASE_TAG" ./*.zip ./*.sha256 --clobber
+          gh release edit "$RELEASE_TAG" --draft=false
