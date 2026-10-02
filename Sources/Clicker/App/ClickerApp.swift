@@ -13,6 +13,7 @@ struct ClickerApp: App {
     init() {
         let smoke = StartupSmokeTest(arguments: ProcessInfo.processInfo.arguments)
         smokeTest = smoke
+        smoke?.beginStartupMonitoring()
         let s: AppState
         if let smoke {
             // Never load real scripts or register global input hooks in installer QA.
@@ -36,7 +37,7 @@ struct ClickerApp: App {
                 .onAppear {
                     appDelegate.state = state
                     if let smokeTest {
-                        smokeTest.reportVisibleWindowAndExit()
+                        smokeTest.mainViewDidAppear()
                     } else {
                         applicationServices?.start()
                     }
@@ -59,6 +60,7 @@ final class StartupSmokeTest {
     let storeDirectory: URL
     let reportURL: URL?
     private var hasStarted = false
+    private var mainViewAppeared = false
 
     init?(arguments: [String]) {
         guard arguments.contains("--smoke-test") else { return nil }
@@ -73,13 +75,25 @@ final class StartupSmokeTest {
             .appendingPathComponent("Clicker-Smoke-\(UUID().uuidString)", isDirectory: true)
     }
 
-    func reportVisibleWindowAndExit() {
+    func beginStartupMonitoring() {
         guard !hasStarted else { return }
         hasStarted = true
+        // This marker and watchdog do not depend on SwiftUI reaching onAppear.
+        // They diagnose LaunchServices/bootstrap failures rather than hanging CI.
+        if let reportURL {
+            let startup: [String: Any] = [
+                "stage": "app-initialized",
+                "processIdentifier": ProcessInfo.processInfo.processIdentifier,
+                "bundlePath": Bundle.main.bundleURL.path,
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: startup, options: [.sortedKeys]) {
+                try? data.write(to: reportURL.appendingPathExtension("startup.json"), options: .atomic)
+            }
+        }
         Task { @MainActor in
             let deadline = Date().addingTimeInterval(15)
             while Date() < deadline {
-                if let window = NSApp.windows.first(where: {
+                if mainViewAppeared, let window = NSApplication.shared.windows.first(where: {
                     $0.isVisible && $0.title == "Clicker" && !($0 is NSPanel)
                 }), let content = window.contentView,
                    content.bounds.width >= 760, content.bounds.height >= 480 {
@@ -93,17 +107,28 @@ final class StartupSmokeTest {
         }
     }
 
+    func mainViewDidAppear() {
+        mainViewAppeared = true
+    }
+
     private func finish(window: NSWindow?) -> Never {
         let report: [String: Any] = [
             "status": window == nil ? "failed" : "passed",
             "safeMode": true,
             "globalInputServicesStarted": false,
+            "mainViewAppeared": mainViewAppeared,
+            "processIdentifier": ProcessInfo.processInfo.processIdentifier,
             "bundleIdentifier": Bundle.main.bundleIdentifier ?? "",
             "bundlePath": Bundle.main.bundleURL.path,
             "sourceCommit": Bundle.main.object(forInfoDictionaryKey: "ClickerSourceCommit") as? String ?? "unknown",
             "windowTitle": window?.title ?? "",
             "contentWidth": window?.contentView?.bounds.width ?? 0,
             "contentHeight": window?.contentView?.bounds.height ?? 0,
+            "observedWindows": NSApplication.shared.windows.map {
+                ["title": $0.title, "visible": $0.isVisible,
+                 "width": $0.contentView?.bounds.width ?? 0,
+                 "height": $0.contentView?.bounds.height ?? 0] as [String: Any]
+            },
         ]
         do {
             guard let reportURL else {

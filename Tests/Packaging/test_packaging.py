@@ -71,7 +71,7 @@ esac
         portable_tools = self.tools / "fake-macos-tools.py"
         shutil.copyfile(ROOT / "Tests/Packaging/fake_macos_tools.py", portable_tools)
         portable_tools.chmod(0o755)
-        for name in ("ditto", "plutil", "hdiutil"):
+        for name in ("ditto", "plutil", "hdiutil", "open"):
             (self.tools / name).symlink_to(portable_tools.name)
 
     def run_script(self, name, *args, **env):
@@ -168,7 +168,7 @@ app = Path(__file__).resolve().parents[2]
 info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
 report = Path(sys.argv[sys.argv.index("--smoke-report") + 1])
 report.write_text(json.dumps({"status": "passed", "safeMode": True,
-    "globalInputServicesStarted": False,
+    "globalInputServicesStarted": False, "mainViewAppeared": True,
     "bundleIdentifier": info["CFBundleIdentifier"], "bundlePath": str(app),
     "sourceCommit": info["ClickerSourceCommit"], "windowTitle": "Clicker",
     "contentWidth": 760, "contentHeight": 480}))
@@ -182,6 +182,7 @@ report.write_text(json.dumps({"status": "passed", "safeMode": True,
             self.assertTrue(report["safeMode"])
             self.assertIn(f"{format}-install", report["bundlePath"])
         self.assertIn("hdiutil attach -nobrowse -readonly", self.log.read_text())
+        self.assertEqual(self.log.read_text().count("open -n -F -W"), 2)
 
     def test_default_version_and_custom_signing_identity_with_build_arguments(self):
         result = self.run_script(

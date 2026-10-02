@@ -10,6 +10,7 @@ from pathlib import Path
 import plistlib
 import shutil
 import stat
+import subprocess
 import sys
 import zipfile
 
@@ -66,5 +67,9 @@ elif name == "hdiutil":
         extract(args[-1], args[args.index("-mountpoint") + 1])
     elif args[0] != "detach":
         raise AssertionError(f"Unexpected hdiutil command: {args}")
+elif name == "open":
+    assert args[:3] == ["-n", "-F", "-W"]
+    assert args[4] == "--args"
+    sys.exit(subprocess.call([str(Path(args[3]) / "Contents/MacOS/Clicker"), *args[5:]]))
 else:
     raise AssertionError(f"Unexpected tool: {name}")
