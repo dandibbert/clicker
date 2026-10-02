@@ -310,6 +310,14 @@ final class HostedLibraryHierarchyFixture {
         let views = descendants(of: root).filter { !$0.isHiddenOrHasHiddenAncestor }
         let minimumY = belowY ?? -CGFloat.infinity
         let nativeButtons = views.compactMap { $0 as? NSButton }.filter { rect(of: $0).minY >= minimumY }
+        func nativeButtonContainsLabel(_ button: NSButton, _ label: CGRect) -> Bool {
+            let bounds = rect(of: button)
+            // Intel Vision can place glyph bounds 1.33pt outside a native 52pt
+            // Button. Tolerate 2pt only for OCR association; retain the exact
+            // control bounds and require the label center inside its hit target.
+            return bounds.contains(CGPoint(x: label.midX, y: label.midY))
+                && bounds.insetBy(dx: -2, dy: -2).contains(label)
+        }
         let requestedName = normalizedVisualText(name)
         let namedButtons = nativeButtons.filter { button in
             [button.accessibilityLabel() ?? "", button.accessibilityTitle() ?? "", button.title,
@@ -329,7 +337,7 @@ final class HostedLibraryHierarchyFixture {
         // Vision sometimes groups adjacent row copy with a Button label. Ask
         // Vision for that fixed label's own substring bounds, not the whole row.
         var labels = try recognizedLabelFrames(displayedName, in: bitmap, size: root.bounds.size).filter { label in
-            nativeButtons.contains { rect(of: $0).insetBy(dx: -1, dy: -1).contains(label) }
+            nativeButtons.contains { nativeButtonContainsLabel($0, label) }
                 || customBounds.contains { $0.insetBy(dx: -1, dy: -1).contains(label) }
         }
         if root === host && !state.scripts.isEmpty && ["开始录制", "开始回放"].contains(name) {
@@ -349,7 +357,7 @@ final class HostedLibraryHierarchyFixture {
         // Native bordered Buttons can have empty titles because SwiftUI draws
         // their labels separately. Match the rendered label to their real bounds.
         let native = nativeButtons.filter {
-            rect(of: $0).insetBy(dx: -1, dy: -1).contains(label)
+            nativeButtonContainsLabel($0, label)
         }.min { rect(of: $0).width * rect(of: $0).height < rect(of: $1).width * rect(of: $1).height }
         if let native {
             return LibraryRenderedAction(root: root, bounds: rect(of: native), isEnabled: native.isEnabled, nativeButton: native)
