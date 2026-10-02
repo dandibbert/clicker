@@ -407,12 +407,9 @@ extension FinalVisualConsumerTests {
                 width: 6,
                 height: secondary.height - 4
             )
-            let secondaryPadding = CGRect(
-                x: secondaryPaddingInView.minX,
-                y: size.height - secondaryPaddingInView.maxY,
-                width: secondaryPaddingInView.width,
-                height: secondaryPaddingInView.height
-            )
+            // Vision's secondary text frame is already in top-left bitmap
+            // coordinates. Do not invert it a second time using fixture size.
+            let secondaryPadding = secondaryPaddingInView
             XCTAssertLessThan(
                 renderedPixelFraction(
                     in: bitmap,
