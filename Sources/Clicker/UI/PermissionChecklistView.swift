@@ -13,6 +13,15 @@ struct PermissionChecklistPresentation: Equatable {
 
 struct PermissionChecklistView: View {
     @EnvironmentObject private var state: AppState
+    var onRequestAccessibility: () -> Void = {
+        Permissions.requestAccessibility()
+        Permissions.openAccessibilitySettings()
+    }
+    var onRequestInputMonitoring: () -> Void = {
+        _ = CGRequestListenEventAccess()
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") else { return }
+        NSWorkspace.shared.open(url)
+    }
 
     private var presentation: PermissionChecklistPresentation {
         PermissionChecklistPresentation(
@@ -32,16 +41,13 @@ struct PermissionChecklistView: View {
                 title: "辅助功能",
                 detail: "发送鼠标与键盘操作",
                 granted: presentation.hasAccessibility,
-                action: {
-                    Permissions.requestAccessibility()
-                    Permissions.openAccessibilitySettings()
-                }
+                action: onRequestAccessibility
             )
             permissionRow(
                 title: "输入监控",
                 detail: "录制输入，并监听停止操作",
                 granted: presentation.hasInputMonitoring,
-                action: openInputMonitoringSettings
+                action: onRequestInputMonitoring
             )
             Divider()
             HStack {
@@ -85,11 +91,5 @@ struct PermissionChecklistView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(title)，\(granted ? "已授权" : "未授权")")
-    }
-
-    private func openInputMonitoringSettings() {
-        _ = CGRequestListenEventAccess()
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") else { return }
-        NSWorkspace.shared.open(url)
     }
 }

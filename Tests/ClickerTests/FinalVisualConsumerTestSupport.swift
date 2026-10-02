@@ -239,13 +239,17 @@ extension FinalVisualConsumerTests {
         defer { fixture.tearDown() }
         let form = try XCTUnwrap(descendants(of: fixture.hosting).compactMap { $0 as? NSScrollView }.first)
         let bitmap = try bitmap(for: fixture.hosting)
-        // Once the expanded editor scrolls, the scroll view's outer right edge
-        // may be entirely occupied by a native NSScroller (an excluded control).
-        // Measure the actual clip/content edges, not a zero-sample scrollbar rail.
+        // Overlay scrollers can cover the clip view's edge as well as the scroll
+        // view's edge. Keep the native controls visible and account for their
+        // exact rendered footprint rather than treating no samples as black.
         let formBounds = fixture.hosting.convert(form.contentView.bounds, from: form.contentView)
-        let subcontrolBounds = descendants(of: form)
+        let controls = descendants(of: form)
             .compactMap { $0 as? NSControl }
+            .filter { !$0.isHiddenOrHasHiddenAncestor && $0.alphaValue > 0 && !$0.visibleRect.isEmpty }
+        let subcontrolBounds = controls
             .map { fixture.hosting.convert($0.bounds, from: $0).insetBy(dx: -2, dy: -2) }
+        let scrollerBounds = controls.compactMap { $0 as? NSScroller }
+            .map { fixture.hosting.convert($0.visibleRect, from: $0) }
         let formEdges = [
             CGRect(x: formBounds.minX + 2, y: formBounds.minY + 2, width: formBounds.width - 4, height: 4),
             CGRect(x: formBounds.minX + 2, y: formBounds.maxY - 6, width: formBounds.width - 4, height: 4),
@@ -255,19 +259,65 @@ extension FinalVisualConsumerTests {
         XCTAssertFalse(form.drawsBackground, "The real editor scroll content must remain transparent")
         XCTAssertFalse(form.contentView.drawsBackground, "The real editor clip view must remain transparent")
         let window = ClickerVisualTheme.resolvedColor(for: .windowBackground, appearance: appearance)
-        for edge in formEdges {
+        let mode = scheme == .dark ? "dark" : "light"
+        var diagnostics = [
+            "Editor form \(mode): scroll=\(fixture.hosting.convert(form.bounds, from: form)) clip=\(formBounds) scrollerStyle=\(form.scrollerStyle.rawValue)",
+            "document=\(form.documentView.map { fixture.hosting.convert($0.bounds, from: $0).description } ?? "nil") scrollers=\(scrollerBounds)",
+        ]
+        diagnostics += controls.map {
+            "control=\(type(of: $0)) bounds=\(fixture.hosting.convert($0.bounds, from: $0)) visible=\(fixture.hosting.convert($0.visibleRect, from: $0))"
+        }
+        let scaleX = CGFloat(bitmap.pixelsWide) / size.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / size.height
+        var measuredEdges = 0
+        var fullyScrollerCoveredEdges = 0
+        for (index, edge) in formEdges.enumerated() {
+            let minX = max(0, Int((edge.minX * scaleX).rounded(.down)))
+            let maxX = min(bitmap.pixelsWide, Int((edge.maxX * scaleX).rounded(.up)))
+            let minY = max(0, Int((edge.minY * scaleY).rounded(.down)))
+            let maxY = min(bitmap.pixelsHigh, Int((edge.maxY * scaleY).rounded(.up)))
+            var total = 0
+            var sampled = 0
+            var scrollerCovered = 0
+            if minX < maxX, minY < maxY {
+                for y in minY ..< maxY {
+                    for x in minX ..< maxX {
+                        let point = CGPoint(x: CGFloat(x) / scaleX, y: CGFloat(y) / scaleY)
+                        total += 1
+                        if !subcontrolBounds.contains(where: { $0.contains(point) }) { sampled += 1 }
+                        if scrollerBounds.contains(where: { $0.contains(point) }) { scrollerCovered += 1 }
+                    }
+                }
+            }
+            let fraction = renderedPixelFraction(in: bitmap, logicalSize: size, region: edge,
+                near: window, tolerance: 0.04, excluding: subcontrolBounds)
+            diagnostics.append("edge[\(index)]=\(edge) total=\(total) sampled=\(sampled) excluded=\(total - sampled) nativeScroller=\(scrollerCovered) matching=\(fraction)")
+            XCTAssertGreaterThan(total, 0, "Every requested margin must lie inside the bitmap")
+            if sampled == 0, total > 0, scrollerCovered == total {
+                // There are no background pixels under this actual native
+                // control. Do not move the sample into the grouped surface.
+                // The other three original margins must still be measured.
+                fullyScrollerCoveredEdges += 1
+                continue
+            }
+            XCTAssertGreaterThan(sampled, 0, "An empty color sample is allowed only when every pixel belongs to a visible NSScroller: \(edge)")
+            measuredEdges += 1
             XCTAssertGreaterThan(
-                renderedPixelFraction(
-                    in: bitmap,
-                    logicalSize: size,
-                    region: edge,
-                    near: window,
-                    tolerance: 0.04,
-                    excluding: subcontrolBounds
-                ),
+                fraction,
                 0.85,
                 "Editor form edge outside real subcontrols must use windowBackground: \(edge)"
             )
+        }
+        XCTAssertGreaterThanOrEqual(measuredEdges, 3, "Native scrollbars cannot exempt most of the form's background margins")
+        XCTAssertEqual(measuredEdges + fullyScrollerCoveredEdges, formEdges.count)
+        let report = diagnostics.joined(separator: "\n")
+        print(report)
+        if let destination = ProcessInfo.processInfo.environment["CLICKER_SNAPSHOT_DIR"] {
+            let directory = URL(fileURLWithPath: destination, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: directory.appendingPathComponent("\(mode)-editor-form-380x320.png"))
+            try report.write(to: directory.appendingPathComponent("\(mode)-editor-form-diagnostics.txt"), atomically: true, encoding: .utf8)
         }
     }
 
@@ -284,8 +334,13 @@ extension FinalVisualConsumerTests {
 
         for fixture in [(NSAppearance.Name.aqua, ColorScheme.light), (.darkAqua, .dark)] {
             let appearance = try XCTUnwrap(NSAppearance(named: fixture.0))
+            var accessibilityRequests = 0
+            var inputMonitoringRequests = 0
             let hosted = try HostedViewFixture(
-                rootView: AnyView(PermissionGuideView().environmentObject(state).environment(\.colorScheme, fixture.1)),
+                rootView: AnyView(PermissionChecklistView(
+                    onRequestAccessibility: { accessibilityRequests += 1 },
+                    onRequestInputMonitoring: { inputMonitoringRequests += 1 }
+                ).environmentObject(state).environment(\.colorScheme, fixture.1)),
                 appearance: appearance,
                 size: size
             )
@@ -296,10 +351,26 @@ extension FinalVisualConsumerTests {
             let fill = ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance)
             let buttons = (nativeControls(in: hosted.hosting) + descendants(of: hosted.hosting))
                 .compactMap { $0 as? NSButton }
+            var seenButtons = Set<ObjectIdentifier>()
+            let grantButtons = buttons.filter { button in
+                seenButtons.insert(ObjectIdentifier(button)).inserted
+                    && (normalizedVisualText(button.title).contains("授予权限")
+                        || nativeButton(recognizing: "授予权限", among: [button], recognizedText: text, in: hosted.hosting) != nil)
+            }
+            let controlInventory = buttons.map {
+                "\(type(of: $0)) title=\($0.title) label=\($0.accessibilityLabel() ?? "nil") frame=\(hosted.hosting.convert($0.bounds, from: $0))"
+            }.joined(separator: "\n")
+            XCTAssertEqual(grantButtons.count, 2, "Two distinct native grant buttons are required. Controls: \(controlInventory); OCR: \(text)")
+            var matchedGrants = Set<ObjectIdentifier>()
             for permission in ["辅助功能", "输入监控"] {
-                let grantButton = try XCTUnwrap(buttons.first {
-                    $0.accessibilityLabel() == "请求\(permission)权限并打开系统设置"
-                }, "Each missing permission must have its own native grant button")
+                let title = try XCTUnwrap(text.first { normalizedVisualText($0.text).hasPrefix(permission) }?.frame,
+                                         "Missing visible permission title \(permission): \(text)")
+                let grantButton = try XCTUnwrap(grantButtons.first { button in
+                    let frame = hosted.hosting.convert(button.bounds, from: button)
+                    return frame.midX > hosted.hosting.bounds.midX && frame.minY < title.maxY && frame.maxY > title.minY
+                }, "Each visible permission row must have its own native grant button. Controls: \(controlInventory); OCR: \(text)")
+                XCTAssertTrue(matchedGrants.insert(ObjectIdentifier(grantButton)).inserted,
+                              "One grant button cannot represent both permission rows")
                 XCTAssertTrue(grantButton.isBordered)
                 XCTAssertTrue(grantButton.isEnabled)
                 let frame = hosted.hosting.convert(grantButton.bounds, from: grantButton)
@@ -310,6 +381,10 @@ extension FinalVisualConsumerTests {
                     0.2,
                     "Granular permission actions must remain low-emphasis, not playback-style primary fills"
                 )
+                grantButton.performClick(nil)
+                XCTAssertEqual(accessibilityRequests, 1, "Only the Accessibility row may request Accessibility")
+                XCTAssertEqual(inputMonitoringRequests, permission == "输入监控" ? 1 : 0,
+                               "Only the Input Monitoring row may request Input Monitoring")
             }
             let secondaryButton = try XCTUnwrap(
                 nativeButton(
