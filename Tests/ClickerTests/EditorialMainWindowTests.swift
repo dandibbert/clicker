@@ -109,7 +109,7 @@ final class EditorialMainWindowTests: XCTestCase {
             recognizedText.first { match in
                 let normalized = normalizedVisualText(match.text)
                 return normalized.contains("1个动作")
-                    && normalized.contains("约1.0秒")
+                    && normalized.contains("约6.0秒")
                     && headerBounds.contains(match.frame)
             }?.frame,
             "The complete detail metadata must remain inside the measured header: \(recognizedText)"

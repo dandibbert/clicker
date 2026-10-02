@@ -14,9 +14,9 @@ The changes address the audit of commit `a0520d15d923bb00a448b974a4f44cf487f3442
 - Shortcut playback retains the sidebar selection. A separate session snapshot identifies the script actually running; unrelated selected scripts no longer show its progress or highlight. A banner can reveal or stop the running script.
 - A queued stop-monitor callback from a previous session cannot stop a newer session.
 
-## Existing focus policy
+## Focus policy after the subsequent native workflow update
 
-Target-application activation keeps the existing documented policy: try the saved target and the available fallback, then continue if neither activates. No focus-confirmation guarantee has been added. Check the frontmost application before playback, especially when the saved target has quit. Changing this policy to fail closed or adding an explicit current-application fallback remains a separate product decision.
+The original audit preserved the old saved-target/fallback policy. The [2026-10-02 native workflow update](NATIVE_WORKFLOW_IMPROVEMENTS.md) deliberately replaces that policy: playback is free across applications by default. An optional start-only switch verifies the chosen application is foreground before starting; a failed switch requires an explicit choice to continue freely or cancel. There is no ongoing application lock or implicit fallback activation.
 
 ## Regression coverage and manual acceptance
 

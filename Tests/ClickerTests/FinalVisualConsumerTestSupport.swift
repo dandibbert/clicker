@@ -28,7 +28,8 @@ final class HostedScriptDetailFixture {
         state = AppState(
             store: ScriptStore(directory: directory),
             application: VisualFixtureApplicationController(),
-            playbackEngine: VisualFixturePlaybackEngine()
+            playbackEngine: VisualFixturePlaybackEngine(),
+            playbackIndicator: SilentPlaybackIndicator()
         )
         state.hasPermission = true
         state.scripts = [script]
@@ -164,7 +165,7 @@ extension FinalVisualConsumerTests {
                 AnyView(ScriptDetailView().environmentObject(emptyScriptState).environment(\.colorScheme, scheme))
             }),
             ("block editor", ["点击", "取消", "保存"], { scheme in
-                AnyView(BlockEditorView(block: .click(ClickBlock(x: 80, y: 120, button: .left, clickCount: 1)), onSave: { _ in }).environment(\.colorScheme, scheme))
+                AnyView(BlockEditorView(block: .click(ClickBlock(x: 80, y: 120, button: .left, clickCount: 1)), onSave: { _ in true }).environment(\.colorScheme, scheme))
             }),
         ]
 
@@ -229,7 +230,7 @@ extension FinalVisualConsumerTests {
     @MainActor
     private func assertEditorFormRegion(appearance: NSAppearance, scheme: ColorScheme) throws {
         let size = CGSize(width: 380, height: 320)
-        let fixture = try HostedViewFixture(rootView: AnyView(ZStack { ClickerVisualTheme.controlSurface; BlockEditorView(block: .click(ClickBlock(x: 80, y: 120, button: .left, clickCount: 1)), onSave: { _ in }).environment(\.colorScheme, scheme) }.frame(width: size.width, height: size.height)), appearance: appearance, size: size)
+        let fixture = try HostedViewFixture(rootView: AnyView(ZStack { ClickerVisualTheme.controlSurface; BlockEditorView(block: .click(ClickBlock(x: 80, y: 120, button: .left, clickCount: 1)), onSave: { _ in true }).environment(\.colorScheme, scheme) }.frame(width: size.width, height: size.height)), appearance: appearance, size: size)
         defer { fixture.tearDown() }
         let form = try XCTUnwrap(descendants(of: fixture.hosting).compactMap { $0 as? NSScrollView }.first)
         let bitmap = try bitmap(for: fixture.hosting)

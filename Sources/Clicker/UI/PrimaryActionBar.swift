@@ -3,11 +3,15 @@ import SwiftUI
 struct PrimaryActionBar: View {
     let phase: AppPhase
     let hasPlayableScript: Bool
+    var canRecord: Bool = true
+    var canPlay: Bool = true
 
     private var actions: [PrimaryActionPresentation] {
         PrimaryActionPresentation.pair(
             phase: phase,
-            hasPlayableScript: hasPlayableScript
+            hasPlayableScript: hasPlayableScript,
+            canRecord: canRecord,
+            canPlay: canPlay
         )
     }
 

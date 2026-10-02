@@ -18,6 +18,16 @@ final class AppState: ObservableObject {
     @Published var scripts: [Script] = []
     @Published var selectedScriptID: UUID?
     @Published var hasPermission = Permissions.hasRequiredAccess
+    @Published var hasAccessibilityPermission = Permissions.hasAccessibility
+    @Published var hasInputMonitoringPermission = Permissions.hasInputMonitoring
+    @Published var recentlyDeletedScripts: [Script] = []
+    @Published var pendingPlaybackStart: PlaybackStartRequest?
+    @Published private(set) var isPreparingPlayback = false
+    @Published var playbackNotice: String?
+    @Published var actionClipboard: ActionClipboard?
+    @Published var undoEntries: [ScriptLibraryEdit] = []
+    @Published var redoEntries: [ScriptLibraryEdit] = []
+    var isApplyingHistory = false
     @Published var corruptFileNames: [String] = []
     @Published var persistenceIssue: ScriptStoreIssue?
     @Published private(set) var unsavedRecording: Script?
@@ -36,6 +46,7 @@ final class AppState: ObservableObject {
     private let application: ApplicationControlling
     let externalApplicationTracker: ExternalApplicationTracking
     private let playbackEngine: PlaybackControlling
+    private let playbackIndicator: PlaybackIndicatorPresenting
     private let stopShortcutStore: RecordingStopShortcutProviding
     private let recordingIndicator: RecordingIndicatorPresenting
     private let appearancePreferenceStore: AppAppearancePreferenceProviding
@@ -49,7 +60,8 @@ final class AppState: ObservableObject {
         stopShortcutStore: RecordingStopShortcutProviding = RecordingStopShortcutStore(),
         appearancePreferenceStore: AppAppearancePreferenceProviding = AppAppearancePreferenceStore(),
         recordingIndicator: RecordingIndicatorPresenting? = nil,
-        playbackEngine: PlaybackControlling? = nil
+        playbackEngine: PlaybackControlling? = nil,
+        playbackIndicator: PlaybackIndicatorPresenting? = nil
     ) {
         self.store = store
         self.recorder = recorder
@@ -61,6 +73,7 @@ final class AppState: ObservableObject {
         self.appearancePreference = appearancePreferenceStore.preference
         self.recordingIndicator = recordingIndicator ?? RecordingIndicatorController()
         self.playbackEngine = playbackEngine ?? PlaybackEngine()
+        self.playbackIndicator = playbackIndicator ?? PlaybackIndicatorController()
         reload()
     }
 
@@ -70,6 +83,7 @@ final class AppState: ObservableObject {
         corruptFileNames = result.issues.compactMap(\.fileName)
         persistenceIssue = result.issues.first
         if selectedScriptID == nil { selectedScriptID = scripts.first?.id }
+        refreshRecentlyDeleted()
     }
 
     var selectedScript: Script? {
@@ -77,11 +91,11 @@ final class AppState: ObservableObject {
     }
 
     var canEditScripts: Bool {
-        phase == .idle
+        phase == .idle && !isPreparingPlayback && pendingPlaybackStart == nil
     }
 
     var canStartRecording: Bool {
-        phase == .idle && unsavedRecording == nil
+        canEditScripts && unsavedRecording == nil
     }
 
     var recordingStopShortcut: RecordingStopShortcut {
@@ -100,6 +114,7 @@ final class AppState: ObservableObject {
             return false
         }
         scripts.append(script)
+        recordEdit(before: nil, after: script)
         persistenceIssue = nil
         return true
     }
@@ -108,7 +123,8 @@ final class AppState: ObservableObject {
     @discardableResult
     func update(_ script: Script) -> Bool {
         guard canEditScripts else { return false }
-        guard scripts.contains(where: { $0.id == script.id }) else { return false }
+        guard let previous = scripts.first(where: { $0.id == script.id }) else { return false }
+        if previous == script { return true }
         var s = script
         s.modifiedAt = Date()
         do {
@@ -119,13 +135,14 @@ final class AppState: ObservableObject {
         }
         guard let index = scripts.firstIndex(where: { $0.id == s.id }) else { return false }
         scripts[index] = s
+        recordEdit(before: previous, after: s)
         persistenceIssue = nil
         return true
     }
 
     func deleteScript(id: UUID) {
         guard canEditScripts else { return }
-        guard scripts.contains(where: { $0.id == id }) else { return }
+        guard let previous = scripts.first(where: { $0.id == id }) else { return }
         do {
             try store.delete(id: id)
         } catch {
@@ -133,27 +150,22 @@ final class AppState: ObservableObject {
             return
         }
         scripts.removeAll { $0.id == id }
+        recordEdit(before: previous, after: nil)
+        refreshRecentlyDeleted()
         if selectedScriptID == id { selectedScriptID = scripts.first?.id }
         persistenceIssue = nil
     }
 
     func duplicateScript(id: UUID) {
-        guard canEditScripts else { return }
-        guard var s = scripts.first(where: { $0.id == id }) else { return }
-        s.id = UUID()
-        s.name += " 副本"
-        s.createdAt = Date()
-        s.modifiedAt = Date()
-        s.playbackShortcut = nil
-        // 块 ID 需要重新生成，避免与原脚本冲突；绝对时间轴保持不变。
-        s.blocks = s.blocks.map { $0.duplicated() }
-        if create(s) {
-            selectedScriptID = s.id
-        }
+        guard canEditScripts, let original = scripts.first(where: { $0.id == id }) else { return }
+        let copy = ScriptReuse.duplicate(original, name: original.name + " 副本")
+        if create(copy) { selectedScriptID = copy.id }
     }
 
     func refreshPermission() {
-        hasPermission = Permissions.hasRequiredAccess
+        hasAccessibilityPermission = Permissions.hasAccessibility
+        hasInputMonitoringPermission = Permissions.hasInputMonitoring
+        hasPermission = hasAccessibilityPermission && hasInputMonitoringPermission
     }
 
     func reportHotKeyRegistrationIssues(_ issues: [HotKeyRegistrationIssue]) {
@@ -174,6 +186,9 @@ final class AppState: ObservableObject {
     /// ClickerApp 启动时调用一次。
     func setUp() {
         let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.refreshPermission() }
+        })
         observers.append(center.addObserver(forName: .toggleRecord, object: nil, queue: .main) { [weak self] note in
             let source: RecordingStopSource =
                 (note.object as? [String: String])?["source"] == "hotkey"
@@ -210,6 +225,7 @@ final class AppState: ObservableObject {
     func toggleRecord(source: RecordingStopSource) {
         switch phase {
         case .idle:
+            guard !isPreparingPlayback, pendingPlaybackStart == nil else { return }
             guard unsavedRecording == nil else {
                 recordingNotice = RecordingNotice(
                     title: "有尚未保存的录制",
@@ -384,56 +400,118 @@ final class AppState: ObservableObject {
     private var playbackFocusGeneration: Int?
 
     func togglePlay() {
+        if isPreparingPlayback {
+            cancelPreparingPlayback()
+            return
+        }
         switch phase {
         case .playing:
             stopPlaybackIfNeeded()
         case .idle:
+            guard pendingPlaybackStart == nil else { return }
             guard hasPermission else {
                 Permissions.requestRequiredAccess()
                 refreshPermission()
                 return
             }
-            guard let script = selectedScript else { return }
-            guard ScriptPlaybackEligibility.isPlayable(script) else { return }
-            let fallback = externalApplicationTracker.mostRecentExternalBundleIdentifier
-            application.hideClicker()
-            startPlayback(
-                script: script,
-                saved: script.targetBundleIdentifier,
-                fallback: fallback,
-                restoresClicker: true
-            )
+            guard let script = selectedScript, ScriptPlaybackEligibility.isPlayable(script) else { return }
+            requestPlayback(script: script, restoresClicker: true)
         case .countdown, .recording:
             break
         }
     }
 
-    /// 脚本全局快捷键入口：不改变选择、不显隐 Clicker，结束后也不抢回焦点。
+    /// Global shortcuts keep the selected script and do not reclaim focus after successful playback.
     func playScriptFromShortcut(id: UUID) {
-        guard phase == .idle,
-              hasPermission,
+        guard canEditScripts, hasPermission,
               let script = scripts.first(where: { $0.id == id }),
               ScriptPlaybackEligibility.isPlayable(script) else { return }
-        startPlayback(
-            script: script,
-            saved: script.targetBundleIdentifier,
-            fallback: nil,
-            restoresClicker: false
-        )
+        requestPlayback(script: script, restoresClicker: false)
     }
 
-    private func startPlayback(
-        script: Script,
-        saved: String?,
-        fallback: String?,
-        restoresClicker: Bool
-    ) {
-        activatePlaybackTarget(saved: saved, fallback: fallback)
+    func trialActions(scriptID: UUID, blockIDs: Set<UUID>) {
+        guard canEditScripts, hasPermission,
+              let source = scripts.first(where: { $0.id == scriptID }),
+              let trial = ScriptReuse.trial(source, selectedBlockIDs: blockIDs),
+              ScriptPlaybackEligibility.isPlayable(trial) else { return }
+        requestPlayback(script: trial, restoresClicker: true)
+    }
+
+    private func requestPlayback(script: Script, restoresClicker: Bool) {
+        playbackNotice = nil
+        if restoresClicker { application.hideClicker() }
+        // Free playback never silently binds to the recording app or a remembered fallback.
+        guard script.startApplicationBeforePlayback else {
+            startPlayback(script: script, restoresClicker: restoresClicker)
+            return
+        }
+        let identifier = script.targetBundleIdentifier ?? ""
+        playbackGeneration += 1
+        let generation = playbackGeneration
+        isPreparingPlayback = true
+        guard !identifier.isEmpty, identifier != "local.rayscripts.clicker",
+              application.activateExternalApplication(bundleIdentifier: identifier) else {
+            offerFreePlayback(script: script, appIdentifier: identifier, restoresClicker: restoresClicker)
+            return
+        }
+        application.verifyExternalApplicationActivation(bundleIdentifier: identifier) { [weak self] succeeded in
+            guard let self, self.playbackGeneration == generation, self.isPreparingPlayback else { return }
+            self.isPreparingPlayback = false
+            guard self.hasPermission else {
+                self.playbackNotice = "权限发生变化，未开始回放。"
+                self.application.restoreClicker()
+                return
+            }
+            if succeeded {
+                self.startPlayback(script: script, restoresClicker: restoresClicker)
+            } else {
+                self.offerFreePlayback(script: script, appIdentifier: identifier, restoresClicker: restoresClicker)
+            }
+        }
+    }
+
+    private func offerFreePlayback(script: Script, appIdentifier: String, restoresClicker: Bool) {
+        isPreparingPlayback = false
+        pendingPlaybackStart = PlaybackStartRequest(script: script, appIdentifier: appIdentifier, restoresClicker: restoresClicker)
+        application.restoreClicker()
+    }
+
+    func continuePendingPlayback() {
+        guard phase == .idle, let pending = pendingPlaybackStart else { return }
+        pendingPlaybackStart = nil
+        guard hasPermission else { playbackNotice = "权限发生变化，未开始回放。"; return }
+        application.hideClicker()
+        startPlayback(script: pending.script, restoresClicker: true)
+    }
+
+    func cancelPendingPlayback() {
+        pendingPlaybackStart = nil
+        playbackGeneration += 1
+        playbackNotice = "已取消开始回放，没有发送输入。"
+    }
+
+    private func cancelPreparingPlayback() {
+        guard isPreparingPlayback else { return }
+        isPreparingPlayback = false
+        playbackGeneration += 1
+        application.restoreClicker()
+        playbackNotice = "已取消开始回放，没有发送输入。"
+    }
+
+    private func startPlayback(script: Script, restoresClicker: Bool) {
         playbackGeneration += 1
         let generation = playbackGeneration
         playbackFocusGeneration = restoresClicker ? generation : nil
         activePlaybackScript = script
         phase = .playing(iteration: 1, currentBlockID: nil)
+        playbackIndicator.show(progress: PlaybackProgress(script: script)) { [weak self] in
+            guard let self, self.playbackGeneration == generation else { return }
+            self.stopPlaybackIfNeeded()
+        }
+        playbackEngine.onProgress = { [weak self] progress in
+            guard let self, self.playbackGeneration == generation, case .playing = self.phase else { return }
+            self.playbackIndicator.update(progress: progress)
+        }
         playbackEngine.play(script: script) { [weak self] iteration in
             Task { @MainActor in
                 guard let self,
@@ -456,32 +534,31 @@ final class AppState: ObservableObject {
                 self.playbackGeneration += 1
                 self.phase = .idle
                 self.activePlaybackScript = nil
+                self.playbackIndicator.close()
+                switch self.playbackEngine.completionReason {
+                case .userStopped: self.playbackNotice = "已停止回放，按住的键与鼠标已释放。"
+                case .preparationFailed(let message): self.playbackNotice = "未开始回放：" + message
+                case .interrupted(let message): self.playbackNotice = "回放中断：" + message
+                case .completed, nil: self.playbackNotice = "回放输入已发送完毕。"
+                }
                 self.restorePlaybackFocus(ownedBy: generation)
             }
         }
     }
 
     private func stopPlaybackIfNeeded() {
+        if isPreparingPlayback { cancelPreparingPlayback() }
+        pendingPlaybackStart = nil
         guard case .playing = phase else { return }
         let generation = playbackGeneration
         playbackGeneration += 1
         playbackEngine.stop()
+        playbackIndicator.close()
+        playbackEngine.onProgress = nil
         phase = .idle
         activePlaybackScript = nil
+        playbackNotice = "已停止回放，按住的键与鼠标已释放。"
         restorePlaybackFocus(ownedBy: generation)
-    }
-
-    private func activatePlaybackTarget(saved: String?, fallback: String?) {
-        var attemptedIdentifiers: Set<String> = []
-        for identifier in [saved, fallback] {
-            guard let identifier,
-                  !identifier.isEmpty,
-                  identifier != "local.rayscripts.clicker",
-                  attemptedIdentifiers.insert(identifier).inserted else { continue }
-            if application.activateExternalApplication(bundleIdentifier: identifier) {
-                return
-            }
-        }
     }
 
     private func restorePlaybackFocus(ownedBy generation: Int) {
@@ -490,7 +567,7 @@ final class AppState: ObservableObject {
         application.restoreClicker()
     }
 
-    private func makePersistenceIssue(
+    func makePersistenceIssue(
         from error: Error,
         fallback operation: ScriptStoreIssue.Operation
     ) -> ScriptStoreIssue {

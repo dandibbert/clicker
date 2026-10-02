@@ -5,29 +5,32 @@
 ## 功能
 
 - 录制鼠标、键盘操作并保存为脚本。
-- 编辑动作、等待时间和脚本回放设置。
+- 安全编辑动作、等待时间和脚本回放设置；保存失败保留输入，支持撤销/重做。
+- 默认跨应用自由回放，可选只在开始前切换应用；运行中显示不抢焦点的进度与停止控制。
+- 新建空白脚本、搜索、跨脚本复制动作、一次试运行、JSON 导入导出、最近删除恢复。
+- 缺少录制/回放权限时仍可浏览与编辑脚本。
 - 使用全局快捷键开始回放或停止录制 / 回放。
 - 菜单栏控制、录制状态提示，以及浅色 / 深色外观。
 - 录制保存失败后可重试或另存；普通退出会先处理未保存录制，中断的录制会明确标记。
 
-录制与回放的行为、恢复边界及回归验收说明见 [可靠性修复说明](docs/AUDIT_FIXES.md)。
+录制与回放的行为、恢复边界及回归验收说明见 [可靠性修复说明](docs/AUDIT_FIXES.md) 和 [原生交互改进](docs/NATIVE_WORKFLOW_IMPROVEMENTS.md)。
 
 ## 下载与运行
 
 需要 **macOS 14 Sonoma 或更新版本**。
 
-在仓库的 **Releases** 页面下载匹配处理器的 ZIP：
+在仓库的 **Releases** 页面下载匹配处理器的 DMG 或 ZIP。开发分支测试包从相应 Actions 运行的 Artifacts 下载：
 
 | 文件后缀 | 处理器 |
 | --- | --- |
 | `macos-arm64.zip` | Apple Silicon（M 系列） |
 | `macos-x86_64.zip` | Intel |
 
-解压后将 `Clicker.app` 拖到「应用程序」目录。首次使用时，按应用提示在「系统设置 → 隐私与安全性」中授予 **辅助功能** 与 **输入监控** 权限；录制内容可能包含敏感输入，请仅录制你有权操作的内容。
+打开 DMG 后将 `Clicker.app` 拖到「应用程序」快捷方式；也可以解压 ZIP 后手动拖入「应用程序」目录。首次使用时，按应用提示在「系统设置 → 隐私与安全性」中授予 **辅助功能** 与 **输入监控** 权限；录制内容可能包含敏感输入，请仅录制你有权操作的内容。
 
 > 自动打包使用 ad-hoc 签名，**没有 Apple Developer ID 签名或公证**。macOS 可能阻止首次打开：确认下载来源后，可在「隐私与安全性」中允许打开。组织管理的 Mac 可能不允许运行此类应用。更新应用后，可能需要重新授予系统权限。
 
-每个 ZIP 都附有 `.sha256` 校验文件，在下载目录执行：
+每个 DMG、ZIP 和源码版本说明 `.build-info.json` 都附有 `.sha256` 校验文件，在下载目录执行：
 
 ```bash
 shasum -a 256 -c Clicker-1.0.0-macos-arm64.zip.sha256
@@ -50,8 +53,11 @@ python3 -B -m unittest discover -s Tests/Packaging -v
 ./scripts/build-app.sh
 open dist/Clicker.app
 
-# 构建 ZIP 和 SHA-256 校验文件
+# 构建 DMG、ZIP、精确源码版本说明和 SHA-256 校验文件
 ./scripts/package-release.sh
+
+# 将两种安装包复制到临时目录并安全启动原生窗口（不录制或投递输入）
+./scripts/smoke-test-package.sh
 ```
 
 输出位于 `dist/`，构建产物不会提交到 Git。
@@ -76,7 +82,7 @@ CLICKER_VERSION=1.2.3 CLICKER_BUILD_NUMBER=1 ./scripts/package-release.sh
 
 - **每次分支推送 / Pull Request**：在 macOS 15 的 Apple Silicon 与 Intel runner 上测试、构建、验证签名并打包。
 - **手动构建**：在 Actions → Build and Release → Run workflow 触发。
-- **构建产物**：成功构建后，从 Actions 的 Artifacts 下载，两种架构分别保存 14 天。
+- **构建产物**：成功构建后，从 Actions 的 Artifacts 下载，名称包含完整源码 SHA；DMG、ZIP、校验值及版本说明分别按架构保存 14 天。原生界面截图及安装启动证据单独保存在 QA artifact。
 - **版本发布**：推送 `vX.Y.Z` tag；两个架构的测试与打包均成功后，自动创建 GitHub Release，上传 ZIP 与 SHA-256 文件。
 
 例如，发布已合并到 `main` 的版本：

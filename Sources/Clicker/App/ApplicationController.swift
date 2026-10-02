@@ -3,8 +3,15 @@ import AppKit
 @MainActor
 protocol ApplicationControlling: AnyObject {
     func activateExternalApplication(bundleIdentifier: String) -> Bool
+    func verifyExternalApplicationActivation(bundleIdentifier: String, completion: @escaping (Bool) -> Void)
     func hideClicker()
     func restoreClicker()
+}
+
+extension ApplicationControlling {
+    func verifyExternalApplicationActivation(bundleIdentifier: String, completion: @escaping (Bool) -> Void) {
+        completion(true)
+    }
 }
 
 @MainActor
@@ -74,6 +81,20 @@ final class SystemApplicationController: ApplicationControlling {
 
     func activateExternalApplication(bundleIdentifier: String) -> Bool {
         activateExternal(bundleIdentifier)
+    }
+
+    func verifyExternalApplicationActivation(bundleIdentifier: String, completion: @escaping (Bool) -> Void) {
+        Task { @MainActor in
+            // Activation is asynchronous; verify the selected app before the first synthetic input.
+            for _ in 0..<20 {
+                if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleIdentifier {
+                    completion(true)
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            completion(false)
+        }
     }
 
     func hideClicker() {

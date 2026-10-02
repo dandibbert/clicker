@@ -131,7 +131,7 @@ final class FinalFixWaveTests: XCTestCase {
                             keyCode: 8,
                             flags: KeyCodeMap.maskCommand
                         )),
-                        onSave: { _ in }
+                        onSave: { _ in true }
                     )
                     .environment(\.colorScheme, appearanceFixture.1)
                     .tint(.blue)

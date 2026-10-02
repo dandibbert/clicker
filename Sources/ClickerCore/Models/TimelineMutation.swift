@@ -2,6 +2,36 @@ import Foundation
 
 /// UI 时间轴结构编辑的纯函数。只平移拼接点后的后缀，不改块内相对时间。
 public enum TimelineMutation {
+    /// Inserts a group while preserving all of its internal gaps, overlaps,
+    /// captured atom ordering and shared key-release identities.
+    public static func inserting(
+        _ insertedBlocks: [ActionBlock],
+        at requestedIndex: Int,
+        in blocks: [ActionBlock]
+    ) -> [ActionBlock] {
+        guard !insertedBlocks.isEmpty else { return blocks }
+        let index = min(max(0, requestedIndex), blocks.count)
+        // Compact first so externally supplied Int.max ordinals cannot wrap a
+        // new group's press ahead of the prefix's release at a shared time.
+        let prefix = rebasedGroup(Array(blocks[..<index]), avoiding: [])
+        let suffix = Array(blocks[index...])
+        let prefixEnd = prefix.map(\.timelineEndOffset).max() ?? 0
+        let insertedAnchor = insertedBlocks.map(\.startOffset).min() ?? 0
+        let prepared = rebasedGroup(insertedBlocks, avoiding: prefix)
+        let inserted = translated(prepared, from: insertedAnchor, to: prefixEnd)
+        let insertedEnd = inserted.map(\.timelineEndOffset).max() ?? prefixEnd
+        let translatedSuffix = suffix.first.map {
+            translated(suffix, from: $0.startOffset, to: insertedEnd)
+        } ?? []
+
+        // Like a single-block insertion, the splice serializes the group after
+        // the complete prefix. A long held input in the prefix must release
+        // before an inserted press at that exact boundary, even if captured
+        // suffix ordinals were originally interleaved with that hold. Each
+        // translated group keeps a common map for its shared repeat releases.
+        return prefix + inserted + rebasedGroup(translatedSuffix, avoiding: prefix + inserted)
+    }
+
     public static func inserting(
         _ block: ActionBlock,
         at requestedIndex: Int,
@@ -225,7 +255,7 @@ public enum TimelineMutation {
         return candidate
     }
 
-    private static func translated(
+    static func translated(
         _ blocks: [ActionBlock],
         from oldAnchor: TimeInterval,
         to newAnchor: TimeInterval

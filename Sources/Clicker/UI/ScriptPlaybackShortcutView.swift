@@ -16,6 +16,11 @@ enum ScriptShortcutEditor {
         modifierFlags: KeyCodeMap.maskOption | KeyCodeMap.maskCommand
     )
 
+    static func displayedShortcut(for script: Script?) -> RecordingStopShortcut? {
+        guard let shortcut = script?.playbackShortcut else { return nil }
+        return RecordingStopShortcut(keyCode: shortcut.keyCode, modifierFlags: shortcut.modifierFlags)
+    }
+
     static func validate(
         candidate: ScriptShortcut,
         scriptID: UUID,
@@ -59,17 +64,8 @@ struct ScriptPlaybackShortcutView: View {
         state.scripts.first { $0.id == scriptID }
     }
 
-    private var displayedShortcut: RecordingStopShortcut {
-        guard let shortcut = script?.playbackShortcut else {
-            return RecordingStopShortcut(
-                keyCode: 18,
-                modifierFlags: KeyCodeMap.maskControl | KeyCodeMap.maskOption
-            )
-        }
-        return RecordingStopShortcut(
-            keyCode: shortcut.keyCode,
-            modifierFlags: shortcut.modifierFlags
-        )
+    private var displayedShortcut: RecordingStopShortcut? {
+        ScriptShortcutEditor.displayedShortcut(for: script)
     }
 
     var body: some View {
@@ -81,12 +77,18 @@ struct ScriptPlaybackShortcutView: View {
             Text("在任意应用中按下快捷键，直接回放「\(script?.name ?? "脚本")」。")
                 .foregroundStyle(ClickerVisualTheme.secondaryText)
 
-            ShortcutCaptureCard(
-                shortcut: displayedShortcut,
-                isCapturing: isCapturing,
-                title: script?.playbackShortcut == nil ? "尚未设置" : "回放快捷键",
-                action: { isCapturing = true }
-            )
+            Group {
+                if let displayedShortcut {
+                    ShortcutCaptureCard(
+                        shortcut: displayedShortcut,
+                        isCapturing: isCapturing,
+                        title: "回放快捷键",
+                        action: { isCapturing = true }
+                    )
+                } else {
+                    UnboundScriptShortcutCard(isCapturing: isCapturing) { isCapturing = true }
+                }
+            }
             .disabled(!state.canEditScripts)
             .background {
                 if isCapturing {
@@ -147,5 +149,40 @@ struct ScriptPlaybackShortcutView: View {
         script.playbackShortcut = nil
         if state.update(script) { message = nil }
         isCapturing = false
+    }
+}
+
+
+/// An unbound shortcut has no keycaps: a suggestion must never look registered.
+struct UnboundScriptShortcutCard: View {
+    let isCapturing: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: ClickerVisualTheme.spacing12) {
+                Image(systemName: "keyboard").font(.title2)
+                VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing4) {
+                    Text("尚未设置").font(.headline)
+                    Text(isCapturing ? "请按下新的组合键…" : "点击录入快捷键")
+                        .font(.callout)
+                        .foregroundStyle(ClickerVisualTheme.secondaryText)
+                }
+                Spacer()
+            }
+            .foregroundStyle(ClickerVisualTheme.primaryText)
+            .padding(ClickerVisualTheme.spacing12)
+            .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
+            .background(ClickerVisualTheme.cardSurface,
+                        in: RoundedRectangle(cornerRadius: ClickerVisualTheme.cardCornerRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: ClickerVisualTheme.cardCornerRadius)
+                    .strokeBorder(isCapturing ? ClickerVisualTheme.primaryText : ClickerVisualTheme.separator,
+                                  lineWidth: ClickerVisualTheme.cardBorderWidth)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: ClickerVisualTheme.cardCornerRadius))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isCapturing ? "尚未设置，请按下新的组合键" : "尚未设置，点击录入快捷键")
     }
 }

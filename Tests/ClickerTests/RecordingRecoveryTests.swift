@@ -64,6 +64,28 @@ final class RecordingRecoveryTests: XCTestCase {
         XCTAssertTrue(context.state.scripts.isEmpty)
     }
 
+    func testSaveAsFileCanBePreviewedAndImportedWithoutRunning() async throws {
+        let context = Context()
+        context.store.fails = true
+        await context.startRecording()
+        context.state.toggleRecord(source: .ui)
+        let draft = try XCTUnwrap(context.state.unsavedRecording)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertTrue(context.state.exportUnsavedRecording(to: url))
+        let preview = try ScriptTransfer.decode(data: Data(contentsOf: url))
+        context.store.fails = false
+        XCTAssertTrue(context.state.importScript(preview))
+        let imported = try XCTUnwrap(context.state.selectedScript)
+        XCTAssertNotEqual(imported.id, draft.id)
+        XCTAssertEqual(imported.blocks.map(\.effectiveDuration), draft.blocks.map(\.effectiveDuration))
+        XCTAssertEqual(BlockExpander.plan(for: imported).duration, BlockExpander.plan(for: draft).duration)
+        XCTAssertNil(imported.playbackShortcut)
+        XCTAssertFalse(imported.startApplicationBeforePlayback)
+        XCTAssertNil(context.state.activePlaybackScript)
+        XCTAssertEqual(context.state.phase, .idle)
+    }
+
     func testFailedSaveAsAndFailedQuitKeepDraft() async throws {
         let context = Context()
         context.store.fails = true
@@ -248,7 +270,8 @@ private final class Context {
     init() {
         state = AppState(store: store, recorder: recorder, countdown: countdown,
                          application: RecoveryApplication(), externalApplicationTracker: RecoveryTracker(),
-                         recordingIndicator: RecoveryIndicator(), playbackEngine: playback)
+                         recordingIndicator: RecoveryIndicator(), playbackEngine: playback,
+                         playbackIndicator: SilentPlaybackIndicator())
         state.hasPermission = true
     }
     func startRecording() async {
