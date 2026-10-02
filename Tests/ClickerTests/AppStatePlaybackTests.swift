@@ -68,6 +68,29 @@ final class AppStatePlaybackTests: XCTestCase {
         XCTAssertTrue(context.application.activationAttempts.isEmpty)
     }
 
+    func testFreeUIPlaybackWaitsForClickerToYieldFocusWithoutActivatingAnApp() {
+        let context = makeContext(script: playableScript())
+        defer { try? FileManager.default.removeItem(at: context.directory) }
+        context.application.deferDeactivation = true
+        context.state.togglePlay()
+        XCTAssertTrue(context.state.isPreparingPlayback)
+        XCTAssertTrue(context.playback.playedScripts.isEmpty)
+        XCTAssertTrue(context.application.activationAttempts.isEmpty)
+        context.application.finishDeactivation(true)
+        XCTAssertEqual(context.playback.playedScripts.count, 1)
+    }
+
+    func testFreeUIPlaybackDoesNotSendInputIfClickerCannotYieldFocus() {
+        let context = makeContext(script: playableScript())
+        defer { try? FileManager.default.removeItem(at: context.directory) }
+        context.application.deferDeactivation = true
+        context.state.togglePlay()
+        context.application.finishDeactivation(false)
+        XCTAssertTrue(context.playback.playedScripts.isEmpty)
+        XCTAssertEqual(context.state.phase, .idle)
+        XCTAssertFalse(context.state.isPreparingPlayback)
+    }
+
     func testOptionalStartApplicationActivatesOnlyOnceBeforePlayback() {
         var script = playableScript(targetBundleIdentifier: "com.example.saved")
         script.startApplicationBeforePlayback = true
@@ -90,7 +113,9 @@ final class AppStatePlaybackTests: XCTestCase {
         XCTAssertEqual(context.application.activationAttempts, ["com.example.saved"])
         XCTAssertEqual(context.state.pendingPlaybackStart?.appIdentifier, "com.example.saved")
         context.state.continuePendingPlayback()
-        XCTAssertEqual(context.playback.playedScripts, [script])
+        var freeScript = script
+        freeScript.startApplicationBeforePlayback = false
+        XCTAssertEqual(context.playback.playedScripts, [freeScript])
         XCTAssertEqual(context.application.activationAttempts, ["com.example.saved"])
         XCTAssertNil(context.state.pendingPlaybackStart)
     }
@@ -156,6 +181,20 @@ final class AppStatePlaybackTests: XCTestCase {
         context.application.finishVerification(false)
         XCTAssertTrue(context.playback.playedScripts.isEmpty)
         XCTAssertNotNil(context.state.pendingPlaybackStart)
+    }
+
+    func testPermissionLossWhileOptionalSwitchIsVerifyingPreventsInput() {
+        var script = playableScript(targetBundleIdentifier: "com.example.saved")
+        script.startApplicationBeforePlayback = true
+        let context = makeContext(script: script)
+        defer { try? FileManager.default.removeItem(at: context.directory) }
+        context.application.deferVerification = true
+        context.state.togglePlay()
+        context.state.hasPermission = false
+        context.application.finishVerification(true)
+        XCTAssertTrue(context.playback.playedScripts.isEmpty)
+        XCTAssertEqual(context.state.phase, .idle)
+        XCTAssertFalse(context.state.isPreparingPlayback)
     }
 
     func testSelectedRangeTrialIgnoresInfiniteRepeatAndExcludesOtherActions() {
@@ -406,6 +445,12 @@ private final class StubPlaybackApplication: ApplicationControlling {
     private(set) var restoreCallCount = 0
     var onHide: () -> Void = {}
     var deferVerification = false
+    var deferDeactivation = false
+    private var deactivation: ((Bool) -> Void)?
+    func verifyClickerDeactivation(completion: @escaping (Bool) -> Void) {
+        if deferDeactivation { deactivation = completion } else { completion(true) }
+    }
+    func finishDeactivation(_ result: Bool) { deactivation?(result) }
     private var verification: ((Bool) -> Void)?
     func verifyExternalApplicationActivation(bundleIdentifier: String, completion: @escaping (Bool) -> Void) {
         if deferVerification { verification = completion } else { completion(true) }

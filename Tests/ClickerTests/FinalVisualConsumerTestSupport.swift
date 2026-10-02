@@ -144,18 +144,23 @@ extension FinalVisualConsumerTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let permissionState = AppState(store: ScriptStore(directory: directory))
+        permissionState.hasPermission = false
+        permissionState.hasAccessibilityPermission = false
+        permissionState.hasInputMonitoringPermission = false
         let noSelectionState = AppState(store: ScriptStore(directory: directory))
         noSelectionState.hasPermission = true
+        noSelectionState.scripts = [Script(name: "尚未选择的脚本")]
+        noSelectionState.selectedScriptID = nil
         let emptyScriptState = AppState(store: ScriptStore(directory: directory))
         emptyScriptState.hasPermission = true
         let emptyScript = Script(name: "空动作", blocks: [])
         emptyScriptState.scripts = [emptyScript]
         emptyScriptState.selectedScriptID = emptyScript.id
         let surfaces: [(String, [String], (ColorScheme) -> AnyView)] = [
-            ("permission", ["需要系统权限", "打开系统设置", "重新检测"], { scheme in
+            ("permission", ["系统权限", "辅助功能", "输入监控", "重新检测"], { scheme in
                 AnyView(PermissionGuideView().environmentObject(permissionState).environment(\.colorScheme, scheme))
             }),
-            ("empty library", ["还没有脚本", "开始录制"], { scheme in
+            ("empty library", ["还没有脚本", "新建空白脚本", "开始录制"], { scheme in
                 AnyView(ScriptSidebarView(scripts: [], selectedScriptID: .constant(nil), canEditScripts: true, canStartRecording: true, onRename: { _, _ in }, onDuplicate: { _ in }, onDelete: { _ in }, onRecord: {}).environment(\.colorScheme, scheme))
             }),
             ("no selection", ["选择一个脚本"], { scheme in
@@ -234,7 +239,10 @@ extension FinalVisualConsumerTests {
         defer { fixture.tearDown() }
         let form = try XCTUnwrap(descendants(of: fixture.hosting).compactMap { $0 as? NSScrollView }.first)
         let bitmap = try bitmap(for: fixture.hosting)
-        let formBounds = fixture.hosting.convert(form.bounds, from: form)
+        // Once the expanded editor scrolls, the scroll view's outer right edge
+        // may be entirely occupied by a native NSScroller (an excluded control).
+        // Measure the actual clip/content edges, not a zero-sample scrollbar rail.
+        let formBounds = fixture.hosting.convert(form.contentView.bounds, from: form.contentView)
         let subcontrolBounds = descendants(of: form)
             .compactMap { $0 as? NSControl }
             .map { fixture.hosting.convert($0.bounds, from: $0).insetBy(dx: -2, dy: -2) }
@@ -269,6 +277,9 @@ extension FinalVisualConsumerTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let state = AppState(store: ScriptStore(directory: directory))
+        state.hasPermission = false
+        state.hasAccessibilityPermission = false
+        state.hasInputMonitoringPermission = false
         let size = CGSize(width: 480, height: 320)
 
         for fixture in [(NSAppearance.Name.aqua, ColorScheme.light), (.darkAqua, .dark)] {
@@ -281,11 +292,25 @@ extension FinalVisualConsumerTests {
             defer { hosted.tearDown() }
             let bitmap = try bitmap(for: hosted.hosting)
             let text = try recognizedTextFrames(in: bitmap, logicalSize: size)
-            let primary = try XCTUnwrap(text.first { $0.text.contains("打开系统设置") }).frame
             let secondary = try XCTUnwrap(text.first { $0.text.contains("重新检测") }).frame
             let fill = ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance)
             let buttons = (nativeControls(in: hosted.hosting) + descendants(of: hosted.hosting))
                 .compactMap { $0 as? NSButton }
+            for permission in ["辅助功能", "输入监控"] {
+                let grantButton = try XCTUnwrap(buttons.first {
+                    $0.accessibilityLabel() == "请求\(permission)权限并打开系统设置"
+                }, "Each missing permission must have its own native grant button")
+                XCTAssertTrue(grantButton.isBordered)
+                XCTAssertTrue(grantButton.isEnabled)
+                let frame = hosted.hosting.convert(grantButton.bounds, from: grantButton)
+                XCTAssertTrue(hosted.hosting.bounds.contains(frame))
+                XCTAssertLessThan(
+                    renderedPixelFraction(in: bitmap, logicalSize: size, region: frame,
+                                          near: fill, tolerance: 0.04),
+                    0.2,
+                    "Granular permission actions must remain low-emphasis, not playback-style primary fills"
+                )
+            }
             let secondaryButton = try XCTUnwrap(
                 nativeButton(
                     recognizing: "重新检测",
@@ -310,17 +335,6 @@ extension FinalVisualConsumerTests {
                 y: size.height - secondaryPaddingInView.maxY,
                 width: secondaryPaddingInView.width,
                 height: secondaryPaddingInView.height
-            )
-            XCTAssertGreaterThan(
-                renderedPixelFraction(
-                    in: bitmap,
-                    logicalSize: size,
-                    region: primary.insetBy(dx: -12, dy: -10),
-                    near: fill,
-                    tolerance: 0.08
-                ),
-                0.2,
-                "The permission primary action must retain the explicit prominent fill"
             )
             XCTAssertLessThan(
                 renderedPixelFraction(

@@ -102,8 +102,7 @@ final class EditorialMainWindowTests: XCTestCase {
         let headerTitle = try recognizedFrame(
             containing: "录制1",
             in: recognizedText,
-            region: headerBounds,
-            requiresExactMatch: true
+            region: headerBounds
         )
         let headerMetadata = try XCTUnwrap(
             recognizedText.first { match in
@@ -153,6 +152,10 @@ final class EditorialMainWindowTests: XCTestCase {
             ),
             "The playback action must retain a complete visible neutral fill"
         )
+        // Vision may group the title and the adjacent FREE label in one text
+        // observation. It must still remain contained and clear of both actions.
+        XCTAssertFalse(headerTitle.intersects(recordBounds))
+        XCTAssertFalse(headerTitle.intersects(playbackBounds))
         for (name, bounds, label) in [
             ("record", recordBounds, recordText),
             ("playback", playbackBounds, playbackText),
@@ -339,8 +342,7 @@ final class EditorialMainWindowTests: XCTestCase {
         let title = try recognizedFrame(
             containing: script.name.replacingOccurrences(of: " ", with: ""),
             in: recognizedText,
-            region: headerBounds,
-            requiresExactMatch: true
+            region: headerBounds
         )
         XCTAssertTrue(headerBounds.contains(title))
         for expected in ["录制", "回放", "重复", "无限", "间隔"] {
@@ -364,6 +366,7 @@ final class EditorialMainWindowTests: XCTestCase {
             width: 200,
             height: min(56, headerBounds.height)
         )
+        XCTAssertFalse(title.intersects(progressRegion), "Title/mode copy overlaps the playback progress region")
         let progressCopy = recognizedText
             .filter { progressRegion.contains($0.frame) }
             .map(\.text)

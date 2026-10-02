@@ -10,73 +10,29 @@ struct MainView: View {
 
     var body: some View {
         ClickerNeutralControlScope {
-            NavigationSplitView {
-                ScriptListView()
-                    .navigationSplitViewColumnWidth(
-                        min: 210,
-                        ideal: ClickerVisualTheme.sidebarIdealWidth,
-                        max: 250
-                    )
-            } detail: {
-                if state.selectedScript == nil {
-                    ClickerEmptyStateView(
-                        kind: state.scripts.isEmpty ? .emptyLibrary : .noSelection,
-                        action: { state.createBlankScript() },
-                        secondaryAction: { state.toggleRecord(source: .ui) },
-                        isActionEnabled: state.canEditScripts,
-                        isSecondaryActionEnabled: state.canStartRecording && state.hasPermission
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(ClickerVisualTheme.canvas)
-                } else {
-                    ScriptDetailView()
-                }
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
-                if !state.hasPermission {
-                    HStack(spacing: ClickerVisualTheme.spacing8) {
-                        Label("录制与回放需要权限", systemImage: "hand.raised")
-                        Text("脚本仍可编辑")
-                            .foregroundStyle(ClickerVisualTheme.secondaryText)
-                        Spacer(minLength: 0)
-                        Button("权限设置…") { showsPermissionChecklist = true }
+                statusNotices
+                NavigationSplitView {
+                    ScriptListView()
+                        .navigationSplitViewColumnWidth(
+                            min: 210,
+                            ideal: ClickerVisualTheme.sidebarIdealWidth,
+                            max: 250
+                        )
+                } detail: {
+                    if state.selectedScript == nil {
+                        ClickerEmptyStateView(
+                            kind: state.scripts.isEmpty ? .emptyLibrary : .noSelection,
+                            action: { state.createBlankScript() },
+                            secondaryAction: { state.toggleRecord(source: .ui) },
+                            isActionEnabled: state.canEditScripts,
+                            isSecondaryActionEnabled: state.canStartRecording && state.hasPermission
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(ClickerVisualTheme.canvas)
+                    } else {
+                        ScriptDetailView()
                     }
-                    .font(.caption)
-                    .padding(.horizontal, ClickerVisualTheme.spacing12)
-                    .padding(.vertical, ClickerVisualTheme.spacing8)
-                    .background(ClickerVisualTheme.controlSurface)
-                }
-                if let notice = state.recordingNotice {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(notice.title).font(.headline)
-                            Text(notice.message).font(.caption)
-                        }
-                        Spacer()
-                        Button("关闭提示") { state.recordingNotice = nil }
-                    }
-                    .padding(12)
-                    .background(ClickerVisualTheme.controlSurface)
-                }
-                if let notice = state.playbackNotice {
-                    HStack {
-                        Label(notice, systemImage: "info.circle").font(.caption)
-                        Spacer()
-                        Button("关闭提示") { state.playbackNotice = nil }
-                    }
-                    .padding(ClickerVisualTheme.spacing12)
-                    .background(ClickerVisualTheme.controlSurface)
-                }
-                RecordingRecoveryView()
-                PlaybackSessionBanner()
-                if let interruption = state.selectedScript?.recordingInterruption {
-                    Label("部分录制：\(interruption)", systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(ClickerVisualTheme.controlSurface)
                 }
             }
         }
@@ -94,7 +50,7 @@ struct MainView: View {
                 .disabled(!state.canRedo)
                 .keyboardShortcut("z", modifiers: [.command, .shift])
                 .help("重做（⇧⌘Z）")
-                Button { showsPermissionChecklist = true } label: {
+                Button(action: openPermissionChecklist) {
                     Label("系统权限", systemImage: state.hasPermission ? "checkmark.shield" : "exclamationmark.shield")
                 }
                 .help("查看辅助功能与输入监控权限")
@@ -165,6 +121,59 @@ struct MainView: View {
         } message: {
             Text(scriptHotKeyIssueMessage)
         }
+    }
+
+    private var statusNotices: some View {
+        VStack(spacing: 0) {
+            if !state.hasPermission {
+                HStack(spacing: ClickerVisualTheme.spacing8) {
+                    Label("录制与回放需要权限", systemImage: "hand.raised")
+                    Text("脚本仍可编辑")
+                        .foregroundStyle(ClickerVisualTheme.secondaryText)
+                    Spacer(minLength: 0)
+                    Button("权限设置…", action: openPermissionChecklist)
+                }
+                .font(.caption)
+                .padding(.horizontal, ClickerVisualTheme.spacing12)
+                .padding(.vertical, ClickerVisualTheme.spacing8)
+                .background(ClickerVisualTheme.controlSurface)
+            }
+            if let notice = state.recordingNotice {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(notice.title).font(.headline)
+                        Text(notice.message).font(.caption)
+                    }
+                    Spacer()
+                    Button("关闭提示") { state.recordingNotice = nil }
+                }
+                .padding(12)
+                .background(ClickerVisualTheme.controlSurface)
+            }
+            if let notice = state.playbackNotice {
+                HStack {
+                    Label(notice, systemImage: "info.circle").font(.caption)
+                    Spacer()
+                    Button("关闭提示") { state.playbackNotice = nil }
+                }
+                .padding(ClickerVisualTheme.spacing12)
+                .background(ClickerVisualTheme.controlSurface)
+            }
+            RecordingRecoveryView()
+            PlaybackSessionBanner()
+            if let interruption = state.selectedScript?.recordingInterruption {
+                Label("部分录制：\(interruption)", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(ClickerVisualTheme.controlSurface)
+            }
+        }
+    }
+
+    private func openPermissionChecklist() {
+        state.refreshPermission()
+        showsPermissionChecklist = true
     }
 
     private func issueTitle(_ operation: ScriptStoreIssue.Operation) -> String {

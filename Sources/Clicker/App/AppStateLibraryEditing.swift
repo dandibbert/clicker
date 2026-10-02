@@ -81,7 +81,15 @@ extension AppState {
     }
 
     func refreshRecentlyDeleted() {
-        recentlyDeletedScripts = (store as? ScriptRecovering)?.loadRecentlyDeleted().scripts ?? []
+        guard let recovery = store as? ScriptRecovering else {
+            recentlyDeletedScripts = []
+            return
+        }
+        let result = recovery.loadRecentlyDeleted()
+        recentlyDeletedScripts = result.scripts
+        // A recovery warning must remain visible without replacing a more
+        // relevant failure from the user's create/save/delete operation.
+        if persistenceIssue == nil { persistenceIssue = result.issues.first }
     }
 
     @discardableResult
@@ -92,8 +100,8 @@ extension AppState {
             scripts.append(restored)
             selectedScriptID = restored.id
             recordEdit(before: nil, after: restored)
-            refreshRecentlyDeleted()
             persistenceIssue = nil
+            refreshRecentlyDeleted()
             return true
         } catch {
             persistenceIssue = makePersistenceIssue(from: error, fallback: .replace)
@@ -120,19 +128,39 @@ extension AppState {
         defer { isApplyingHistory = false }
         do {
             if let target {
+                var committed = target
                 // Undo deletion uses the recovery API so a later redo can archive safely again.
-                if current == nil, let recovery = store as? ScriptRecovering,
-                   recovery.loadRecentlyDeleted().scripts.contains(where: { $0.id == target.id }) {
-                    _ = try recovery.restoreRecentlyDeleted(id: target.id)
+                if current == nil, let recovery = store as? ScriptRecovering {
+                    let archived = recovery.loadRecentlyDeleted()
+                    // A failed archive read is not evidence that no archive
+                    // exists. Saving a second active copy here would strand
+                    // the archive and make the next redo/delete collide.
+                    if let issue = archived.issues.first { throw issue }
+                    if let archivedScript = archived.scripts.first(where: { $0.id == target.id }) {
+                        // Compare persisted values, including the storage date
+                        // representation, before moving an externally changed
+                        // archive into the active library under an old history entry.
+                        let expected = try ScriptJSONCodec.decode(ScriptJSONCodec.encode(target))
+                        guard archivedScript == expected else {
+                            throw ScriptStoreIssue(
+                                operation: .replace,
+                                fileName: "\(target.id.uuidString).json",
+                                message: "最近删除中的脚本已发生变化，未应用旧的撤销记录。请从最近删除中检查并恢复。"
+                            )
+                        }
+                        committed = try recovery.restoreRecentlyDeleted(id: target.id)
+                    } else {
+                        try store.save(target)
+                    }
                 } else {
                     try store.save(target)
                 }
-                if let index = scripts.firstIndex(where: { $0.id == target.id }) {
-                    scripts[index] = target
+                if let index = scripts.firstIndex(where: { $0.id == committed.id }) {
+                    scripts[index] = committed
                 } else {
-                    scripts.append(target)
+                    scripts.append(committed)
                 }
-                selectedScriptID = target.id
+                selectedScriptID = committed.id
             } else if let current {
                 try store.delete(id: current.id)
                 scripts.removeAll { $0.id == current.id }

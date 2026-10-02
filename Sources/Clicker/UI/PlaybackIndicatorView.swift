@@ -3,6 +3,13 @@ import SwiftUI
 struct PlaybackIndicatorView: View {
     let progress: PlaybackProgress
     let onStop: () -> Void
+    let canStopWithButton: Bool
+
+    init(progress: PlaybackProgress, onStop: @escaping () -> Void, canStopWithButton: Bool = true) {
+        self.progress = progress
+        self.onStop = onStop
+        self.canStopWithButton = canStopWithButton
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -15,7 +22,7 @@ struct PlaybackIndicatorView: View {
                     .truncationMode(.middle)
                     .help(progress.scriptName)
                 Spacer(minLength: 4)
-                Text("Esc 停止")
+                Text(canStopWithButton ? "Esc 停止" : "请按 Esc 停止")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(ClickerVisualTheme.secondaryText)
             }
@@ -35,8 +42,9 @@ struct PlaybackIndicatorView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
                 .tint(ClickerVisualTheme.focusRing)
+                .disabled(!canStopWithButton)
                 .accessibilityLabel("停止回放")
-                .help("停止回放（Esc）")
+                .help(canStopWithButton ? "停止回放（Esc）" : "为避免阻挡回放，此面板允许鼠标穿透，请按 Esc 停止")
             }
         }
         .foregroundStyle(ClickerVisualTheme.primaryText)

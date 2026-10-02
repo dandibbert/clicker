@@ -90,9 +90,14 @@ struct PlaybackProgress: Equatable {
 
 @MainActor
 protocol PlaybackIndicatorPresenting: AnyObject {
+    func prepare(script: Script)
     func show(progress: PlaybackProgress, onStop: @escaping () -> Void)
     func update(progress: PlaybackProgress)
     func close()
+}
+
+extension PlaybackIndicatorPresenting {
+    func prepare(script: Script) {}
 }
 
 @MainActor

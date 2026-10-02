@@ -130,16 +130,17 @@ struct ScriptSidebarView: View {
                     ScriptSidebarRow(script: script)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button { onDuplicate(script.id) } label: {
-                        Image(systemName: "doc.on.doc")
+                        ScriptSidebarActionIcon(systemName: "doc.on.doc")
                     }
                     .buttonStyle(.borderless)
                     .disabled(!canEditScripts)
                     .accessibilityLabel("复制脚本「\(script.name)」")
                     .help("复制脚本")
                     Menu { contextMenu(for: script) } label: {
-                        Image(systemName: "ellipsis")
+                        ScriptSidebarActionIcon(systemName: "ellipsis")
                     }
                     .menuStyle(.borderlessButton)
+                    .tint(ClickerVisualTheme.primaryText)
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .accessibilityLabel("脚本「\(script.name)」的更多操作")
@@ -255,5 +256,17 @@ private struct CursorTrailMark: View {
         }
         .frame(width: 32, height: 32)
         .accessibilityHidden(true)
+    }
+}
+
+
+/// Pin glyph foregrounds inside native sidebar controls; the list selection tint
+/// is a surface color and must never become the glyph color in light appearance.
+struct ScriptSidebarActionIcon: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .foregroundStyle(ClickerVisualTheme.primaryText)
     }
 }

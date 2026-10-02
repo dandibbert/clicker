@@ -164,6 +164,19 @@ final class ActionEditorWorkflowTests: XCTestCase {
         XCTAssertEqual(DesktopCoordinateSpace.quartzFrame(CGRect(x: 0, y: 900, width: 1200, height: 800), primaryFrame: primary), CGRect(x: 0, y: -800, width: 1200, height: 800))
     }
 
+    func testCoordinatePreviewVectorLayoutFitsMultipleDisplaysWithoutCanvas() {
+        let screens = [CGRect(x: 0, y: 0, width: 1440, height: 900),
+                       CGRect(x: -1200, y: -800, width: 1200, height: 800)]
+        let layout = CoordinatePreviewLayout(screens: screens, size: CGSize(width: 300, height: 88))
+        let viewport = CGRect(x: 0, y: 0, width: 300, height: 88)
+        for screen in screens { XCTAssertTrue(viewport.contains(layout.frame(screen))) }
+        let target = CGPoint(x: -200, y: -100)
+        XCTAssertTrue(layout.contains(target))
+        XCTAssertTrue(viewport.contains(layout.map(target)))
+        XCTAssertFalse(layout.contains(CGPoint(x: 2000, y: 2000)))
+        XCTAssertFalse(String(reflecting: CoordinatePreview.Body.self).contains("Canvas"))
+    }
+
     @MainActor
     func testCoordinatePickerCancellationRestoresWindowAndReturnsNoCoordinateOnce() throws {
         _ = NSApplication.shared

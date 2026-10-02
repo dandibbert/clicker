@@ -151,9 +151,9 @@ final class AppState: ObservableObject {
         }
         scripts.removeAll { $0.id == id }
         recordEdit(before: previous, after: nil)
-        refreshRecentlyDeleted()
         if selectedScriptID == id { selectedScriptID = scripts.first?.id }
         persistenceIssue = nil
+        refreshRecentlyDeleted()
     }
 
     func duplicateScript(id: UUID) {
@@ -442,7 +442,23 @@ final class AppState: ObservableObject {
         if restoresClicker { application.hideClicker() }
         // Free playback never silently binds to the recording app or a remembered fallback.
         guard script.startApplicationBeforePlayback else {
-            startPlayback(script: script, restoresClicker: restoresClicker)
+            if restoresClicker {
+                playbackGeneration += 1
+                let generation = playbackGeneration
+                isPreparingPlayback = true
+                application.verifyClickerDeactivation { [weak self] succeeded in
+                    guard let self, self.playbackGeneration == generation, self.isPreparingPlayback else { return }
+                    self.isPreparingPlayback = false
+                    guard succeeded, self.hasPermission else {
+                        self.playbackNotice = "未开始回放：请确认系统权限，并让需要操作的应用处于前台后重试。"
+                        self.application.restoreClicker()
+                        return
+                    }
+                    self.startPlayback(script: script, restoresClicker: restoresClicker)
+                }
+            } else {
+                startPlayback(script: script, restoresClicker: false)
+            }
             return
         }
         let identifier = script.targetBundleIdentifier ?? ""
@@ -480,8 +496,9 @@ final class AppState: ObservableObject {
         guard phase == .idle, let pending = pendingPlaybackStart else { return }
         pendingPlaybackStart = nil
         guard hasPermission else { playbackNotice = "权限发生变化，未开始回放。"; return }
-        application.hideClicker()
-        startPlayback(script: pending.script, restoresClicker: true)
+        var freeScript = pending.script
+        freeScript.startApplicationBeforePlayback = false
+        requestPlayback(script: freeScript, restoresClicker: true)
     }
 
     func cancelPendingPlayback() {
@@ -504,6 +521,7 @@ final class AppState: ObservableObject {
         playbackFocusGeneration = restoresClicker ? generation : nil
         activePlaybackScript = script
         phase = .playing(iteration: 1, currentBlockID: nil)
+        playbackIndicator.prepare(script: script)
         playbackIndicator.show(progress: PlaybackProgress(script: script)) { [weak self] in
             guard let self, self.playbackGeneration == generation else { return }
             self.stopPlaybackIfNeeded()

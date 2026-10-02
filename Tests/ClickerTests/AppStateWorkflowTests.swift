@@ -132,7 +132,8 @@ final class AppStateWorkflowTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = ScriptStore(directory: directory)
-        let script = Script(name: "recover")
+        let script = Script(name: "recover", createdAt: Date(timeIntervalSince1970: 1_000),
+                            modifiedAt: Date(timeIntervalSince1970: 1_000))
         try store.save(script)
         let state = AppState(store: store)
         state.deleteScript(id: script.id)
@@ -148,7 +149,8 @@ final class AppStateWorkflowTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = ScriptStore(directory: directory)
-        let script = Script(name: "recover")
+        let script = Script(name: "recover", createdAt: Date(timeIntervalSince1970: 1_000),
+                            modifiedAt: Date(timeIntervalSince1970: 1_000))
         try store.save(script)
         let state = AppState(store: store)
         state.deleteScript(id: script.id)

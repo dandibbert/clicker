@@ -136,39 +136,81 @@ private final class CoordinatePickerOverlay: NSView {
     override func cancelOperation(_ sender: Any?) { onCancel?() }
 }
 
+/// A regular SwiftUI vector layout avoids Canvas's Metal-backed renderer. This
+/// small display diagram also remains renderable on software-only CI desktops.
+struct CoordinatePreviewLayout {
+    let screens: [CGRect]
+    let desktop: CGRect
+    let scale: CGFloat
+    let origin: CGPoint
+
+    init(screens: [CGRect], size: CGSize) {
+        self.screens = screens
+        desktop = screens.dropFirst().reduce(screens.first ?? .zero) { $0.union($1) }
+        scale = min(max(0, size.width - 12) / max(1, desktop.width),
+                    max(0, size.height - 12) / max(1, desktop.height))
+        origin = CGPoint(x: (size.width - desktop.width * scale) / 2,
+                         y: (size.height - desktop.height * scale) / 2)
+    }
+
+    func map(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: origin.x + (point.x - desktop.minX) * scale,
+                y: origin.y + (point.y - desktop.minY) * scale)
+    }
+
+    func frame(_ screen: CGRect) -> CGRect {
+        CGRect(origin: map(screen.origin),
+               size: CGSize(width: screen.width * scale, height: screen.height * scale))
+    }
+
+    func contains(_ point: CGPoint) -> Bool {
+        screens.contains { $0.contains(point) }
+    }
+}
+
 struct CoordinatePreview: View {
     let points: [CGPoint]
 
-    var body: some View {
-        Canvas { context, size in
-            guard let primary = NSScreen.screens.first else { return }
-            let screens = NSScreen.screens.map {
-                DesktopCoordinateSpace.quartzFrame($0.frame, primaryFrame: primary.frame)
-            }
-            guard let first = screens.first else { return }
-            let desktop = screens.dropFirst().reduce(first) { $0.union($1) }
-            let scale = min((size.width - 12) / max(1, desktop.width),
-                            (size.height - 12) / max(1, desktop.height))
-            let origin = CGPoint(x: (size.width - desktop.width * scale) / 2,
-                                 y: (size.height - desktop.height * scale) / 2)
-            func map(_ p: CGPoint) -> CGPoint {
-                CGPoint(x: origin.x + (p.x - desktop.minX) * scale,
-                        y: origin.y + (p.y - desktop.minY) * scale)
-            }
-            for screen in screens {
-                let rect = CGRect(origin: map(screen.origin),
-                                  size: CGSize(width: screen.width * scale, height: screen.height * scale))
-                context.fill(Path(roundedRect: rect, cornerRadius: 3), with: .color(ClickerVisualTheme.elevatedSurface))
-                context.stroke(Path(roundedRect: rect, cornerRadius: 3), with: .color(ClickerVisualTheme.separator), lineWidth: 1)
-            }
-            for (index, point) in points.enumerated() where screens.contains(where: { $0.contains(point) }) {
-                let p = map(point)
-                context.fill(Path(ellipseIn: CGRect(x: p.x - 3, y: p.y - 3, width: 6, height: 6)),
-                             with: .color(ClickerVisualTheme.primaryText))
-                context.draw(Text("\(index + 1)").font(.caption2).foregroundColor(ClickerVisualTheme.primaryText),
-                             at: CGPoint(x: p.x + 9, y: p.y), anchor: .leading)
-            }
+    private var screens: [CGRect] {
+        guard let primary = NSScreen.screens.first else { return [] }
+        return NSScreen.screens.map {
+            DesktopCoordinateSpace.quartzFrame($0.frame, primaryFrame: primary.frame)
         }
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let layout = CoordinatePreviewLayout(screens: screens, size: geometry.size)
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(layout.screens.enumerated()), id: \.offset) { _, screen in
+                    let rect = layout.frame(screen)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(ClickerVisualTheme.elevatedSurface)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(ClickerVisualTheme.separator, lineWidth: 1)
+                        }
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                }
+                ForEach(Array(points.enumerated()), id: \.offset) { index, point in
+                    if layout.contains(point) {
+                        let mapped = layout.map(point)
+                        Circle()
+                            .fill(ClickerVisualTheme.primaryText)
+                            .frame(width: 6, height: 6)
+                            .position(x: mapped.x, y: mapped.y)
+                        Text("\(index + 1)")
+                            .font(.caption2)
+                            .foregroundStyle(ClickerVisualTheme.primaryText)
+                            .frame(width: 20, alignment: .leading)
+                            .position(x: mapped.x + 19, y: mapped.y)
+                    }
+                }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+        }
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("屏幕位置示意图")
         .accessibilityValue(points.map { "X \($0.x), Y \($0.y)" }.joined(separator: "；"))
     }

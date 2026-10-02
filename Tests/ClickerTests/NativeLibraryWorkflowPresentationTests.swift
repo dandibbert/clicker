@@ -2,6 +2,7 @@ import AppKit
 import ClickerCore
 import SwiftUI
 import XCTest
+import Vision
 @testable import Clicker
 
 final class NativeLibraryWorkflowPresentationTests: XCTestCase {
@@ -92,7 +93,7 @@ final class NativeLibraryWorkflowPresentationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let state = AppState(store: ScriptStore(directory: directory))
         state.hasPermission = false
-        let script = Script(name: "仍可编辑", blocks: [.wait(WaitBlock(duration: 1))])
+        let script = Script(name: "权限独立验证", blocks: [.wait(WaitBlock(duration: 1))])
         state.scripts = [script]
         state.selectedScriptID = script.id
         let host = NSHostingController(rootView: MainView().environmentObject(state).frame(width: 760, height: 480))
@@ -105,9 +106,74 @@ final class NativeLibraryWorkflowPresentationTests: XCTestCase {
         let views = descendants(of: host.view)
         XCTAssertTrue(views.contains { $0 is NSSplitView })
         XCTAssertGreaterThanOrEqual(views.filter { $0 is NSOutlineView }.count, 2)
+        let bitmap = try retinaBitmap(for: host.view)
+        let image = try XCTUnwrap(bitmap.cgImage)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["zh-Hans"]
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: image, orientation: .up).perform([request])
+        let text = (request.results ?? []).compactMap { result -> (String, CGRect)? in
+            guard let candidate = result.topCandidates(1).first else { return nil }
+            let box = result.boundingBox
+            return (normalizedVisualText(candidate.string), CGRect(x: box.minX * 760, y: (1 - box.maxY) * 480,
+                                                                    width: box.width * 760, height: box.height * 480))
+        }
+        let banner = try XCTUnwrap(text.first { $0.0.contains("录制与回放需要权限") }?.1)
+        let brand = try XCTUnwrap(text.first { $0.0.lowercased().contains("clicker") }?.1)
+        let title = try XCTUnwrap(text.first { $0.0.contains(script.name) && $0.1.minX > 210 }?.1)
+        XCTAssertGreaterThan(brand.minY, banner.maxY, "Permission banner must reserve space above the complete brand")
+        XCTAssertGreaterThan(title.minY, banner.maxY, "Permission banner must not cover the script title")
         XCTAssertTrue(state.canEditScripts)
         XCTAssertTrue(state.createBlankScript())
         XCTAssertEqual(state.scripts.count, 2)
+    }
+
+    @MainActor
+    func testSidebarActionGlyphsRenderReadableForegroundUnderSelectionTint() throws {
+        _ = NSApplication.shared
+        for (appearanceName, scheme) in [(NSAppearance.Name.aqua, ColorScheme.light), (.darkAqua, .dark)] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            let expected = try XCTUnwrap(ClickerVisualTheme.resolvedColor(for: .primaryText, appearance: appearance).usingColorSpace(.sRGB))
+            let background = try XCTUnwrap(ClickerVisualTheme.resolvedColor(for: .selection, appearance: appearance).usingColorSpace(.sRGB))
+            XCTAssertGreaterThan(contrast(expected, background), 4.5)
+            for symbol in ["doc.on.doc", "ellipsis"] {
+                let hosting = NSHostingView(rootView:
+                    Button {} label: { ScriptSidebarActionIcon(systemName: symbol) }
+                        .buttonStyle(.borderless)
+                        .tint(ClickerVisualTheme.selection)
+                        .frame(width: 40, height: 32)
+                        .background(ClickerVisualTheme.selection)
+                        .environment(\.colorScheme, scheme)
+                )
+                hosting.appearance = appearance
+                hosting.frame = CGRect(x: 0, y: 0, width: 40, height: 32)
+                let bitmap = try retinaBitmap(for: hosting)
+                var readablePixels = 0
+                for y in 0..<bitmap.pixelsHigh {
+                    for x in 0..<bitmap.pixelsWide {
+                        guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                        if abs(color.redComponent - expected.redComponent) < 0.1,
+                           abs(color.greenComponent - expected.greenComponent) < 0.1,
+                           abs(color.blueComponent - expected.blueComponent) < 0.1 {
+                            readablePixels += 1
+                        }
+                    }
+                }
+                XCTAssertGreaterThan(readablePixels, 4, "The actual \(symbol) glyph must remain visible under sidebar tint")
+            }
+        }
+    }
+
+    private func contrast(_ first: NSColor, _ second: NSColor) -> CGFloat {
+        func luminance(_ color: NSColor) -> CGFloat {
+            func linear(_ value: CGFloat) -> CGFloat {
+                value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear(color.redComponent) + 0.7152 * linear(color.greenComponent) + 0.0722 * linear(color.blueComponent)
+        }
+        let a = luminance(first), b = luminance(second)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 
     @MainActor

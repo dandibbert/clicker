@@ -50,13 +50,14 @@ struct PermissionChecklistView: View {
                     .foregroundStyle(ClickerVisualTheme.secondaryText)
                 Spacer()
                 Button("重新检测") { state.refreshPermission() }
+                    .buttonStyle(.bordered)
             }
         }
         .foregroundStyle(ClickerVisualTheme.primaryText)
+        .tint(ClickerVisualTheme.focusRing)
         .padding(ClickerVisualTheme.spacing16)
         .frame(width: 370)
         .background(ClickerVisualTheme.canvas)
-        .onAppear { state.refreshPermission() }
     }
 
     private func permissionRow(
@@ -78,6 +79,7 @@ struct PermissionChecklistView: View {
                 Text("已授权").font(.caption)
             } else {
                 Button("授予权限…", action: action)
+                    .buttonStyle(.bordered)
                     .accessibilityLabel("请求\(title)权限并打开系统设置")
             }
         }

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ClickerCore
 
 struct PlaybackIndicatorScreenDescriptor: Equatable {
     let id: String
@@ -23,6 +24,7 @@ protocol PlaybackIndicatorPanel: AnyObject {
 @MainActor
 final class PlaybackIndicatorController: PlaybackIndicatorPresenting {
     typealias ScreenProvider = @MainActor () -> [PlaybackIndicatorScreenDescriptor]
+    typealias MainDisplayTopProvider = @MainActor () -> CGFloat
     typealias PanelFactory = @MainActor (
         PlaybackIndicatorPanelConfiguration,
         PlaybackProgress,
@@ -31,6 +33,8 @@ final class PlaybackIndicatorController: PlaybackIndicatorPresenting {
 
     private let screens: ScreenProvider
     private let makePanel: PanelFactory
+    private let mainDisplayTop: MainDisplayTopProvider
+    private var playbackPoints: [CGPoint] = []
     private var panel: PlaybackIndicatorPanel?
     private var generation = 0
     private var stopRequested = false
@@ -39,35 +43,54 @@ final class PlaybackIndicatorController: PlaybackIndicatorPresenting {
 
     init(
         screens: @escaping ScreenProvider = PlaybackIndicatorController.systemScreens,
-        makePanel: @escaping PanelFactory = PlaybackIndicatorController.makePanel
+        makePanel: @escaping PanelFactory = PlaybackIndicatorController.makePanel,
+        mainDisplayTop: @escaping MainDisplayTopProvider = PlaybackIndicatorController.systemMainDisplayTop
     ) {
         self.screens = screens
         self.makePanel = makePanel
+        self.mainDisplayTop = mainDisplayTop
+    }
+
+    func prepare(script: Script) {
+        // CGEvent and NSScreen use different vertical origins. The transform is
+        // anchored to the primary display, never the currently focused screen.
+        let top = mainDisplayTop()
+        playbackPoints = BlockExpander.plan(for: script).steps.compactMap { step in
+            let point: CGPoint
+            switch step.action {
+            case .mouseMove(let x, let y, _),
+                 .mouseDown(let x, let y, _, _, _),
+                 .mouseUp(let x, let y, _, _, _),
+                 .mouseDrag(let x, let y, _, _),
+                 .scroll(let x, let y, _, _, _):
+                point = CGPoint(x: x, y: top - CGFloat(y))
+            case .keyDown, .keyUp:
+                return nil
+            }
+            return point.x.isFinite && point.y.isFinite ? point : nil
+        }
     }
 
     func show(progress: PlaybackProgress, onStop: @escaping () -> Void) {
         close()
-        let availableScreens = screens()
-        guard let screen = availableScreens.first(where: \.isMain) ?? availableScreens.first else { return }
-        let visibleFrame = screen.visibleFrame
-        let width = min(340, visibleFrame.width)
-        let height = min(100, visibleFrame.height)
-        let inset: CGFloat = 16
-        let frame = CGRect(
-            x: max(visibleFrame.minX, visibleFrame.maxX - width - inset),
-            y: max(visibleFrame.minY, visibleFrame.maxY - height - inset),
-            width: width,
-            height: height
-        )
+        let availableScreens = screens().filter { $0.visibleFrame.width > 0 && $0.visibleFrame.height > 0 }
+        let orderedScreens = availableScreens.filter(\.isMain) + availableScreens.filter { !$0.isMain }
+        let candidates = orderedScreens.flatMap { Self.cornerFrames(in: $0.visibleFrame) }
+        guard let fallback = candidates.first else { return }
+        let safeFrame = candidates.first { frame in
+            let protectedFrame = frame.insetBy(dx: -12, dy: -12)
+            return !playbackPoints.contains(where: protectedFrame.contains)
+        }
         let configuration = PlaybackIndicatorPanelConfiguration(
-            frame: frame,
-            ignoresMouseEvents: false,
+            frame: safeFrame ?? fallback,
+            ignoresMouseEvents: safeFrame == nil,
             becomesKey: false
         )
         let currentGeneration = generation
         stopRequested = false
         let newPanel = makePanel(configuration, progress) { [weak self] in
             guard let self,
+                  !configuration.ignoresMouseEvents,
                   self.generation == currentGeneration,
                   self.panel != nil,
                   !self.stopRequested else { return }
@@ -76,6 +99,20 @@ final class PlaybackIndicatorController: PlaybackIndicatorPresenting {
         }
         panel = newPanel
         newPanel.orderFrontRegardless()
+    }
+
+    private static func cornerFrames(in visibleFrame: CGRect) -> [CGRect] {
+        let width = min(340, visibleFrame.width)
+        let height = min(100, visibleFrame.height)
+        let inset: CGFloat = 16
+        let left = min(visibleFrame.minX + inset, visibleFrame.maxX - width)
+        let right = max(visibleFrame.minX, visibleFrame.maxX - width - inset)
+        let bottom = min(visibleFrame.minY + inset, visibleFrame.maxY - height)
+        let top = max(visibleFrame.minY, visibleFrame.maxY - height - inset)
+        // Bottom corners are less likely to cover menus or toolbar controls.
+        return [(right, bottom), (left, bottom), (right, top), (left, top)].map { x, y in
+            CGRect(x: x, y: y, width: width, height: height)
+        }
     }
 
     func update(progress: PlaybackProgress) {
@@ -100,6 +137,10 @@ final class PlaybackIndicatorController: PlaybackIndicatorPresenting {
         }
     }
 
+    private static func systemMainDisplayTop() -> CGFloat {
+        NSScreen.screens.first?.frame.maxY ?? CGDisplayBounds(CGMainDisplayID()).height
+    }
+
     private static func makePanel(
         configuration: PlaybackIndicatorPanelConfiguration,
         progress: PlaybackProgress,
@@ -113,6 +154,7 @@ final class PlaybackIndicatorController: PlaybackIndicatorPresenting {
 final class AppKitPlaybackIndicatorPanel: NSPanel, PlaybackIndicatorPanel {
     private let hosting: PlaybackIndicatorHostingView
     private let onStop: () -> Void
+    private let canStopWithButton: Bool
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
@@ -123,7 +165,10 @@ final class AppKitPlaybackIndicatorPanel: NSPanel, PlaybackIndicatorPanel {
         onStop: @escaping () -> Void
     ) {
         self.onStop = onStop
-        hosting = PlaybackIndicatorHostingView(rootView: PlaybackIndicatorView(progress: progress, onStop: onStop))
+        canStopWithButton = !configuration.ignoresMouseEvents
+        hosting = PlaybackIndicatorHostingView(rootView: PlaybackIndicatorView(
+            progress: progress, onStop: onStop, canStopWithButton: !configuration.ignoresMouseEvents
+        ))
         super.init(
             contentRect: configuration.frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -137,14 +182,16 @@ final class AppKitPlaybackIndicatorPanel: NSPanel, PlaybackIndicatorPanel {
         backgroundColor = .clear
         hasShadow = true
         ignoresMouseEvents = configuration.ignoresMouseEvents
-        isMovableByWindowBackground = true
+        // Placement was checked against the recorded path. Moving this panel
+        // while playback is active could put Stop underneath synthetic input.
+        isMovableByWindowBackground = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         contentView = hosting
         setAccessibilityLabel("回放控制")
     }
 
     func update(progress: PlaybackProgress) {
-        hosting.rootView = PlaybackIndicatorView(progress: progress, onStop: onStop)
+        hosting.rootView = PlaybackIndicatorView(progress: progress, onStop: onStop, canStopWithButton: canStopWithButton)
     }
 
     func orderOut() {

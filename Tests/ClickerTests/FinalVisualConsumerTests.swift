@@ -353,6 +353,7 @@ final class FinalVisualConsumerTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let state = AppState(store: ScriptStore(directory: directory))
+        state.hasPermission = true
         let script = Script(
             name: "发布网页并整理窗口",
             blocks: [

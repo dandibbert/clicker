@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 import ClickerCore
 @testable import Clicker
@@ -23,7 +24,7 @@ final class PlaybackIndicatorControllerTests: XCTestCase {
         XCTAssertFalse(panel.configuration.becomesKey)
         XCTAssertFalse(panel.configuration.ignoresMouseEvents)
         XCTAssertTrue(mainFrame.contains(panel.configuration.frame))
-        XCTAssertEqual(panel.configuration.frame.maxY, mainFrame.maxY - 16)
+        XCTAssertEqual(panel.configuration.frame.minY, mainFrame.minY + 16)
         XCTAssertEqual(panel.orderFrontCount, 1)
         XCTAssertEqual(controller.panelCount, 1)
         XCTAssertEqual(panel.progress, [initial])
@@ -82,6 +83,79 @@ final class PlaybackIndicatorControllerTests: XCTestCase {
         XCTAssertTrue(factory.created.isEmpty)
     }
 
+    func testPreparationAvoidsRecordedClicksAndScrollsAtDefaultAndUpperRightCorners() throws {
+        let factory = PlaybackPanelFactory()
+        let controller = PlaybackIndicatorController(screens: {
+            [PlaybackIndicatorScreenDescriptor(id: "main", visibleFrame: self.mainFrame, isMain: true)]
+        }, makePanel: factory.make, mainDisplayTop: { 900 })
+        // AppKit (1300, 80) is the default lower-right control position;
+        // AppKit (1300, 820) is upper-right. Both must stay reachable below it.
+        controller.prepare(script: Script(name: "avoid input", blocks: [
+            .click(ClickBlock(x: 1300, y: 820, button: .left, clickCount: 1)),
+            .scroll(ScrollBlock(x: 1300, y: 80, duration: 0, steps: [ScrollStep(t: 0, dx: 0, dy: 10)])),
+        ]))
+        controller.show(progress: initial, onStop: {})
+
+        let configuration = try XCTUnwrap(factory.created.first?.configuration)
+        XCTAssertFalse(configuration.ignoresMouseEvents)
+        XCTAssertEqual(configuration.frame.minX, mainFrame.minX + 16)
+        XCTAssertFalse(configuration.frame.insetBy(dx: -12, dy: -12).contains(CGPoint(x: 1300, y: 80)))
+        XCTAssertFalse(configuration.frame.insetBy(dx: -12, dy: -12).contains(CGPoint(x: 1300, y: 820)))
+    }
+
+    func testAllCornersOccupiedUsesClickThroughAndIgnoresStopButtonCallback() throws {
+        let factory = PlaybackPanelFactory()
+        let controller = PlaybackIndicatorController(screens: {
+            [PlaybackIndicatorScreenDescriptor(id: "main", visibleFrame: self.mainFrame, isMain: true)]
+        }, makePanel: factory.make, mainDisplayTop: { 900 })
+        controller.prepare(script: pointerScript(appKitPoints: [
+            CGPoint(x: 1300, y: 80), CGPoint(x: 100, y: 80),
+            CGPoint(x: 1300, y: 820), CGPoint(x: 100, y: 820),
+        ]))
+        var stopCount = 0
+        controller.show(progress: initial, onStop: { stopCount += 1 })
+        let panel = try XCTUnwrap(factory.created.first)
+        XCTAssertTrue(panel.configuration.ignoresMouseEvents)
+        panel.onStop()
+        XCTAssertEqual(stopCount, 0)
+    }
+
+    func testOccupiedMainScreenFallsBackToNegativeOriginSecondaryScreen() throws {
+        let factory = PlaybackPanelFactory()
+        let controller = PlaybackIndicatorController(screens: {
+            [
+                PlaybackIndicatorScreenDescriptor(id: "main", visibleFrame: self.mainFrame, isMain: true),
+                PlaybackIndicatorScreenDescriptor(id: "left", visibleFrame: self.leftFrame, isMain: false),
+            ]
+        }, makePanel: factory.make, mainDisplayTop: { 900 })
+        controller.prepare(script: pointerScript(appKitPoints: [
+            CGPoint(x: 1300, y: 80), CGPoint(x: 100, y: 80),
+            CGPoint(x: 1300, y: 820), CGPoint(x: 100, y: 820),
+            // Also occupy the secondary screen's default bottom-right corner.
+            CGPoint(x: -100, y: -50),
+        ]))
+        controller.show(progress: initial, onStop: {})
+        let configuration = try XCTUnwrap(factory.created.first?.configuration)
+        XCTAssertFalse(configuration.ignoresMouseEvents)
+        XCTAssertTrue(leftFrame.contains(configuration.frame))
+        XCTAssertEqual(configuration.frame.minX, leftFrame.minX + 16)
+    }
+
+    func testNewPreparationClearsPreviousPointerRestrictions() throws {
+        let factory = PlaybackPanelFactory()
+        let controller = PlaybackIndicatorController(screens: {
+            [PlaybackIndicatorScreenDescriptor(id: "main", visibleFrame: self.mainFrame, isMain: true)]
+        }, makePanel: factory.make, mainDisplayTop: { 900 })
+        controller.prepare(script: pointerScript(appKitPoints: [CGPoint(x: 1300, y: 80)]))
+        controller.show(progress: initial, onStop: {})
+        XCTAssertEqual(factory.created.first?.configuration.frame.minX, mainFrame.minX + 16)
+        controller.prepare(script: Script(name: "keyboard", blocks: [.shortcut(ShortcutBlock(keyCode: 4, flags: 0))]))
+        controller.show(progress: initial, onStop: {})
+        let configuration = try XCTUnwrap(factory.created.last?.configuration)
+        XCTAssertEqual(configuration.frame.maxX, mainFrame.maxX - 16)
+        XCTAssertFalse(configuration.ignoresMouseEvents)
+    }
+
     func testNativePanelCannotTakeKeyOrMainFocus() {
         _ = NSApplication.shared
         let panel = AppKitPlaybackIndicatorPanel(
@@ -99,6 +173,7 @@ final class PlaybackIndicatorControllerTests: XCTestCase {
         XCTAssertFalse(panel.canBecomeMain)
         XCTAssertFalse(panel.ignoresMouseEvents)
         XCTAssertFalse(panel.hidesOnDeactivate)
+        XCTAssertFalse(panel.isMovableByWindowBackground)
         XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary))
         XCTAssertTrue(panel.contentView?.acceptsFirstMouse(for: nil) == true)
     }
@@ -107,6 +182,25 @@ final class PlaybackIndicatorControllerTests: XCTestCase {
         let progress = PlaybackProgress(scriptName: "长名称", currentStep: 12, totalSteps: 20, iteration: 3, totalIterations: 5)
         XCTAssertEqual(progress.stepDescription, "步骤 12 / 20")
         XCTAssertEqual(progress.iterationDescription, "第 3 / 5 轮")
+    }
+
+    func testNativeClickThroughPanelDisablesStopControl() throws {
+        _ = NSApplication.shared
+        let panel = AppKitPlaybackIndicatorPanel(
+            configuration: PlaybackIndicatorPanelConfiguration(
+                frame: CGRect(x: 0, y: 0, width: 340, height: 100),
+                ignoresMouseEvents: true,
+                becomesKey: false
+            ),
+            progress: initial,
+            onStop: {}
+        )
+        defer { panel.orderOut() }
+        let hosting = try XCTUnwrap(panel.contentView as? NSHostingView<PlaybackIndicatorView>)
+        XCTAssertTrue(panel.ignoresMouseEvents)
+        XCTAssertFalse(hosting.rootView.canStopWithButton)
+        panel.update(progress: initial)
+        XCTAssertFalse(hosting.rootView.canStopWithButton)
     }
 
     func testNativePanelRendersBothAppearancesWithoutTakingKeyWindow() throws {
@@ -153,6 +247,12 @@ final class PlaybackIndicatorControllerTests: XCTestCase {
                 try png.write(to: directory.appendingPathComponent("\(dark ? "dark" : "light")-playback-control-340x100.png"))
             }
         }
+    }
+
+    private func pointerScript(appKitPoints: [CGPoint]) -> Script {
+        Script(name: "path", blocks: [.move(MoveBlock(duration: 1, points: appKitPoints.enumerated().map {
+            TrackPoint(t: Double($0.offset), x: Double($0.element.x), y: Double(900 - $0.element.y), ordinal: $0.offset)
+        }))])
     }
 }
 

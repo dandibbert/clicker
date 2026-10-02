@@ -26,7 +26,7 @@ final class NativeWorkflowSmokeTests: XCTestCase {
         _ = NSApplication.shared
         let size = CGSize(width: 760, height: 480)
         for dark in [false, true] {
-            for scenario in ["permissions", "long-name", "large-text", "recording", "playing"] {
+            for scenario in ["permissions", "long-name", "large-text", "recording-notice", "recording", "playing"] {
                 let directory = FileManager.default.temporaryDirectory
                     .appendingPathComponent("Clicker-Visual-\(UUID().uuidString)", isDirectory: true)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -51,6 +51,12 @@ final class NativeWorkflowSmokeTests: XCTestCase {
                 state.scripts = [script, Script(name: "另一个脚本")]
                 state.selectedScriptID = script.id
                 state.hasPermission = true
+                if scenario == "recording-notice" {
+                    state.recordingNotice = RecordingNotice(
+                        title: "录制已中断",
+                        message: "已保留捕获到的操作，请检查后再回放。"
+                    )
+                }
                 if scenario == "playing" {
                     state.playScriptFromShortcut(id: script.id)
                     state.phase = .playing(iteration: 2, currentBlockID: script.blocks[0].id)
@@ -102,6 +108,18 @@ final class NativeWorkflowSmokeTests: XCTestCase {
                 }
 
                 let nativeViews = descendants(hosting)
+                if ["permissions", "recording-notice"].contains(scenario) {
+                    let split = try XCTUnwrap(nativeViews.compactMap { $0 as? NSSplitView }.first)
+                    let splitFrame = hosting.convert(split.bounds, from: split)
+                    let reservedTop = hosting.isFlipped
+                        ? splitFrame.minY - hosting.bounds.minY
+                        : hosting.bounds.maxY - splitFrame.maxY
+                    XCTAssertGreaterThanOrEqual(
+                        reservedTop, 28,
+                        "\(scenario) must reserve space above the split view, not cover its title"
+                    )
+                    XCTAssertTrue(hosting.bounds.contains(splitFrame), "The split view must stay inside the viewport")
+                }
                 let outlines = nativeViews.compactMap { $0 as? NSOutlineView }
                 let actions = try XCTUnwrap(outlines.first { $0.numberOfRows == script.blocks.count })
                 XCTAssertTrue(actions.window === window)
