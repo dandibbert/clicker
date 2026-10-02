@@ -7,15 +7,41 @@ struct EmptyLibraryWelcomeView: View {
     @EnvironmentObject private var state: AppState
     let onImport: () -> Void
 
+    private var recordingAction: PrimaryActionPresentation {
+        PrimaryActionPresentation.pair(
+            phase: state.phase,
+            hasPlayableScript: false,
+            canRecord: state.canStartRecording && state.hasPermission,
+            canPlay: false
+        )[0]
+    }
+
+    private var title: String {
+        switch state.phase {
+        case .countdown: "即将开始录制"
+        case .recording: "正在录制"
+        default: "创建第一个脚本"
+        }
+    }
+
     var body: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                welcomeContent.frame(minHeight: geometry.size.height)
+            }
+        }
+        .background(ClickerVisualTheme.canvas)
+    }
+
+    private var welcomeContent: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 24)
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("创建第一个脚本")
+                    Text(title)
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(ClickerVisualTheme.primaryText)
-                    Text("把重复操作交给 Clicker")
+                    Text(recordingAction.isStop ? "完成操作后，停止并保存为脚本" : "把重复操作交给 Clicker")
                         .font(.callout)
                         .foregroundStyle(ClickerVisualTheme.secondaryText)
                 }
@@ -25,11 +51,11 @@ struct EmptyLibraryWelcomeView: View {
                         ClickerProminentButton(role: .recording) {
                             state.toggleRecord(source: .ui)
                         } label: {
-                            Text("开始录制").frame(width: 100)
+                            Text(recordingAction.isStop ? recordingAction.title : "开始录制").frame(width: 100)
                         }
-                        .disabled(!state.canStartRecording || !state.hasPermission)
+                        .disabled(!recordingAction.isEnabled)
                         .accessibilityIdentifier("empty-library-record")
-                        .accessibilityLabel("开始录制")
+                        .accessibilityLabel(recordingAction.accessibilityLabel)
                     }
                     Divider()
                     startRow(symbol: "doc.badge.plus", title: "手动编排动作", detail: "逐步添加点击、按键和等待") {
@@ -72,8 +98,7 @@ struct EmptyLibraryWelcomeView: View {
             .padding(.horizontal, 32)
             Spacer(minLength: 24)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(ClickerVisualTheme.canvas)
+        .frame(maxWidth: .infinity)
     }
 
     private func startRow<Action: View>(

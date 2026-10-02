@@ -96,8 +96,11 @@ final class LibraryVisualHierarchyTests: XCTestCase {
     @MainActor
     private func assertCompactTwoRowHeader(in fixture: HostedLibraryHierarchyFixture) throws {
         let split = try fixture.splitView()
-        let detail = try XCTUnwrap(split.subviews.last)
-        let actionList = try XCTUnwrap(fixture.descendants(of: detail).compactMap { $0 as? NSOutlineView }.first)
+        let sidebarList = try fixture.sidebarOutline()
+        let actionList = try XCTUnwrap(fixture.descendants(of: split).compactMap { $0 as? NSOutlineView }.first {
+            $0 !== sidebarList
+        })
+        let detail = try XCTUnwrap(split.subviews.first { actionList.isDescendant(of: $0) })
         let detailFrame = fixture.frame(of: detail)
         let actionFrame = fixture.frame(of: actionList)
         let header = CGRect(x: detailFrame.minX, y: detailFrame.minY,
@@ -154,6 +157,7 @@ final class HostedLibraryHierarchyFixture {
 
     init(scripts: [Script] = [], size: CGSize = CGSize(width: 760, height: 480),
          dark: Bool = false, hasPermission: Bool = true,
+         makeState: (@MainActor (ScriptStore) -> AppState)? = nil,
          importPicker: @escaping @MainActor () throws -> ScriptImportCandidate? = { try ScriptTransferPanels.chooseImport() }) throws {
         _ = NSApplication.shared
         self.dark = dark
@@ -161,7 +165,7 @@ final class HostedLibraryHierarchyFixture {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let store = ScriptStore(directory: directory)
         for script in scripts { try store.save(script) }
-        state = AppState(store: store)
+        state = makeState?(store) ?? AppState(store: store)
         state.selectedScriptID = scripts.first?.id
         state.hasPermission = hasPermission
         controller = NSHostingController(rootView: AnyView(
@@ -181,7 +185,7 @@ final class HostedLibraryHierarchyFixture {
         window.makeKeyAndOrderFront(nil)
         settle()
         // MainView refreshes real permissions on activation. Pin the visual
-        // scenario afterward; none of these tests starts recording or playback.
+        // scenario afterward. Recording tests inject inert input services.
         state.hasPermission = hasPermission
         settle()
     }
@@ -213,11 +217,13 @@ final class HostedLibraryHierarchyFixture {
     }
 
     func sidebar() throws -> NSView {
-        try XCTUnwrap(try splitView().subviews.first)
+        let outline = try sidebarOutline()
+        return try XCTUnwrap(try splitView().subviews.first { outline.isDescendant(of: $0) })
     }
 
     func sidebarOutline() throws -> NSOutlineView {
-        try XCTUnwrap(descendants(of: try sidebar()).compactMap { $0 as? NSOutlineView }.first)
+        try XCTUnwrap(descendants(of: try splitView()).compactMap { $0 as? NSOutlineView }
+            .min { frame(of: $0).minX < frame(of: $1).minX })
     }
 
     func searchField() throws -> NSTextField {
@@ -229,7 +235,9 @@ final class HostedLibraryHierarchyFixture {
     func assertPopulatedLibrary(expectedRows: Int) throws {
         let split = try splitView()
         XCTAssertEqual(descendants(of: host).filter { $0 is NSSplitView }.count, 1)
-        XCTAssertEqual(split.subviews.count, 2)
+        // NSSplitView also owns native divider/accessory views. Identify its
+        // actual library pane by the outline it hosts, not by subview count.
+        XCTAssertTrue(try sidebarOutline().isDescendant(of: split))
         let sidebarFrame = frame(of: try sidebar())
         XCTAssertTrue((210...250).contains(sidebarFrame.width), "Sidebar width: \(sidebarFrame)")
         let outline = try sidebarOutline()
@@ -270,38 +278,59 @@ final class HostedLibraryHierarchyFixture {
         }
     }
 
-    func accessibleActions(in root: NSView? = nil) -> [NSAccessibilityProtocol] {
+    func accessibleActions(in root: NSView? = nil) -> [LibraryAccessibleAction] {
         let root = root ?? host
         var visited = Set<ObjectIdentifier>()
-        var actions: [NSAccessibilityProtocol] = []
+        var actions: [LibraryAccessibleAction] = []
         func visit(_ candidate: Any) {
-            guard let element = candidate as? NSAccessibilityProtocol else { return }
-            guard visited.insert(ObjectIdentifier(element as AnyObject)).inserted else { return }
-            if element.accessibilityRole()?.rawValue.lowercased().contains("button") == true,
-               !element.accessibilityFrame().isEmpty {
-                actions.append(element)
+            guard let object = candidate as? NSObject,
+                  visited.insert(ObjectIdentifier(object)).inserted else { return }
+            let action: LibraryAccessibleAction
+            let children: [Any]
+            if let view = candidate as? NSView {
+                // NSView's accessibility methods are callable even when the
+                // runtime object does not advertise protocol conformance.
+                action = LibraryAccessibleAction(view: view)
+                children = (view.accessibilityChildren() ?? []) + view.subviews
+            } else if let element = candidate as? NSAccessibilityElement {
+                action = LibraryAccessibleAction(element: element)
+                children = element.accessibilityChildren() ?? []
+            } else if let element = candidate as? NSAccessibilityProtocol {
+                action = LibraryAccessibleAction(element: element)
+                children = element.accessibilityChildren() ?? []
+            } else {
+                return
             }
-            for child in element.accessibilityChildren() ?? [] { visit(child) }
+            if action.role?.rawValue.lowercased().contains("button") == true,
+               !action.accessibilityFrame().isEmpty {
+                actions.append(action)
+            }
+            for child in children { visit(child) }
         }
         visit(root)
         return actions
     }
 
-    func action(named name: String, in root: NSView? = nil) throws -> NSAccessibilityProtocol {
+    func action(named name: String, in root: NSView? = nil) throws -> LibraryAccessibleAction {
         let actions = accessibleActions(in: root)
-        let matches = actions.filter { label(of: $0) == normalizedVisualText(name) }
-        XCTAssertEqual(matches.count, 1, "One accessible \(name) action expected; found: \(actions.map { label(of: $0) })")
-        return try XCTUnwrap(matches.first, "The \(name) action must be accessible without OCR")
-    }
-
-    func label(of element: NSAccessibilityProtocol) -> String {
-        if let label = element.accessibilityLabel(), !label.isEmpty {
-            return normalizedVisualText(label)
+        var frames = Set<String>()
+        let matches = actions.filter { action in
+            guard label(of: action) == normalizedVisualText(name) else { return false }
+            let rect = action.accessibilityFrame()
+            let key = [rect.minX, rect.minY, rect.width, rect.height].map { String(Int($0.rounded())) }.joined(separator: ",")
+            return frames.insert(key).inserted
         }
-        return normalizedVisualText(element.accessibilityTitle() ?? "")
+        let diagnostic = descendants(of: root ?? host).map { String(describing: type(of: $0)) }.joined(separator: ", ")
+        XCTAssertEqual(matches.count, 1, "One accessible \(name) action expected; actions: \(actions.map { label(of: $0) }); native views: \(diagnostic)")
+        return try XCTUnwrap(matches.first, "The \(name) action must be discoverable")
     }
 
-    func frame(of element: NSAccessibilityProtocol) -> CGRect {
+    func label(of element: LibraryAccessibleAction) -> String {
+        if let label = element.label, !label.isEmpty { return normalizedVisualText(label) }
+        return normalizedVisualText(element.title ?? "")
+    }
+
+    func frame(of element: LibraryAccessibleAction) -> CGRect {
         let inWindow = window.convertFromScreen(element.accessibilityFrame())
         return topDown(host.convert(inWindow, from: nil))
     }
@@ -369,4 +398,47 @@ final class HostedLibraryHierarchyFixture {
             ))
         }
     }
+}
+
+/// A narrow adapter over real AppKit accessibility methods. Native NSViews and
+/// virtual NSAccessibilityElements need not pass the same runtime protocol cast.
+@MainActor
+struct LibraryAccessibleAction {
+    let role: NSAccessibility.Role?
+    let label: String?
+    let title: String?
+    private let enabled: () -> Bool
+    private let press: () -> Bool
+    private let screenFrame: () -> CGRect
+
+    init(view: NSView) {
+        role = view.accessibilityRole()
+        label = view.accessibilityLabel()
+        title = view.accessibilityTitle()
+        enabled = { view.isAccessibilityEnabled() }
+        press = { view.accessibilityPerformPress() }
+        screenFrame = { view.accessibilityFrame() }
+    }
+
+    init(element: NSAccessibilityElement) {
+        role = element.accessibilityRole()
+        label = element.accessibilityLabel()
+        title = element.accessibilityTitle()
+        enabled = { element.isAccessibilityEnabled() }
+        press = { element.accessibilityPerformPress() }
+        screenFrame = { element.accessibilityFrame() }
+    }
+
+    init(element: NSAccessibilityProtocol) {
+        role = element.accessibilityRole()
+        label = element.accessibilityLabel()
+        title = element.accessibilityTitle()
+        enabled = { element.isAccessibilityEnabled() }
+        press = { element.accessibilityPerformPress() }
+        screenFrame = { element.accessibilityFrame() }
+    }
+
+    func isAccessibilityEnabled() -> Bool { enabled() }
+    func accessibilityPerformPress() -> Bool { press() }
+    func accessibilityFrame() -> CGRect { screenFrame() }
 }

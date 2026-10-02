@@ -62,6 +62,9 @@ jobs:
       # Surface real native window previews before the longer verification and
       # packaging steps, so layout review need not wait for a finished installer.
       - name: Render native layout preview
+        # This is an early diagnostic pass. The same tests run again in the
+        # mandatory full suite below, which still gates every installer.
+        continue-on-error: true
         env:
           CLICKER_SNAPSHOT_DIR: ${{ github.workspace }}/dist/ui-preview
         run: swift test --filter LibraryVisualHierarchyTests

@@ -1,5 +1,6 @@
 import AppKit
 import ClickerCore
+import CoreGraphics
 import SwiftUI
 import XCTest
 @testable import Clicker
@@ -26,6 +27,17 @@ final class LibraryLayoutTransitionTests: XCTestCase {
             XCTAssertFalse(blankText.contains { $0.text.contains("创建第一个脚本") })
             XCTAssertTrue(blankText.contains { $0.text.contains("这个脚本还没有动作") },
                           "An empty script is still a selected native library row")
+
+            fixture.state.undo()
+            fixture.settle(until: { fixture.state.scripts.isEmpty })
+            XCTAssertTrue(fixture.state.canRedo)
+            let undone = try fixture.snapshot(named: "first-blank-undone")
+            try fixture.assertEmptyWelcome(text: fixture.recognizedText(in: undone), canRecord: false)
+            fixture.state.redo()
+            fixture.settle(until: { fixture.state.selectedScriptID == script.id })
+            XCTAssertEqual(fixture.state.scripts.map(\.id), [script.id])
+            try fixture.assertPopulatedLibrary(expectedRows: 1)
+            try fixture.snapshot(named: "first-blank-redone")
 
             fixture.state.deleteScript(id: script.id)
             fixture.settle(until: { !fixture.descendants(of: fixture.host).contains { $0 is NSSplitView } })
@@ -153,6 +165,123 @@ final class LibraryLayoutTransitionTests: XCTestCase {
     }
 
     @MainActor
+    func testFirstRecordingCanCancelCountdownThenStopAndSaveFromWelcome() async throws {
+        for dark in [false, true] {
+            let services = LibraryRecordingServices()
+            let fixture = try HostedLibraryHierarchyFixture(dark: dark, makeState: services.makeState)
+            defer { fixture.tearDown() }
+            XCTAssertTrue(try fixture.action(named: "开始录制").accessibilityPerformPress())
+            fixture.settle()
+            XCTAssertEqual(fixture.state.phase, .countdown(3))
+            XCTAssertEqual(services.recorder.starts, 0)
+            try assertWelcomeCanStopRecording(in: fixture)
+            try fixture.snapshot(named: "first-recording-countdown")
+            XCTAssertTrue(try fixture.action(named: "停止录制").accessibilityPerformPress())
+            fixture.settle()
+            XCTAssertEqual(fixture.state.phase, .idle)
+            XCTAssertEqual(services.countdown.closes, 1)
+            XCTAssertEqual(services.recorder.starts, 0)
+            XCTAssertTrue(fixture.state.scripts.isEmpty)
+            services.countdown.finish(at: 0)
+            await Task.yield()
+            XCTAssertEqual(fixture.state.phase, .idle, "A cancelled countdown cannot start capture later")
+            XCTAssertEqual(services.recorder.starts, 0)
+
+            XCTAssertTrue(try fixture.action(named: "开始录制").accessibilityPerformPress())
+            services.countdown.finish(at: 1)
+            await Task.yield()
+            fixture.settle()
+            XCTAssertEqual(fixture.state.phase, .recording)
+            XCTAssertEqual(services.recorder.starts, 1)
+            XCTAssertEqual(services.indicator.shows, 1)
+            fixture.state.hasPermission = false
+            fixture.settle()
+            try assertWelcomeCanStopRecording(in: fixture)
+            try fixture.snapshot(named: "first-recording-active-no-permission")
+            XCTAssertTrue(try fixture.action(named: "停止录制").accessibilityPerformPress())
+            fixture.settle(until: { fixture.state.scripts.count == 1 })
+            XCTAssertEqual(fixture.state.phase, .idle)
+            XCTAssertEqual(services.recorder.stops, 1)
+            XCTAssertEqual(services.indicator.closes, 2)
+            XCTAssertEqual(services.application.restores, 2)
+            XCTAssertEqual(services.playback.starts, 0)
+            XCTAssertNil(fixture.state.unsavedRecording)
+            let saved = try XCTUnwrap(fixture.state.selectedScript)
+            XCTAssertFalse(saved.blocks.isEmpty)
+            let persisted = fixture.state.store.loadAll().scripts
+            XCTAssertEqual(persisted.count, 1)
+            XCTAssertEqual(persisted.first?.id, saved.id)
+            XCTAssertEqual(persisted.first?.name, saved.name)
+            XCTAssertEqual(persisted.first?.blocks, saved.blocks)
+            XCTAssertEqual(persisted.first?.trailingDelay, saved.trailingDelay)
+            try fixture.assertPopulatedLibrary(expectedRows: 1)
+            try fixture.snapshot(named: "first-recording-saved")
+        }
+    }
+
+    @MainActor
+    func testMinimumWelcomeScrollsBelowRecoveryNoticesAndRetrySavesFirstScript() async throws {
+        let services = LibraryRecordingServices()
+        let fixture = try HostedLibraryHierarchyFixture(makeState: services.makeState)
+        defer { fixture.tearDown() }
+        XCTAssertTrue(try fixture.action(named: "开始录制").accessibilityPerformPress())
+        services.countdown.finish(at: 0)
+        await Task.yield()
+        XCTAssertEqual(fixture.state.phase, .recording)
+        fixture.state.stageRecordingForTermination()
+        fixture.state.hasPermission = false
+        fixture.state.recordingNotice = RecordingNotice(
+            title: "有尚未保存的录制",
+            message: "请先重试保存、另存或明确丢弃当前录制，再开始新的录制。"
+        )
+        fixture.settle()
+        XCTAssertNotNil(fixture.state.unsavedRecording)
+        XCTAssertTrue(fixture.state.scripts.isEmpty)
+        XCTAssertFalse(fixture.descendants(of: fixture.host).contains { $0 is NSSplitView })
+        XCTAssertFalse(try fixture.action(named: "开始录制").isAccessibilityEnabled())
+        var recoveryBottom: CGFloat = 0
+        for title in ["重试保存", "另存为", "丢弃"] {
+            let action = try fixture.action(named: title)
+            let frame = fixture.frame(of: action)
+            XCTAssertTrue(action.isAccessibilityEnabled())
+            XCTAssertTrue(fixture.host.bounds.contains(frame), "Recovery controls must stay above the welcome: \(frame)")
+            recoveryBottom = max(recoveryBottom, frame.maxY)
+        }
+        try fixture.snapshot(named: "empty-recovery-notices")
+        let scroll = try XCTUnwrap(fixture.descendants(of: fixture.host).compactMap { $0 as? NSScrollView }.first)
+        let document = try XCTUnwrap(scroll.documentView)
+        XCTAssertGreaterThan(document.bounds.height, scroll.contentView.bounds.height,
+                             "The welcome must scroll when status notices consume the minimum-height window")
+        let importAction = try fixture.action(named: "导入脚本")
+        let target = document.convert(fixture.window.convertFromScreen(importAction.accessibilityFrame()), from: nil)
+        document.scrollToVisible(target.insetBy(dx: 0, dy: -4))
+        fixture.settle()
+        let importFrame = fixture.frame(of: try fixture.action(named: "导入脚本"))
+        XCTAssertTrue(fixture.host.bounds.contains(importFrame), "The final welcome action must be reachable by scrolling")
+        XCTAssertGreaterThanOrEqual(importFrame.minY, recoveryBottom,
+                                    "Scrolled welcome controls must never cover the recovery actions")
+        try fixture.snapshot(named: "empty-recovery-scrolled")
+        XCTAssertTrue(try fixture.action(named: "重试保存").accessibilityPerformPress())
+        fixture.settle(until: { fixture.state.scripts.count == 1 })
+        XCTAssertNil(fixture.state.unsavedRecording)
+        XCTAssertEqual(services.recorder.stops, 1)
+        XCTAssertEqual(services.playback.starts, 0)
+        try fixture.assertPopulatedLibrary(expectedRows: 1)
+        try fixture.snapshot(named: "first-recovery-saved")
+    }
+
+    @MainActor
+    private func assertWelcomeCanStopRecording(in fixture: HostedLibraryHierarchyFixture) throws {
+        XCTAssertTrue(fixture.state.scripts.isEmpty)
+        XCTAssertFalse(fixture.descendants(of: fixture.host).contains { $0 is NSSplitView })
+        let stop = try fixture.action(named: "停止录制")
+        XCTAssertTrue(stop.isAccessibilityEnabled(), "Stopping must remain enabled even after permissions disappear")
+        XCTAssertTrue(fixture.host.bounds.contains(fixture.frame(of: stop)))
+        XCTAssertFalse(try fixture.action(named: "新建空白脚本").isAccessibilityEnabled())
+        XCTAssertFalse(try fixture.action(named: "导入脚本").isAccessibilityEnabled())
+    }
+
+    @MainActor
     private func presentImportPreview(in fixture: HostedLibraryHierarchyFixture) throws {
         let importAction = try fixture.action(named: "导入脚本")
         XCTAssertTrue(importAction.isAccessibilityEnabled())
@@ -170,4 +299,79 @@ final class LibraryLayoutTransitionTests: XCTestCase {
         fixture.settle(until: { field.stringValue == query })
         XCTAssertEqual(field.stringValue, query)
     }
+}
+
+/// Inert services are injected only into first-recording UI tests. They never
+/// create an event tap, post input, hide the test app, or show overlay windows.
+@MainActor
+private final class LibraryRecordingServices {
+    let recorder = LibraryFixtureRecorder()
+    let countdown = LibraryFixtureCountdown()
+    let application = LibraryFixtureApplication()
+    let indicator = LibraryFixtureRecordingIndicator()
+    let playback = LibraryFixturePlayback()
+
+    func makeState(store: ScriptStore) -> AppState {
+        AppState(store: store, recorder: recorder, countdown: countdown,
+                 application: application, externalApplicationTracker: LibraryFixtureTracker(),
+                 stopShortcutStore: LibraryFixtureStopShortcut(), recordingIndicator: indicator,
+                 playbackEngine: playback, playbackIndicator: SilentPlaybackIndicator())
+    }
+}
+
+private final class LibraryFixtureRecorder: EventRecording {
+    var onTapFailure: (() -> Void)?
+    var onStopRequest: (() -> Void)?
+    var starts = 0
+    var stops = 0
+    func start(stopShortcut: RecordingStopShortcut) -> Bool { starts += 1; return true }
+    func stop() -> RecordingCapture {
+        stops += 1
+        return .init(events: [RecordedEvent(t: 0.1, kind: .leftDown, x: 20, y: 30),
+                              RecordedEvent(t: 0.2, kind: .leftUp, x: 20, y: 30)], duration: 0.8)
+    }
+    func cutoff(at timestamp: CGEventTimestamp) -> RecordingCutoff { .init(eventCount: 2, duration: 0.8) }
+}
+
+private final class LibraryFixtureCountdown: CountdownPresenting {
+    var closes = 0
+    private var finishes: [() -> Void] = []
+    func show(seconds: Int, onTick: @escaping (Int) -> Void, onFinish: @escaping () -> Void) {
+        finishes.append(onFinish)
+    }
+    func finish(at index: Int) { finishes[index]() }
+    func close() { closes += 1 }
+}
+
+@MainActor
+private final class LibraryFixtureApplication: ApplicationControlling {
+    var restores = 0
+    func activateExternalApplication(bundleIdentifier: String) -> Bool { false }
+    func hideClicker() {}
+    func restoreClicker() { restores += 1 }
+}
+
+@MainActor
+private final class LibraryFixtureRecordingIndicator: RecordingIndicatorPresenting {
+    var shows = 0
+    var closes = 0
+    func show(shortcut: RecordingStopShortcut) { shows += 1 }
+    func close() { closes += 1 }
+}
+
+private final class LibraryFixtureTracker: ExternalApplicationTracking {
+    var mostRecentExternalBundleIdentifier: String? { nil }
+    func start() {}
+}
+
+private final class LibraryFixtureStopShortcut: RecordingStopShortcutProviding {
+    var shortcut: RecordingStopShortcut = .defaultValue
+}
+
+@MainActor
+private final class LibraryFixturePlayback: PlaybackControlling {
+    var starts = 0
+    func play(script: Script, onIteration: @escaping (Int) -> Void,
+              onBlock: @escaping (UUID?) -> Void, onFinish: @escaping () -> Void) { starts += 1 }
+    func stop() {}
 }
