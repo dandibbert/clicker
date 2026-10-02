@@ -19,6 +19,13 @@ final class NativeWorkflowSmokeTests: XCTestCase {
         // Missing output must remain safe mode, never fall through to a real launch.
         XCTAssertNotNil(StartupSmokeTest(arguments: ["Clicker", "--smoke-test"]))
         XCTAssertNil(StartupSmokeTest(arguments: ["Clicker", "--smoke-test"])?.reportURL)
+        let environmentMode = StartupSmokeTest(arguments: ["Clicker"], environment: [
+            "CLICKER_SMOKE_TEST": "1", "CLICKER_SMOKE_REPORT": "/tmp/environment-smoke.json",
+        ])
+        XCTAssertEqual(environmentMode?.reportURL?.path, "/tmp/environment-smoke.json")
+        XCTAssertNil(StartupSmokeTest(arguments: ["Clicker"], environment: [
+            "CLICKER_SMOKE_REPORT": "/tmp/environment-smoke.json",
+        ]), "A report path alone must not change normal startup")
     }
 
     @MainActor

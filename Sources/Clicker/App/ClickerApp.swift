@@ -11,7 +11,10 @@ struct ClickerApp: App {
     private let smokeTest: StartupSmokeTest?
 
     init() {
-        let smoke = StartupSmokeTest(arguments: ProcessInfo.processInfo.arguments)
+        let smoke = StartupSmokeTest(
+            arguments: ProcessInfo.processInfo.arguments,
+            environment: ProcessInfo.processInfo.environment
+        )
         smokeTest = smoke
         smoke?.beginStartupMonitoring()
         let s: AppState
@@ -25,17 +28,6 @@ struct ClickerApp: App {
         _state = StateObject(wrappedValue: s)
         applicationServices = smoke == nil ? ApplicationServiceCoordinator(state: s) : nil
         if smoke == nil { s.setUp() }
-        // SwiftPM executables do not get Xcode's foreground-launch setup. Queue
-        // activation until NSApplicationMain has installed SwiftUI's real scene.
-        // This presents the existing single Window scene; it creates no test UI.
-        DispatchQueue.main.async {
-            guard let application = NSApp else { return }
-            let initialPolicy = application.activationPolicy().rawValue
-            let accepted = application.setActivationPolicy(.regular)
-            smoke?.recordActivation(initialPolicy: initialPolicy, accepted: accepted)
-            application.activate(ignoringOtherApps: true)
-            application.windows.first { !($0 is NSPanel) }?.makeKeyAndOrderFront(nil)
-        }
     }
 
     var body: some Scene {
@@ -73,13 +65,13 @@ final class StartupSmokeTest {
     private var hasStarted = false
     private var mainViewAppeared = false
     private var didFinishLaunching = false
-    private var initialActivationPolicy: Int?
-    private var activationPolicyAccepted: Bool?
     private var launchObserver: NSObjectProtocol?
 
-    init?(arguments: [String]) {
-        guard arguments.contains("--smoke-test") else { return nil }
-        if let index = arguments.firstIndex(of: "--smoke-report"),
+    init?(arguments: [String], environment: [String: String] = [:]) {
+        guard environment["CLICKER_SMOKE_TEST"] == "1" || arguments.contains("--smoke-test") else { return nil }
+        if let path = environment["CLICKER_SMOKE_REPORT"], path.hasPrefix("/") {
+            reportURL = URL(fileURLWithPath: path)
+        } else if let index = arguments.firstIndex(of: "--smoke-report"),
            arguments.indices.contains(index + 1),
            arguments[index + 1].hasPrefix("/") {
             reportURL = URL(fileURLWithPath: arguments[index + 1])
@@ -129,11 +121,6 @@ final class StartupSmokeTest {
         }
     }
 
-    func recordActivation(initialPolicy: Int, accepted: Bool) {
-        initialActivationPolicy = initialPolicy
-        activationPolicyAccepted = accepted
-    }
-
     func mainViewDidAppear() {
         mainViewAppeared = true
     }
@@ -146,11 +133,11 @@ final class StartupSmokeTest {
             "mainViewAppeared": mainViewAppeared,
             "applicationDidFinishLaunching": didFinishLaunching,
             "activationPolicy": NSApp?.activationPolicy().rawValue ?? -1,
-            "initialActivationPolicy": initialActivationPolicy ?? -1,
-            "activationPolicyAccepted": activationPolicyAccepted ?? false,
             "applicationIsRunning": NSApp?.isRunning ?? false,
             "applicationIsActive": NSApp?.isActive ?? false,
             "processIdentifier": ProcessInfo.processInfo.processIdentifier,
+            "arguments": ProcessInfo.processInfo.arguments,
+            "openFileRequest": UserDefaults.standard.stringArray(forKey: "NSOpen") ?? [],
             "bundleIdentifier": Bundle.main.bundleIdentifier ?? "",
             "bundlePath": Bundle.main.bundleURL.path,
             "sourceCommit": Bundle.main.object(forInfoDictionaryKey: "ClickerSourceCommit") as? String ?? "unknown",

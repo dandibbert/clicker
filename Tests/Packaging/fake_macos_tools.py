@@ -67,9 +67,9 @@ elif name == "hdiutil":
         extract(args[-1], args[args.index("-mountpoint") + 1])
     elif args[0] != "detach":
         raise AssertionError(f"Unexpected hdiutil command: {args}")
-elif name == "open":
-    assert args[:2] == ["-n", "-W"]
-    assert args[3] == "--args"
-    sys.exit(subprocess.call([str(Path(args[2]) / "Contents/MacOS/Clicker"), *args[4:]]))
+elif name == "launch-smoke":
+    assert len(args) == 2
+    environment = {**os.environ, "CLICKER_SMOKE_TEST": "1", "CLICKER_SMOKE_REPORT": args[1]}
+    sys.exit(subprocess.call([str(Path(args[0]) / "Contents/MacOS/Clicker")], env=environment))
 else:
     raise AssertionError(f"Unexpected tool: {name}")

@@ -45,6 +45,9 @@ name=$(basename "$0")
 printf '%s %s\\n' "$name" "$*" >> "$MOCK_LOG"
 case "$name" in
     swift)
+        if [[ "$1" == scripts/launch-smoke-app.swift ]]; then
+            exec "$(dirname "$0")/launch-smoke" "$2" "$3"
+        fi
         if [[ " $* " == *" --show-bin-path "* ]]; then
             printf '%s\\n' "$MOCK_BIN_PATH"
         fi
@@ -71,7 +74,7 @@ esac
         portable_tools = self.tools / "fake-macos-tools.py"
         shutil.copyfile(ROOT / "Tests/Packaging/fake_macos_tools.py", portable_tools)
         portable_tools.chmod(0o755)
-        for name in ("ditto", "plutil", "hdiutil", "open"):
+        for name in ("ditto", "plutil", "hdiutil", "launch-smoke"):
             (self.tools / name).symlink_to(portable_tools.name)
 
     def run_script(self, name, *args, **env):
@@ -160,15 +163,18 @@ esac
         # ZIP executable bits, DMG installation, and the shell's success contract.
         (self.binary_directory / "Clicker").write_text('''#!/usr/bin/env python3
 import json
+import os
 from pathlib import Path
 import plistlib
 import sys
-assert "--smoke-test" in sys.argv
+assert len(sys.argv) == 1
+assert os.environ["CLICKER_SMOKE_TEST"] == "1"
 app = Path(__file__).resolve().parents[2]
 info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
-report = Path(sys.argv[sys.argv.index("--smoke-report") + 1])
+report = Path(os.environ["CLICKER_SMOKE_REPORT"])
 report.write_text(json.dumps({"status": "passed", "safeMode": True,
     "globalInputServicesStarted": False, "mainViewAppeared": True,
+    "arguments": sys.argv, "openFileRequest": [],
     "bundleIdentifier": info["CFBundleIdentifier"], "bundlePath": str(app),
     "sourceCommit": info["ClickerSourceCommit"], "windowTitle": "Clicker",
     "contentWidth": 760, "contentHeight": 480}))
@@ -182,7 +188,7 @@ report.write_text(json.dumps({"status": "passed", "safeMode": True,
             self.assertTrue(report["safeMode"])
             self.assertIn(f"{format}-install", report["bundlePath"])
         self.assertIn("hdiutil attach -nobrowse -readonly", self.log.read_text())
-        self.assertEqual(self.log.read_text().count("open -n -W"), 2)
+        self.assertEqual(self.log.read_text().count("swift scripts/launch-smoke-app.swift"), 2)
 
     def test_default_version_and_custom_signing_identity_with_build_arguments(self):
         result = self.run_script(

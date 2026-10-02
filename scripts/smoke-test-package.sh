@@ -63,10 +63,9 @@ launch_and_verify() {
     APP_BUNDLE="$app"
     STARTUP_REPORT="$report.startup.json"
     rm -f "$report" "$STARTUP_REPORT"
-    # Use the same LaunchServices path as opening the installed .app in Finder.
-    # Do not pass -F, which changes the system's initial window-restoration policy.
-    # Smoke mode already owns a temporary script store and a new app instance.
-    open -n -W "$app" --args --smoke-test --smoke-report "$report" \
+    # No arguments reach the app: Cocoa may interpret unknown argv as documents
+    # to open and suppress its default main window. Only the launcher gets paths.
+    swift scripts/launch-smoke-app.swift "$app" "$report" \
         > "$EVIDENCE/$format-launch.log" 2>&1 &
     APP_PID=$!
     local elapsed=0
@@ -99,6 +98,8 @@ assert report["status"] == "passed", report
 assert report["safeMode"] is True, report
 assert report["globalInputServicesStarted"] is False, report
 assert report["mainViewAppeared"] is True, report
+assert len(report["arguments"]) == 1, report
+assert report["openFileRequest"] == [], report
 assert report["bundleIdentifier"] == "local.rayscripts.clicker", report
 assert Path(report["bundlePath"]).resolve() == Path(sys.argv[2]).resolve(), report
 assert report["sourceCommit"] == provenance["sourceCommit"], report
