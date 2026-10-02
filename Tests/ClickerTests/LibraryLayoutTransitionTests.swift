@@ -14,8 +14,8 @@ final class LibraryLayoutTransitionTests: XCTestCase {
             let fixture = try HostedLibraryHierarchyFixture(dark: dark, hasPermission: false)
             defer { fixture.tearDown() }
             let blank = try fixture.action(named: "新建空白脚本")
-            XCTAssertTrue(blank.isAccessibilityEnabled())
-            XCTAssertTrue(blank.accessibilityPerformPress(), "Activate the actual welcome Button")
+            XCTAssertTrue(blank.isEnabled)
+            XCTAssertTrue(try blank.press(), "Activate the actual welcome Button")
             fixture.settle(until: { fixture.state.scripts.count == 1 })
             let script = try XCTUnwrap(fixture.state.selectedScript)
             XCTAssertTrue(script.blocks.isEmpty)
@@ -46,7 +46,7 @@ final class LibraryLayoutTransitionTests: XCTestCase {
             let deletedBitmap = try fixture.snapshot(named: "last-deleted")
             try fixture.assertEmptyWelcome(text: fixture.recognizedText(in: deletedBitmap), canRecord: false)
             let restoreMenu = try fixture.action(named: "最近删除")
-            XCTAssertTrue(restoreMenu.isAccessibilityEnabled())
+            XCTAssertTrue(restoreMenu.isEnabled)
             XCTAssertTrue(fixture.host.bounds.contains(fixture.frame(of: restoreMenu)),
                           "Restore must remain discoverable after deleting the last row")
 
@@ -85,7 +85,7 @@ final class LibraryLayoutTransitionTests: XCTestCase {
             try fixture.snapshotSheet(named: "first-import-preview")
             let firstSheet = try XCTUnwrap(fixture.window.attachedSheet)
             let cancel = try fixture.action(named: "取消", in: XCTUnwrap(firstSheet.contentView))
-            XCTAssertTrue(cancel.accessibilityPerformPress())
+            XCTAssertTrue(try cancel.press())
             fixture.settle(until: { fixture.window.attachedSheet == nil })
             XCTAssertNil(fixture.window.attachedSheet)
             XCTAssertTrue(fixture.state.store.loadAll().scripts.isEmpty)
@@ -96,8 +96,8 @@ final class LibraryLayoutTransitionTests: XCTestCase {
             XCTAssertEqual(pickerCalls, 2, "The import action must remain usable after cancellation")
             let secondSheet = try XCTUnwrap(fixture.window.attachedSheet)
             let apply = try fixture.action(named: "导入", in: XCTUnwrap(secondSheet.contentView))
-            XCTAssertTrue(apply.isAccessibilityEnabled())
-            XCTAssertTrue(apply.accessibilityPerformPress())
+            XCTAssertTrue(apply.isEnabled)
+            XCTAssertTrue(try apply.press())
             fixture.settle(until: { fixture.state.scripts.count == 1 && fixture.window.attachedSheet == nil })
             XCTAssertNil(fixture.window.attachedSheet,
                          "Import sheet ownership must survive the welcome-to-split transition and dismiss")
@@ -125,7 +125,7 @@ final class LibraryLayoutTransitionTests: XCTestCase {
             return nil
         })
         defer { fixture.tearDown() }
-        XCTAssertTrue(try fixture.action(named: "导入脚本").accessibilityPerformPress())
+        XCTAssertTrue(try fixture.action(named: "导入脚本").press())
         fixture.settle()
         XCTAssertEqual(pickerCalls, 1)
         XCTAssertNil(fixture.window.attachedSheet)
@@ -170,25 +170,25 @@ final class LibraryLayoutTransitionTests: XCTestCase {
             let services = LibraryRecordingServices()
             let fixture = try HostedLibraryHierarchyFixture(dark: dark, makeState: services.makeState)
             defer { fixture.tearDown() }
-            XCTAssertTrue(try fixture.action(named: "开始录制").accessibilityPerformPress())
+            XCTAssertTrue(try fixture.action(named: "开始录制").press())
             fixture.settle()
             XCTAssertEqual(fixture.state.phase, .countdown(3))
             XCTAssertEqual(services.recorder.starts, 0)
             try assertWelcomeCanStopRecording(in: fixture)
             try fixture.snapshot(named: "first-recording-countdown")
-            XCTAssertTrue(try fixture.action(named: "停止录制").accessibilityPerformPress())
+            XCTAssertTrue(try fixture.action(named: "停止录制").press())
             fixture.settle()
             XCTAssertEqual(fixture.state.phase, .idle)
             XCTAssertEqual(services.countdown.closes, 1)
             XCTAssertEqual(services.recorder.starts, 0)
             XCTAssertTrue(fixture.state.scripts.isEmpty)
-            services.countdown.finish(at: 0)
+            try services.countdown.finish(at: 0)
             await Task.yield()
             XCTAssertEqual(fixture.state.phase, .idle, "A cancelled countdown cannot start capture later")
             XCTAssertEqual(services.recorder.starts, 0)
 
-            XCTAssertTrue(try fixture.action(named: "开始录制").accessibilityPerformPress())
-            services.countdown.finish(at: 1)
+            XCTAssertTrue(try fixture.action(named: "开始录制").press())
+            try services.countdown.finish(at: 1)
             await Task.yield()
             fixture.settle()
             XCTAssertEqual(fixture.state.phase, .recording)
@@ -198,7 +198,7 @@ final class LibraryLayoutTransitionTests: XCTestCase {
             fixture.settle()
             try assertWelcomeCanStopRecording(in: fixture)
             try fixture.snapshot(named: "first-recording-active-no-permission")
-            XCTAssertTrue(try fixture.action(named: "停止录制").accessibilityPerformPress())
+            XCTAssertTrue(try fixture.action(named: "停止录制").press())
             fixture.settle(until: { fixture.state.scripts.count == 1 })
             XCTAssertEqual(fixture.state.phase, .idle)
             XCTAssertEqual(services.recorder.stops, 1)
@@ -224,8 +224,8 @@ final class LibraryLayoutTransitionTests: XCTestCase {
         let services = LibraryRecordingServices()
         let fixture = try HostedLibraryHierarchyFixture(makeState: services.makeState)
         defer { fixture.tearDown() }
-        XCTAssertTrue(try fixture.action(named: "开始录制").accessibilityPerformPress())
-        services.countdown.finish(at: 0)
+        XCTAssertTrue(try fixture.action(named: "开始录制").press())
+        try services.countdown.finish(at: 0)
         await Task.yield()
         XCTAssertEqual(fixture.state.phase, .recording)
         fixture.state.stageRecordingForTermination()
@@ -238,12 +238,12 @@ final class LibraryLayoutTransitionTests: XCTestCase {
         XCTAssertNotNil(fixture.state.unsavedRecording)
         XCTAssertTrue(fixture.state.scripts.isEmpty)
         XCTAssertFalse(fixture.descendants(of: fixture.host).contains { $0 is NSSplitView })
-        XCTAssertFalse(try fixture.action(named: "开始录制").isAccessibilityEnabled())
+        XCTAssertFalse(try fixture.action(named: "开始录制").isEnabled)
         var recoveryBottom: CGFloat = 0
         for title in ["重试保存", "另存为", "丢弃"] {
             let action = try fixture.action(named: title)
             let frame = fixture.frame(of: action)
-            XCTAssertTrue(action.isAccessibilityEnabled())
+            XCTAssertTrue(action.isEnabled)
             XCTAssertTrue(fixture.host.bounds.contains(frame), "Recovery controls must stay above the welcome: \(frame)")
             recoveryBottom = max(recoveryBottom, frame.maxY)
         }
@@ -252,16 +252,16 @@ final class LibraryLayoutTransitionTests: XCTestCase {
         let document = try XCTUnwrap(scroll.documentView)
         XCTAssertGreaterThan(document.bounds.height, scroll.contentView.bounds.height,
                              "The welcome must scroll when status notices consume the minimum-height window")
-        let importAction = try fixture.action(named: "导入脚本")
-        let target = document.convert(fixture.window.convertFromScreen(importAction.accessibilityFrame()), from: nil)
-        document.scrollToVisible(target.insetBy(dx: 0, dy: -4))
+        let bottom = document.isFlipped ? document.bounds.maxY - 1 : document.bounds.minY
+        document.scrollToVisible(CGRect(x: document.bounds.minX, y: bottom,
+                                       width: document.bounds.width, height: 1))
         fixture.settle()
         let importFrame = fixture.frame(of: try fixture.action(named: "导入脚本"))
         XCTAssertTrue(fixture.host.bounds.contains(importFrame), "The final welcome action must be reachable by scrolling")
         XCTAssertGreaterThanOrEqual(importFrame.minY, recoveryBottom,
                                     "Scrolled welcome controls must never cover the recovery actions")
         try fixture.snapshot(named: "empty-recovery-scrolled")
-        XCTAssertTrue(try fixture.action(named: "重试保存").accessibilityPerformPress())
+        XCTAssertTrue(try fixture.action(named: "重试保存").press())
         fixture.settle(until: { fixture.state.scripts.count == 1 })
         XCTAssertNil(fixture.state.unsavedRecording)
         XCTAssertEqual(services.recorder.stops, 1)
@@ -275,17 +275,23 @@ final class LibraryLayoutTransitionTests: XCTestCase {
         XCTAssertTrue(fixture.state.scripts.isEmpty)
         XCTAssertFalse(fixture.descendants(of: fixture.host).contains { $0 is NSSplitView })
         let stop = try fixture.action(named: "停止录制")
-        XCTAssertTrue(stop.isAccessibilityEnabled(), "Stopping must remain enabled even after permissions disappear")
+        XCTAssertTrue(stop.isEnabled, "Stopping must remain enabled even after permissions disappear")
         XCTAssertTrue(fixture.host.bounds.contains(fixture.frame(of: stop)))
-        XCTAssertFalse(try fixture.action(named: "新建空白脚本").isAccessibilityEnabled())
-        XCTAssertFalse(try fixture.action(named: "导入脚本").isAccessibilityEnabled())
+        XCTAssertFalse(try fixture.action(named: "新建空白脚本").isEnabled)
+        XCTAssertFalse(try fixture.action(named: "导入脚本").isEnabled)
+        let phase = fixture.state.phase
+        try fixture.action(named: "新建空白脚本").press()
+        try fixture.action(named: "导入脚本").press()
+        XCTAssertEqual(fixture.state.phase, phase)
+        XCTAssertTrue(fixture.state.scripts.isEmpty)
+        XCTAssertNil(fixture.window.attachedSheet)
     }
 
     @MainActor
     private func presentImportPreview(in fixture: HostedLibraryHierarchyFixture) throws {
         let importAction = try fixture.action(named: "导入脚本")
-        XCTAssertTrue(importAction.isAccessibilityEnabled())
-        XCTAssertTrue(importAction.accessibilityPerformPress())
+        XCTAssertTrue(importAction.isEnabled)
+        XCTAssertTrue(try importAction.press())
         fixture.settle(until: { fixture.window.attachedSheet != nil })
         XCTAssertNotNil(fixture.window.attachedSheet, "The actual MainView import flow must present its preview")
     }
@@ -339,7 +345,11 @@ private final class LibraryFixtureCountdown: CountdownPresenting {
     func show(seconds: Int, onTick: @escaping (Int) -> Void, onFinish: @escaping () -> Void) {
         finishes.append(onFinish)
     }
-    func finish(at index: Int) { finishes[index]() }
+    func finish(at index: Int) throws {
+        let finish = try XCTUnwrap(finishes.indices.contains(index) ? finishes[index] : nil,
+                                  "The expected countdown must have started before it can finish")
+        finish()
+    }
     func close() { closes += 1 }
 }
 

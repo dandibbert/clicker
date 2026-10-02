@@ -141,7 +141,7 @@ struct ScriptHeaderView: View {
                 repeatControls
                 intervalControls
                 Spacer(minLength: 0)
-                playbackProgress(width: 144)
+                playbackProgress(width: 200)
             }
         }
         .padding(.horizontal, ClickerVisualTheme.spacing12)
@@ -219,9 +219,17 @@ struct ScriptHeaderView: View {
     @ViewBuilder
     private func playbackProgress(width: CGFloat) -> some View {
         if let playbackProgressText = presentation.playbackProgressText {
-            Text(playbackProgressText)
+            // Keep an extreme finite fraction on two complete lines rather than
+            // letting word wrapping isolate "第" and clip the final digits.
+            let displayText = playbackProgressText.count > 26
+                ? playbackProgressText.replacingOccurrences(of: "/", with: "/\n")
+                : playbackProgressText
+            Text(displayText)
+                .font(.caption)
+                .monospacedDigit()
                 .foregroundStyle(ClickerVisualTheme.primaryText)
-                .lineLimit(4)
+                .lineLimit(layoutPolicy.usesAccessibilityLayout ? 4 : 2)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(width: width, alignment: .leading)
                 .accessibilityLabel(playbackProgressText)
                 .help(playbackProgressText)

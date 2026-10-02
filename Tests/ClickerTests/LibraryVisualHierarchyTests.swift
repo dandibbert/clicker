@@ -261,9 +261,9 @@ final class HostedLibraryHierarchyFixture {
         let record = try action(named: "开始录制")
         let blank = try action(named: "新建空白脚本")
         let importAction = try action(named: "导入脚本")
-        XCTAssertEqual(record.isAccessibilityEnabled(), canRecord)
-        XCTAssertTrue(blank.isAccessibilityEnabled())
-        XCTAssertTrue(importAction.isAccessibilityEnabled())
+        XCTAssertEqual(record.isEnabled, canRecord)
+        XCTAssertTrue(blank.isEnabled)
+        XCTAssertTrue(importAction.isEnabled)
         let frames = [record, blank, importAction].map { frame(of: $0) }
         for frame in frames {
             XCTAssertTrue(host.bounds.contains(frame), "Welcome control escaped the viewport: \(frame)")
@@ -278,61 +278,119 @@ final class HostedLibraryHierarchyFixture {
         }
     }
 
-    func accessibleActions(in root: NSView? = nil) -> [LibraryAccessibleAction] {
-        let root = root ?? host
-        var visited = Set<ObjectIdentifier>()
-        var actions: [LibraryAccessibleAction] = []
-        func visit(_ candidate: Any) {
-            guard let object = candidate as? NSObject,
-                  visited.insert(ObjectIdentifier(object)).inserted else { return }
-            let action: LibraryAccessibleAction
-            let children: [Any]
-            if let view = candidate as? NSView {
-                // NSView's accessibility methods are callable even when the
-                // runtime object does not advertise protocol conformance.
-                action = LibraryAccessibleAction(view: view)
-                children = (view.accessibilityChildren() ?? []) + view.subviews
-            } else if let element = candidate as? NSAccessibilityElement {
-                action = LibraryAccessibleAction(element: element)
-                children = element.accessibilityChildren() ?? []
-            } else if let element = candidate as? NSAccessibilityProtocol {
-                action = LibraryAccessibleAction(element: element)
-                children = element.accessibilityChildren() ?? []
-            } else {
-                return
-            }
-            if action.role?.rawValue.lowercased().contains("button") == true,
-               !action.accessibilityFrame().isEmpty {
-                actions.append(action)
-            }
-            for child in children { visit(child) }
+    func action(named name: String, in requestedRoot: NSView? = nil) throws -> LibraryRenderedAction {
+        let root = requestedRoot ?? host
+        root.layoutSubtreeIfNeeded()
+        root.displayIfNeeded()
+        let bitmap = try retinaBitmap(for: root)
+        let displayedName: String
+        if root === host && !state.scripts.isEmpty && name == "开始录制" {
+            displayedName = "录制"
+        } else if name == "开始回放" {
+            displayedName = "回放"
+        } else {
+            displayedName = normalizedVisualText(name)
         }
-        visit(root)
-        return actions
-    }
-
-    func action(named name: String, in root: NSView? = nil) throws -> LibraryAccessibleAction {
-        let actions = accessibleActions(in: root)
-        var frames = Set<String>()
-        let matches = actions.filter { action in
-            guard label(of: action) == normalizedVisualText(name) else { return false }
-            let rect = action.accessibilityFrame()
-            let key = [rect.minX, rect.minY, rect.width, rect.height].map { String(Int($0.rounded())) }.joined(separator: ",")
-            return frames.insert(key).inserted
+        func rect(of view: NSView) -> CGRect {
+            let value = root.convert(view.bounds, from: view)
+            return root.isFlipped ? value : CGRect(x: value.minX, y: root.bounds.maxY - value.maxY,
+                                                  width: value.width, height: value.height)
         }
-        let diagnostic = descendants(of: root ?? host).map { String(describing: type(of: $0)) }.joined(separator: ", ")
-        XCTAssertEqual(matches.count, 1, "One accessible \(name) action expected; actions: \(actions.map { label(of: $0) }); native views: \(diagnostic)")
-        return try XCTUnwrap(matches.first, "The \(name) action must be discoverable")
+        let views = descendants(of: root).filter { !$0.isHiddenOrHasHiddenAncestor }
+        let nativeButtons = views.compactMap { $0 as? NSButton }
+        let customBounds = views.map { rect(of: $0) }.filter {
+            (36...44).contains($0.height) && (40...220).contains($0.width)
+        }
+        // Vision sometimes groups adjacent row copy with a Button label. Ask
+        // Vision for that fixed label's own substring bounds, not the whole row.
+        var labels = try recognizedLabelFrames(displayedName, in: bitmap, size: root.bounds.size).filter { label in
+            nativeButtons.contains { rect(of: $0).insetBy(dx: -1, dy: -1).contains(label) }
+                || customBounds.contains { $0.insetBy(dx: -1, dy: -1).contains(label) }
+        }
+        if root === host && !state.scripts.isEmpty && ["开始录制", "开始回放"].contains(name) {
+            let sidebarFrame = frame(of: try sidebar())
+            labels = labels.filter { $0.minX > sidebarFrame.maxX }
+        }
+        XCTAssertEqual(labels.count, 1, "One rendered \(name) control expected: \(labels)")
+        let label = try XCTUnwrap(labels.first, "The \(name) control must be visibly discoverable")
+        // Native bordered Buttons can have empty titles because SwiftUI draws
+        // their labels separately. Match the rendered label to their real bounds.
+        let native = nativeButtons.filter {
+            rect(of: $0).insetBy(dx: -1, dy: -1).contains(label)
+        }.min { rect(of: $0).width * rect(of: $0).height < rect(of: $1).width * rect(of: $1).height }
+        if let native {
+            return LibraryRenderedAction(root: root, bounds: rect(of: native), isEnabled: native.isEnabled, nativeButton: native)
+        }
+
+        // Custom ButtonStyle controls are real native hit-test views rather than
+        // NSButtons or AX nodes. Measure the view enclosing the observed label;
+        // never invent a button rectangle from its anticipated layout position.
+        let bounds = try XCTUnwrap(customBounds.filter {
+            $0.insetBy(dx: -1, dy: -1).contains(label)
+        }.min { $0.width * $0.height < $1.width * $1.height },
+            "No measured prominent-control view encloses \(name): \(label)")
+        let nativePoint = CGPoint(x: bounds.midX,
+                                  y: root.isFlipped ? bounds.midY : root.bounds.maxY - bounds.midY)
+        XCTAssertNotNil(root.hitTest(nativePoint), "The rendered \(name) control needs a native hit target")
+        let role: ClickerVisualTheme.ColorRole
+        if ["开始录制", "停止录制"].contains(name) {
+            role = .recordForeground
+        } else if name == "开始回放" {
+            role = .prominentForeground
+        } else {
+            role = .primaryText
+        }
+        let foreground = try XCTUnwrap(ClickerVisualTheme.resolvedColor(for: role, appearance: root.effectiveAppearance)
+            .usingColorSpace(.sRGB))
+        // Disabled custom Buttons composite their label at 45% opacity. Count
+        // actual fully colored glyph pixels, independently of AppState flags.
+        let enabled = fullForegroundPixels(in: bitmap, label: label,
+                                           size: root.bounds.size, foreground: foreground) > 4
+        return LibraryRenderedAction(root: root, bounds: bounds, isEnabled: enabled, nativeButton: nil)
     }
 
-    func label(of element: LibraryAccessibleAction) -> String {
-        if let label = element.label, !label.isEmpty { return normalizedVisualText(label) }
-        return normalizedVisualText(element.title ?? "")
+    private func recognizedLabelFrames(_ text: String, in bitmap: NSBitmapImageRep, size: CGSize) throws -> [CGRect] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["zh-Hans"]
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap.cgImage), orientation: .up).perform([request])
+        return try (request.results ?? []).compactMap { observation in
+            guard let candidate = observation.topCandidates(1).first else { return nil }
+            let raw = candidate.string
+            let indices = raw.indices.filter { !raw[$0].isWhitespace }
+            let compact = String(indices.map { raw[$0] })
+            guard let range = compact.range(of: text) else { return nil }
+            let start = compact.distance(from: compact.startIndex, to: range.lowerBound)
+            let end = compact.distance(from: compact.startIndex, to: range.upperBound)
+            let originalRange = indices[start]..<raw.index(after: indices[end - 1])
+            guard let box = try candidate.boundingBox(for: originalRange)?.boundingBox else { return nil }
+            return CGRect(x: box.minX * size.width, y: (1 - box.maxY) * size.height,
+                          width: box.width * size.width, height: box.height * size.height)
+        }
     }
 
-    func frame(of element: LibraryAccessibleAction) -> CGRect {
-        let inWindow = window.convertFromScreen(element.accessibilityFrame())
-        return topDown(host.convert(inWindow, from: nil))
+    private func fullForegroundPixels(in bitmap: NSBitmapImageRep, label: CGRect,
+                                      size: CGSize, foreground: NSColor) -> Int {
+        let sx = CGFloat(bitmap.pixelsWide) / size.width
+        let sy = CGFloat(bitmap.pixelsHigh) / size.height
+        var count = 0
+        for y in max(0, Int(label.minY * sy))..<min(bitmap.pixelsHigh, Int(ceil(label.maxY * sy))) {
+            for x in max(0, Int(label.minX * sx))..<min(bitmap.pixelsWide, Int(ceil(label.maxX * sx))) {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                if abs(color.redComponent - foreground.redComponent) < 0.08,
+                   abs(color.greenComponent - foreground.greenComponent) < 0.08,
+                   abs(color.blueComponent - foreground.blueComponent) < 0.08 { count += 1 }
+            }
+        }
+        return count
+    }
+
+    func frame(of action: LibraryRenderedAction) -> CGRect {
+        let pointRect = action.root.isFlipped ? action.bounds
+            : CGRect(x: action.bounds.minX, y: action.root.bounds.maxY - action.bounds.maxY,
+                     width: action.bounds.width, height: action.bounds.height)
+        return topDown(host.convert(pointRect, from: action.root))
     }
 
     func frame(of view: NSView) -> CGRect { frame(view.bounds, in: view) }
@@ -383,7 +441,8 @@ final class HostedLibraryHierarchyFixture {
             .write(to: output.appendingPathComponent(fileName))
     }
 
-    func recognizedText(in bitmap: NSBitmapImageRep) throws -> [(text: String, frame: CGRect)] {
+    func recognizedText(in bitmap: NSBitmapImageRep, size: CGSize? = nil) throws -> [(text: String, frame: CGRect)] {
+        let size = size ?? host.bounds.size
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["zh-Hans"]
@@ -393,52 +452,43 @@ final class HostedLibraryHierarchyFixture {
             guard let candidate = observation.topCandidates(1).first else { return nil }
             let box = observation.boundingBox
             return (normalizedVisualText(candidate.string), CGRect(
-                x: box.minX * host.bounds.width, y: (1 - box.maxY) * host.bounds.height,
-                width: box.width * host.bounds.width, height: box.height * host.bounds.height
+                x: box.minX * size.width, y: (1 - box.maxY) * size.height,
+                width: box.width * size.width, height: box.height * size.height
             ))
         }
     }
 }
 
-/// A narrow adapter over real AppKit accessibility methods. Native NSViews and
-/// virtual NSAccessibilityElements need not pass the same runtime protocol cast.
+/// Dispatch only to this test window, following FinalFixWaveTests' established
+/// local mouse-event approach. Observable state changes verify the real callback.
 @MainActor
-struct LibraryAccessibleAction {
-    let role: NSAccessibility.Role?
-    let label: String?
-    let title: String?
-    private let enabled: () -> Bool
-    private let press: () -> Bool
-    private let screenFrame: () -> CGRect
+struct LibraryRenderedAction {
+    let root: NSView
+    let bounds: CGRect
+    let isEnabled: Bool
+    let nativeButton: NSButton?
 
-    init(view: NSView) {
-        role = view.accessibilityRole()
-        label = view.accessibilityLabel()
-        title = view.accessibilityTitle()
-        enabled = { view.isAccessibilityEnabled() }
-        press = { view.accessibilityPerformPress() }
-        screenFrame = { view.accessibilityFrame() }
+    @discardableResult
+    func press() throws -> Bool {
+        if let nativeButton {
+            nativeButton.performClick(nil)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            return true
+        }
+        let window = try XCTUnwrap(root.window)
+        let local = CGPoint(x: bounds.midX,
+                            y: root.isFlipped ? bounds.midY : root.bounds.maxY - bounds.midY)
+        let point = root.convert(local, to: nil)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(
+                with: type, location: point, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0
+            ))
+            window.sendEvent(event)
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        return true // Events dispatched; each workflow asserts its actual effect.
     }
-
-    init(element: NSAccessibilityElement) {
-        role = element.accessibilityRole()
-        label = element.accessibilityLabel()
-        title = element.accessibilityTitle()
-        enabled = { element.isAccessibilityEnabled() }
-        press = { element.accessibilityPerformPress() }
-        screenFrame = { element.accessibilityFrame() }
-    }
-
-    init(element: NSAccessibilityProtocol) {
-        role = element.accessibilityRole()
-        label = element.accessibilityLabel()
-        title = element.accessibilityTitle()
-        enabled = { element.isAccessibilityEnabled() }
-        press = { element.accessibilityPerformPress() }
-        screenFrame = { element.accessibilityFrame() }
-    }
-
-    func isAccessibilityEnabled() -> Bool { enabled() }
-    func accessibilityPerformPress() -> Bool { press() }
-    func accessibilityFrame() -> CGRect { screenFrame() }
 }

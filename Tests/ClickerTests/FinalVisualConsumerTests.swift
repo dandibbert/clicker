@@ -417,14 +417,16 @@ final class FinalVisualConsumerTests: XCTestCase {
             let recordText = try XCTUnwrap(
                 recognizedText.first {
                     $0.text.replacingOccurrences(of: " ", with: "").contains("录制")
+                        && headerBounds.contains($0.frame)
                 },
-                "The real selected-script consumer must render the record action"
+                "The real selected-script header must render the record action"
             )
             let playbackText = try XCTUnwrap(
                 recognizedText.first {
                     $0.text.replacingOccurrences(of: " ", with: "").contains("回放")
+                        && headerBounds.contains($0.frame)
                 },
-                "The real selected-script consumer must render the playback action"
+                "The real selected-script header must render the playback action"
             )
             let headerSurface = try XCTUnwrap(
                 visibleColorBounds(

@@ -361,10 +361,12 @@ final class EditorialMainWindowTests: XCTestCase {
             XCTAssertTrue(headerBounds.contains(frame), "\(placeholder) escaped header: \(frame)")
         }
         let progressRegion = CGRect(
-            x: headerBounds.maxX - 156,
-            y: headerBounds.minY + headerBounds.height / 2,
-            width: 144,
-            height: headerBounds.height / 2
+            // Allow the measured OCR glyph bounds their small optical overhang
+            // around the explicit 200pt progress column.
+            x: headerBounds.maxX - 216,
+            y: headerBounds.minY + headerBounds.height / 2 - 3,
+            width: 208,
+            height: headerBounds.height / 2 + 3
         )
         XCTAssertFalse(title.intersects(progressRegion), "Title/mode copy overlaps the playback progress region")
         let progressCopy = recognizedText
