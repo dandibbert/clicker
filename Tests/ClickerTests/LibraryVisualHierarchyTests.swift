@@ -95,11 +95,20 @@ final class LibraryVisualHierarchyTests: XCTestCase {
                         let outline = try XCTUnwrap(descendants(sidebar).compactMap { $0 as? NSOutlineView }.first)
                         XCTAssertEqual(outline.numberOfRows, 2, "Both real native script rows must remain present")
                         XCTAssertGreaterThanOrEqual(outline.selectedRow, 0)
-                        // Vision can transcribe 网页 as traditional or visually
-                        // similar glyphs. Check the unambiguous visible name
-                        // portion alongside the real native row/selection gate.
-                        XCTAssertTrue(sidebarText.contains { $0.text.contains("整理") }, scene)
-                        XCTAssertTrue(sidebarText.contains { $0.text.contains("归档") || $0.text.contains("歸檔") }, scene)
+                        // Vision reads the visibly correct selected name as
+                        // "网页壑理" in dark 760pt windows. Validate visible title
+                        // ink in each measured native row, not OCR spelling of
+                        // arbitrary fixture names. Empty-state copy stays exact.
+                        for row in 0..<outline.numberOfRows {
+                            let frame = host.convert(outline.rect(ofRow: row), from: outline)
+                            let names = sidebarText.filter {
+                                frame.contains($0.frame)
+                                    && $0.frame.maxX < sidebarFrame.maxX - 50
+                                    && !$0.text.contains("个动作")
+                                    && $0.text.count >= 2
+                            }
+                            XCTAssertFalse(names.isEmpty, "Native row \(row) must visibly render its title: \(scene), \(frame), \(sidebarText)")
+                        }
                         XCTAssertTrue(sidebarText.contains { $0.text.contains("新建") }, scene)
                         XCTAssertTrue(sidebarText.contains { $0.text.contains("录制") }, scene)
                     }
