@@ -68,8 +68,8 @@ elif name == "hdiutil":
     elif args[0] != "detach":
         raise AssertionError(f"Unexpected hdiutil command: {args}")
 elif name == "open":
-    assert args[:3] == ["-n", "-F", "-W"]
-    assert args[4] == "--args"
-    sys.exit(subprocess.call([str(Path(args[3]) / "Contents/MacOS/Clicker"), *args[5:]]))
+    assert args[:2] == ["-n", "-W"]
+    assert args[3] == "--args"
+    sys.exit(subprocess.call([str(Path(args[2]) / "Contents/MacOS/Clicker"), *args[4:]]))
 else:
     raise AssertionError(f"Unexpected tool: {name}")

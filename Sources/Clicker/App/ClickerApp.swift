@@ -25,6 +25,17 @@ struct ClickerApp: App {
         _state = StateObject(wrappedValue: s)
         applicationServices = smoke == nil ? ApplicationServiceCoordinator(state: s) : nil
         if smoke == nil { s.setUp() }
+        // SwiftPM executables do not get Xcode's foreground-launch setup. Queue
+        // activation until NSApplicationMain has installed SwiftUI's real scene.
+        // This presents the existing single Window scene; it creates no test UI.
+        DispatchQueue.main.async {
+            guard let application = NSApp else { return }
+            let initialPolicy = application.activationPolicy().rawValue
+            let accepted = application.setActivationPolicy(.regular)
+            smoke?.recordActivation(initialPolicy: initialPolicy, accepted: accepted)
+            application.activate(ignoringOtherApps: true)
+            application.windows.first { !($0 is NSPanel) }?.makeKeyAndOrderFront(nil)
+        }
     }
 
     var body: some Scene {
@@ -61,6 +72,10 @@ final class StartupSmokeTest {
     let reportURL: URL?
     private var hasStarted = false
     private var mainViewAppeared = false
+    private var didFinishLaunching = false
+    private var initialActivationPolicy: Int?
+    private var activationPolicyAccepted: Bool?
+    private var launchObserver: NSObjectProtocol?
 
     init?(arguments: [String]) {
         guard arguments.contains("--smoke-test") else { return nil }
@@ -78,6 +93,13 @@ final class StartupSmokeTest {
     func beginStartupMonitoring() {
         guard !hasStarted else { return }
         hasStarted = true
+        launchObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didFinishLaunchingNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.didFinishLaunching = true }
+        }
         // This marker and watchdog do not depend on SwiftUI reaching onAppear.
         // They diagnose LaunchServices/bootstrap failures rather than hanging CI.
         if let reportURL {
@@ -93,7 +115,7 @@ final class StartupSmokeTest {
         Task { @MainActor in
             let deadline = Date().addingTimeInterval(15)
             while Date() < deadline {
-                if mainViewAppeared, let window = NSApplication.shared.windows.first(where: {
+                if mainViewAppeared, let window = NSApp?.windows.first(where: {
                     $0.isVisible && $0.title == "Clicker" && !($0 is NSPanel)
                 }), let content = window.contentView,
                    content.bounds.width >= 760, content.bounds.height >= 480 {
@@ -107,6 +129,11 @@ final class StartupSmokeTest {
         }
     }
 
+    func recordActivation(initialPolicy: Int, accepted: Bool) {
+        initialActivationPolicy = initialPolicy
+        activationPolicyAccepted = accepted
+    }
+
     func mainViewDidAppear() {
         mainViewAppeared = true
     }
@@ -117,6 +144,12 @@ final class StartupSmokeTest {
             "safeMode": true,
             "globalInputServicesStarted": false,
             "mainViewAppeared": mainViewAppeared,
+            "applicationDidFinishLaunching": didFinishLaunching,
+            "activationPolicy": NSApp?.activationPolicy().rawValue ?? -1,
+            "initialActivationPolicy": initialActivationPolicy ?? -1,
+            "activationPolicyAccepted": activationPolicyAccepted ?? false,
+            "applicationIsRunning": NSApp?.isRunning ?? false,
+            "applicationIsActive": NSApp?.isActive ?? false,
             "processIdentifier": ProcessInfo.processInfo.processIdentifier,
             "bundleIdentifier": Bundle.main.bundleIdentifier ?? "",
             "bundlePath": Bundle.main.bundleURL.path,
@@ -124,7 +157,7 @@ final class StartupSmokeTest {
             "windowTitle": window?.title ?? "",
             "contentWidth": window?.contentView?.bounds.width ?? 0,
             "contentHeight": window?.contentView?.bounds.height ?? 0,
-            "observedWindows": NSApplication.shared.windows.map {
+            "observedWindows": (NSApp?.windows ?? []).map {
                 ["title": $0.title, "visible": $0.isVisible,
                  "width": $0.contentView?.bounds.width ?? 0,
                  "height": $0.contentView?.bounds.height ?? 0] as [String: Any]

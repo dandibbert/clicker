@@ -64,8 +64,9 @@ launch_and_verify() {
     STARTUP_REPORT="$report.startup.json"
     rm -f "$report" "$STARTUP_REPORT"
     # Use the same LaunchServices path as opening the installed .app in Finder.
-    # A fresh launch ignores restoration, while smoke mode owns a temporary store.
-    open -n -F -W "$app" --args --smoke-test --smoke-report "$report" \
+    # Do not pass -F, which changes the system's initial window-restoration policy.
+    # Smoke mode already owns a temporary script store and a new app instance.
+    open -n -W "$app" --args --smoke-test --smoke-report "$report" \
         > "$EVIDENCE/$format-launch.log" 2>&1 &
     APP_PID=$!
     local elapsed=0

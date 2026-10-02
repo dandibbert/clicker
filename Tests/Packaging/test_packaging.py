@@ -182,7 +182,7 @@ report.write_text(json.dumps({"status": "passed", "safeMode": True,
             self.assertTrue(report["safeMode"])
             self.assertIn(f"{format}-install", report["bundlePath"])
         self.assertIn("hdiutil attach -nobrowse -readonly", self.log.read_text())
-        self.assertEqual(self.log.read_text().count("open -n -F -W"), 2)
+        self.assertEqual(self.log.read_text().count("open -n -W"), 2)
 
     def test_default_version_and_custom_signing_identity_with_build_arguments(self):
         result = self.run_script(
