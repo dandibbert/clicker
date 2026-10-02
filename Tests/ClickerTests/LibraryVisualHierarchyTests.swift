@@ -392,7 +392,12 @@ final class HostedLibraryHierarchyFixture {
             guard let candidate = observation.topCandidates(1).first else { return nil }
             let raw = candidate.string
             let indices = raw.indices.filter { !raw[$0].isWhitespace }
+            // Vision can return traditional glyphs even with zh-Hans selected
+            // (observed "丟弃"). These one-character substitutions preserve the
+            // raw substring indices used to measure the actual rendered label.
             let compact = String(indices.map { raw[$0] })
+                .replacingOccurrences(of: "丟", with: "丢")
+                .replacingOccurrences(of: "棄", with: "弃")
             guard let range = compact.range(of: text) else { return nil }
             let start = compact.distance(from: compact.startIndex, to: range.lowerBound)
             let end = compact.distance(from: compact.startIndex, to: range.upperBound)
