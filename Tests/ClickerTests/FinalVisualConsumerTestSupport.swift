@@ -262,7 +262,7 @@ extension FinalVisualConsumerTests {
         let mode = scheme == .dark ? "dark" : "light"
         var diagnostics = [
             "Editor form \(mode): scroll=\(fixture.hosting.convert(form.bounds, from: form)) clip=\(formBounds) scrollerStyle=\(form.scrollerStyle.rawValue)",
-            "document=\(form.documentView.map { fixture.hosting.convert($0.bounds, from: $0).description } ?? "nil") scrollers=\(scrollerBounds)",
+            "document=\(form.documentView.map { String(describing: fixture.hosting.convert($0.bounds, from: $0)) } ?? "nil") scrollers=\(scrollerBounds)",
         ]
         diagnostics += controls.map {
             "control=\(type(of: $0)) bounds=\(fixture.hosting.convert($0.bounds, from: $0)) visible=\(fixture.hosting.convert($0.visibleRect, from: $0))"
@@ -317,7 +317,7 @@ extension FinalVisualConsumerTests {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
             try png.write(to: directory.appendingPathComponent("\(mode)-editor-form-380x320.png"))
-            try report.write(to: directory.appendingPathComponent("\(mode)-editor-form-diagnostics.txt"), atomically: true, encoding: .utf8)
+            try report.write(to: directory.appendingPathComponent("\(mode)-editor-form-diagnostics.txt"), atomically: true, encoding: String.Encoding.utf8)
         }
     }
 
