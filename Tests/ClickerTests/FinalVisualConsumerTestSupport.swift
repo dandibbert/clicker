@@ -161,7 +161,7 @@ extension FinalVisualConsumerTests {
                 AnyView(PermissionGuideView().environmentObject(permissionState).environment(\.colorScheme, scheme))
             }),
             ("empty library", ["还没有脚本", "新建空白脚本", "开始录制"], { scheme in
-                AnyView(ScriptSidebarView(scripts: [], selectedScriptID: .constant(nil), canEditScripts: true, canStartRecording: true, onRename: { _, _ in }, onDuplicate: { _ in }, onDelete: { _ in }, onRecord: {}).environment(\.colorScheme, scheme))
+                AnyView(ClickerEmptyStateView(kind: .emptyLibrary, action: {}, secondaryAction: {}).environment(\.colorScheme, scheme))
             }),
             ("no selection", ["选择一个脚本"], { scheme in
                 AnyView(MainView().environmentObject(noSelectionState).environment(\.colorScheme, scheme))

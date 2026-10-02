@@ -23,10 +23,10 @@ struct MainView: View {
                     if state.selectedScript == nil {
                         ClickerEmptyStateView(
                             kind: state.scripts.isEmpty ? .emptyLibrary : .noSelection,
-                            action: { state.createBlankScript() },
-                            secondaryAction: { state.toggleRecord(source: .ui) },
-                            isActionEnabled: state.canEditScripts,
-                            isSecondaryActionEnabled: state.canStartRecording && state.hasPermission
+                            action: { state.toggleRecord(source: .ui) },
+                            secondaryAction: { state.createBlankScript() },
+                            isActionEnabled: state.canStartRecording && state.hasPermission,
+                            isSecondaryActionEnabled: state.canEditScripts
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(ClickerVisualTheme.canvas)

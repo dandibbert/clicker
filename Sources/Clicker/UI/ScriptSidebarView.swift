@@ -29,8 +29,12 @@ struct ScriptSidebarView: View {
             sidebarHeader
             Divider().overlay(ClickerVisualTheme.separator)
             scriptList
-            Divider().overlay(ClickerVisualTheme.separator)
-            libraryActions
+            // Empty-library actions live once, in the detail pane. Keep this
+            // footer only when the library already has scripts to work with.
+            if !scripts.isEmpty {
+                Divider().overlay(ClickerVisualTheme.separator)
+                libraryActions
+            }
         }
         .background(ClickerVisualTheme.sidebarBackground)
         .alert("重命名脚本", isPresented: renameBinding) {
@@ -41,30 +45,19 @@ struct ScriptSidebarView: View {
     }
 
     private var sidebarHeader: some View {
-        VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing12) {
+        VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing8) {
             HStack(spacing: ClickerVisualTheme.spacing8) {
-                CursorTrailMark()
-                Text("Clicker")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(ClickerVisualTheme.primaryText)
-                Spacer()
-                libraryMenu
-            }
-            HStack(alignment: .firstTextBaseline) {
                 Text("脚本库")
-                    .font(.headline)
-                    .foregroundStyle(ClickerVisualTheme.primaryText)
-                Spacer()
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(ClickerVisualTheme.secondaryText)
                 Text(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                      ? "\(scripts.count)" : "\(filteredScripts.count) / \(scripts.count)")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption)
                     .monospacedDigit()
                     .foregroundStyle(ClickerVisualTheme.secondaryText)
-                    .padding(.horizontal, ClickerVisualTheme.spacing8)
-                    .padding(.vertical, ClickerVisualTheme.spacing4)
-                    .background(ClickerVisualTheme.elevatedSurface, in: Capsule())
-                    .overlay { Capsule().stroke(ClickerVisualTheme.separator, lineWidth: 1) }
                     .accessibilityLabel("显示 \(filteredScripts.count) 个，共 \(scripts.count) 个脚本")
+                Spacer(minLength: 0)
+                libraryMenu
             }
             HStack(spacing: ClickerVisualTheme.spacing4) {
                 Image(systemName: "magnifyingglass").accessibilityHidden(true)
@@ -88,9 +81,7 @@ struct ScriptSidebarView: View {
                     .stroke(ClickerVisualTheme.separator, lineWidth: 1)
             }
         }
-        .padding(.horizontal, ClickerVisualTheme.spacing16)
-        .padding(.top, ClickerVisualTheme.spacing16)
-        .padding(.bottom, ClickerVisualTheme.spacing12)
+        .padding(ClickerVisualTheme.spacing12)
     }
 
     private var libraryMenu: some View {
@@ -156,15 +147,7 @@ struct ScriptSidebarView: View {
         .tint(ClickerVisualTheme.selection)
         .scrollContentBackground(.hidden)
         .overlay {
-            if scripts.isEmpty {
-                ClickerEmptyStateView(
-                    kind: .emptyLibrary,
-                    action: createBlank,
-                    secondaryAction: onRecord,
-                    isActionEnabled: canEditScripts,
-                    isSecondaryActionEnabled: canStartRecording
-                )
-            } else if filteredScripts.isEmpty {
+            if !scripts.isEmpty && filteredScripts.isEmpty {
                 ClickerEmptyStateView(kind: .noSearchResults, action: { searchText = "" })
             }
         }
@@ -239,26 +222,6 @@ private struct ScriptSidebarRow: View {
         .help(presentation.name)
     }
 }
-
-private struct CursorTrailMark: View {
-    var body: some View {
-        ZStack {
-            Image(systemName: "cursorarrow")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(ClickerVisualTheme.primaryText)
-                .offset(x: -3, y: 3)
-            Circle().fill(ClickerVisualTheme.activeTrail)
-                .frame(width: 5, height: 5).offset(x: 5, y: -8)
-            Circle().fill(ClickerVisualTheme.activeTrail)
-                .frame(width: 4, height: 4).offset(x: 11, y: -3)
-            Circle().fill(ClickerVisualTheme.activeTrail)
-                .frame(width: 3, height: 3).offset(x: 13, y: 4)
-        }
-        .frame(width: 32, height: 32)
-        .accessibilityHidden(true)
-    }
-}
-
 
 /// Pin glyph foregrounds inside native sidebar controls; the list selection tint
 /// is a surface color and must never become the glyph color in light appearance.

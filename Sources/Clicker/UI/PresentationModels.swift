@@ -175,9 +175,9 @@ struct ClickerEmptyStatePresentation: Equatable {
         case .emptyLibrary:
             systemImage = "cursorarrow.click.badge.clock"
             title = "还没有脚本"
-            description = "新建空白脚本并添加动作，或录制一段操作。也可从顶部菜单导入脚本。"
-            actionTitle = "新建空白脚本"
-            secondaryActionTitle = "开始录制"
+            description = "录制一段操作，或新建脚本手动添加动作。"
+            actionTitle = "开始录制"
+            secondaryActionTitle = "新建空白脚本"
         case .noSearchResults:
             systemImage = "magnifyingglass"
             title = "没有匹配的脚本"

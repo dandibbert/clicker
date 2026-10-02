@@ -45,7 +45,7 @@ struct ClickerEmptyStateView: View {
                         .frame(maxWidth: 300)
                 }
 
-                VStack(spacing: ClickerVisualTheme.spacing8) {
+                HStack(spacing: ClickerVisualTheme.spacing8) {
                     if let actionTitle = presentation.actionTitle, let action {
                         ClickerProminentButton(role: primaryActionRole, action: action) {
                             Text(actionTitle)
@@ -69,6 +69,6 @@ struct ClickerEmptyStateView: View {
     }
 
     private var primaryActionRole: ClickerProminentButtonRole {
-        kind == .emptyScript ? .recording : .neutral
+        kind == .emptyLibrary || kind == .emptyScript ? .recording : .neutral
     }
 }

@@ -120,9 +120,9 @@ final class NativeLibraryWorkflowPresentationTests: XCTestCase {
                                                                     width: box.width * 760, height: box.height * 480))
         }
         let banner = try XCTUnwrap(text.first { $0.0.contains("录制与回放需要权限") }?.1)
-        let brand = try XCTUnwrap(text.first { $0.0.lowercased().contains("clicker") }?.1)
+        let libraryHeading = try XCTUnwrap(text.first { $0.0.contains("脚本库") }?.1)
         let title = try XCTUnwrap(text.first { $0.0.contains(script.name) && $0.1.minX > 210 }?.1)
-        XCTAssertGreaterThan(brand.minY, banner.maxY, "Permission banner must reserve space above the complete brand")
+        XCTAssertGreaterThan(libraryHeading.minY, banner.maxY, "Permission banner must reserve space above the library heading")
         XCTAssertGreaterThan(title.minY, banner.maxY, "Permission banner must not cover the script title")
         XCTAssertTrue(state.canEditScripts)
         XCTAssertTrue(state.createBlankScript())
