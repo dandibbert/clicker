@@ -346,7 +346,9 @@ extension FinalVisualConsumerTests {
             )
             defer { hosted.tearDown() }
             let bitmap = try bitmap(for: hosted.hosting)
-            let text = try recognizedTextFrames(in: bitmap, logicalSize: size)
+            // The checklist has an intrinsic 370pt width. SwiftUI may resize its
+            // hosting view; map OCR and raster samples to measured native bounds.
+            let text = try recognizedTextFrames(in: bitmap, logicalSize: hosted.hosting.bounds.size)
             let secondary = try XCTUnwrap(text.first { $0.text.contains("重新检测") }).frame
             let fill = ClickerVisualTheme.resolvedColor(for: .playbackFill, appearance: appearance)
             let buttons = (nativeControls(in: hosted.hosting) + descendants(of: hosted.hosting))
@@ -376,7 +378,7 @@ extension FinalVisualConsumerTests {
                 let frame = hosted.hosting.convert(grantButton.bounds, from: grantButton)
                 XCTAssertTrue(hosted.hosting.bounds.contains(frame))
                 XCTAssertLessThan(
-                    renderedPixelFraction(in: bitmap, logicalSize: size, region: frame,
+                    renderedPixelFraction(in: bitmap, logicalSize: hosted.hosting.bounds.size, region: frame,
                                           near: fill, tolerance: 0.04),
                     0.2,
                     "Granular permission actions must remain low-emphasis, not playback-style primary fills"
@@ -414,7 +416,7 @@ extension FinalVisualConsumerTests {
             XCTAssertLessThan(
                 renderedPixelFraction(
                     in: bitmap,
-                    logicalSize: size,
+                    logicalSize: hosted.hosting.bounds.size,
                     region: secondaryPadding,
                     near: fill,
                     tolerance: 0.04
