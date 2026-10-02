@@ -55,6 +55,8 @@ final class LibraryVisualHierarchyTests: XCTestCase {
                     }
                     let text = try recognizedText(in: bitmap, size: host.bounds.size)
                     let sidebarText = text.filter { $0.frame.midX < sidebarFrame.maxX }
+                    let scene = "\(dark ? "dark" : "light") / \(size) / \(empty ? "empty" : "populated")"
+                    print("Library hierarchy \(scene): \(sidebarText)")
                     XCTAssertFalse(sidebarText.contains { $0.text.lowercased().contains("clicker") },
                                    "The app name already lives in the window title; no large sidebar brand block")
                     let heading = try XCTUnwrap(sidebarText.first { $0.text.contains("脚本库") })
@@ -90,10 +92,16 @@ final class LibraryVisualHierarchyTests: XCTestCase {
                                              "Empty-library recording must keep its visible original red cue")
                     } else {
                         XCTAssertFalse(text.contains { $0.text.contains("还没有脚本") })
-                        XCTAssertTrue(sidebarText.contains { $0.text.contains("网页整理") })
-                        XCTAssertTrue(sidebarText.contains { $0.text.contains("文件归档") })
-                        XCTAssertTrue(sidebarText.contains { $0.text.contains("新建") })
-                        XCTAssertTrue(sidebarText.contains { $0.text.contains("录制") })
+                        let outline = try XCTUnwrap(descendants(sidebar).compactMap { $0 as? NSOutlineView }.first)
+                        XCTAssertEqual(outline.numberOfRows, 2, "Both real native script rows must remain present")
+                        XCTAssertGreaterThanOrEqual(outline.selectedRow, 0)
+                        // Vision can transcribe 网页 as traditional or visually
+                        // similar glyphs. Check the unambiguous visible name
+                        // portion alongside the real native row/selection gate.
+                        XCTAssertTrue(sidebarText.contains { $0.text.contains("整理") }, scene)
+                        XCTAssertTrue(sidebarText.contains { $0.text.contains("归档") || $0.text.contains("歸檔") }, scene)
+                        XCTAssertTrue(sidebarText.contains { $0.text.contains("新建") }, scene)
+                        XCTAssertTrue(sidebarText.contains { $0.text.contains("录制") }, scene)
                     }
 
                 }
