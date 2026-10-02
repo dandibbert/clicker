@@ -57,11 +57,12 @@ final class VisualPresentationTests: XCTestCase {
         XCTAssertTrue(actions[1].isEnabled)
     }
 
-    func testEmptyLibraryOffersRecordingAction() {
+    func testEmptyLibraryKeepsRecordingEmphasisAndBlankScriptAlternative() {
         let model = ClickerEmptyStatePresentation(kind: .emptyLibrary)
 
         XCTAssertEqual(model.title, "还没有脚本")
         XCTAssertEqual(model.actionTitle, "开始录制")
+        XCTAssertEqual(model.secondaryActionTitle, "新建空白脚本")
     }
 
     func testNoSelectionExplainsHowToOpenAScriptWithoutAnAction() {

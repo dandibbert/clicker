@@ -102,14 +102,13 @@ final class EditorialMainWindowTests: XCTestCase {
         let headerTitle = try recognizedFrame(
             containing: "录制1",
             in: recognizedText,
-            region: headerBounds,
-            requiresExactMatch: true
+            region: headerBounds
         )
         let headerMetadata = try XCTUnwrap(
             recognizedText.first { match in
                 let normalized = normalizedVisualText(match.text)
                 return normalized.contains("1个动作")
-                    && normalized.contains("约1.0秒")
+                    && normalized.contains("约6.0秒")
                     && headerBounds.contains(match.frame)
             }?.frame,
             "The complete detail metadata must remain inside the measured header: \(recognizedText)"
@@ -153,6 +152,10 @@ final class EditorialMainWindowTests: XCTestCase {
             ),
             "The playback action must retain a complete visible neutral fill"
         )
+        // Vision may group the title and the adjacent FREE label in one text
+        // observation. It must still remain contained and clear of both actions.
+        XCTAssertFalse(headerTitle.intersects(recordBounds))
+        XCTAssertFalse(headerTitle.intersects(playbackBounds))
         for (name, bounds, label) in [
             ("record", recordBounds, recordText),
             ("playback", playbackBounds, playbackText),
@@ -230,7 +233,7 @@ final class EditorialMainWindowTests: XCTestCase {
         try assertPlayingMainWindow(
             script: script,
             phase: .playing(iteration: Int.max, currentBlockID: block.id),
-            expectedProgress: "第\(Int.max)/\(Int.max)轮"
+            expectedProgress: "第\(Int.max)轮共\(Int.max)轮"
         )
     }
 
@@ -339,8 +342,7 @@ final class EditorialMainWindowTests: XCTestCase {
         let title = try recognizedFrame(
             containing: script.name.replacingOccurrences(of: " ", with: ""),
             in: recognizedText,
-            region: headerBounds,
-            requiresExactMatch: true
+            region: headerBounds
         )
         XCTAssertTrue(headerBounds.contains(title))
         for expected in ["录制", "回放", "重复", "无限", "间隔"] {
@@ -359,17 +361,20 @@ final class EditorialMainWindowTests: XCTestCase {
             XCTAssertTrue(headerBounds.contains(frame), "\(placeholder) escaped header: \(frame)")
         }
         let progressRegion = CGRect(
-            x: headerBounds.maxX - 200,
-            y: headerBounds.minY,
-            width: 200,
-            height: min(56, headerBounds.height)
+            // Allow the measured OCR glyph bounds their small optical overhang
+            // around the explicit 200pt progress column.
+            x: headerBounds.maxX - 216,
+            y: headerBounds.minY + headerBounds.height / 2 - 3,
+            width: 208,
+            height: headerBounds.height / 2 + 3
         )
+        XCTAssertFalse(title.intersects(progressRegion), "Title/mode copy overlaps the playback progress region")
         let progressCopy = recognizedText
             .filter { progressRegion.contains($0.frame) }
             .map(\.text)
             .joined()
             .replacingOccurrences(of: " ", with: "")
-        let progressGlyphs = progressCopy.filter { "第0123456789/轮".contains($0) }
+        let progressGlyphs = progressCopy.filter { "第共0123456789/轮".contains($0) }
         XCTAssertEqual(
             progressGlyphs,
             expectedProgress,

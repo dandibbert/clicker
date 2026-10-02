@@ -51,6 +51,7 @@ struct ActionCardView: View {
     let block: ActionBlock
     let isActive: Bool
     private let editConfiguration: ActionCardEditConfiguration?
+    private let onCopy: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var isTrailDimmed = false
@@ -59,10 +60,12 @@ struct ActionCardView: View {
         block: ActionBlock,
         isActive: Bool,
         isEditEnabled: Bool = false,
-        onEdit: (() -> Void)? = nil
+        onEdit: (() -> Void)? = nil,
+        onCopy: (() -> Void)? = nil
     ) {
         self.block = block
         self.isActive = isActive
+        self.onCopy = onCopy
         editConfiguration = onEdit.map {
             ActionCardEditConfiguration(isEnabled: isEditEnabled, onEdit: $0)
         }
@@ -108,6 +111,28 @@ struct ActionCardView: View {
                 .foregroundStyle(ClickerVisualTheme.secondaryText)
                 .lineLimit(1)
                 .frame(width: 64, alignment: .trailing)
+
+            if let configuration = editConfiguration {
+                Button(action: configuration.performEdit) {
+                    Image(systemName: "pencil")
+                        .frame(width: 24, height: 28)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(ClickerVisualTheme.secondaryText)
+                .disabled(!configuration.isEnabled)
+                .help("编辑动作")
+                .accessibilityLabel("编辑动作")
+            }
+            if let onCopy {
+                Button(action: onCopy) {
+                    Image(systemName: "doc.on.doc")
+                        .frame(width: 24, height: 28)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(ClickerVisualTheme.secondaryText)
+                .help("复制动作，可粘贴到其他脚本")
+                .accessibilityLabel("复制动作")
+            }
         }
         .padding(.vertical, ClickerVisualTheme.spacing8)
         .frame(minHeight: 56)
@@ -123,7 +148,7 @@ struct ActionCardView: View {
             )
         }
         .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(
             isActive ? presentation.activeAccessibilityLabel : presentation.accessibilityLabel
         )

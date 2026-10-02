@@ -30,9 +30,14 @@ final class MenuBarRecordingCutoffController {
         pendingCutoff = nil
     }
 
+    /// The quit path needs the same cutoff without committing to saving yet.
+    func takePendingCutoff() -> RecordingCutoff? {
+        defer { pendingCutoff = nil }
+        return pendingCutoff
+    }
+
     func stopSelected() {
-        guard let pendingCutoff else { return }
-        self.pendingCutoff = nil
-        stopRecording(pendingCutoff)
+        guard let cutoff = takePendingCutoff() else { return }
+        stopRecording(cutoff)
     }
 }

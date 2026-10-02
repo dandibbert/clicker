@@ -146,6 +146,24 @@ final class ShortcutCaptureTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testStoppedCaptureReleasesFocusAndCannotReacquireIt() throws {
+        _ = NSApplication.shared
+        let capture = CaptureKeyView(onCandidate: { _ in })
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 120, height: 80),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = capture
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        capture.requestCaptureFocus()
+        XCTAssertTrue(window.firstResponder === capture)
+        capture.stopCapturing()
+        XCTAssertFalse(window.firstResponder === capture)
+        XCTAssertFalse(capture.acceptsFirstResponder)
+        capture.requestCaptureFocus()
+        XCTAssertFalse(window.firstResponder === capture, "A queued focus request must not resurrect a stopped capture")
+    }
+
     func testModifierOnlyKeyDoesNotProduceCandidate() {
         XCTAssertNil(
             ShortcutCaptureController().candidate(

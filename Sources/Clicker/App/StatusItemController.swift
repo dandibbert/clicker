@@ -68,9 +68,12 @@ final class StatusItemController: NSObject {
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
+        menu.autoenablesItems = false
         switch state.phase {
         case .idle:
-            menu.addItem(item(title: "开始录制", action: #selector(toggleRecording)))
+            let recordItem = item(title: "开始录制", action: #selector(toggleRecording))
+            recordItem.isEnabled = state.canStartRecording
+            menu.addItem(recordItem)
             menu.addItem(item(title: "回放", action: #selector(togglePlayback)))
         case .countdown:
             menu.addItem(item(title: "取消录制", action: #selector(toggleRecording)))
@@ -121,6 +124,10 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func terminate() {
+        // Exclude the status menu interaction just as the normal Stop item does.
+        if let cutoff = recordingCutoff.takePendingCutoff() {
+            state.stageRecordingForTermination(cutoff: cutoff)
+        }
         NSApp.terminate(nil)
     }
 }

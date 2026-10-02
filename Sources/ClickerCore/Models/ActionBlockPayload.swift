@@ -357,6 +357,17 @@ public struct TypeTextBlock: Codable, Equatable, Sendable, Identifiable {
     public var overlapBefore: TimeInterval
     public var duration: TimeInterval
 
+    /// Generated text uses the same atoms for editing, timeline mutation and playback.
+    static let generatedKeyHold: TimeInterval = 0.02
+    static let generatedKeyStride: TimeInterval = 0.06
+
+    /// Also handles callers that directly mutate the public `text` value and old
+    /// archives whose displayed text no longer matches their captured keystrokes.
+    /// Never replay or re-encode the superseded captured characters.
+    public var playbackKeystrokes: [Keystroke] {
+        Self.canonicalKeystrokes(text: text, recorded: keystrokes)
+    }
+
     public init(
         id: UUID = UUID(),
         text: String,
@@ -367,11 +378,12 @@ public struct TypeTextBlock: Codable, Equatable, Sendable, Identifiable {
     ) {
         self.id = id
         self.text = text
-        self.keystrokes = keystrokes
+        let atoms = Self.canonicalKeystrokes(text: text, recorded: keystrokes)
+        self.keystrokes = atoms
         self.startOffset = TimelineValue.time(startOffset)
         self.delayBefore = delayBefore
         overlapBefore = 0
-        self.duration = duration ?? Self.derivedDuration(text: text, keystrokes: keystrokes)
+        self.duration = duration ?? Self.derivedDuration(keystrokes: atoms)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -381,32 +393,59 @@ public struct TypeTextBlock: Codable, Equatable, Sendable, Identifiable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
-        text = try container.decode(String.self, forKey: .text)
-        keystrokes = try container.decode([Keystroke].self, forKey: .keystrokes)
+        let decodedText = try container.decode(String.self, forKey: .text)
+        text = decodedText
+        let recorded = try container.decode([Keystroke].self, forKey: .keystrokes)
+        let atoms = Self.canonicalKeystrokes(text: decodedText, recorded: recorded)
+        keystrokes = atoms
         startOffset = TimelineValue.time(
             try container.decodeIfPresent(TimeInterval.self, forKey: .startOffset) ?? 0
         )
         delayBefore = try container.decodeIfPresent(TimeInterval.self, forKey: .delayBefore) ?? 0
         overlapBefore = try container.decodeIfPresent(TimeInterval.self, forKey: .overlapBefore) ?? 0
         duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration)
-            ?? Self.derivedDuration(text: text, keystrokes: keystrokes)
+            ?? Self.derivedDuration(keystrokes: atoms)
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(text, forKey: .text)
-        try container.encode(keystrokes, forKey: .keystrokes)
+        try container.encode(playbackKeystrokes, forKey: .keystrokes)
         try container.encode(TimelineValue.time(startOffset), forKey: .startOffset)
         try container.encode(duration, forKey: .duration)
     }
 
-    private static func derivedDuration(text: String, keystrokes: [Keystroke]) -> TimeInterval {
-        if let lastTime = keystrokes.map({ max($0.t, $0.upT) }).max() {
-            return lastTime
+    private static func canonicalKeystrokes(
+        text: String,
+        recorded: [Keystroke]
+    ) -> [Keystroke] {
+        if recorded.map(\.chars).joined() == text { return recorded }
+        var ordinal = recorded.flatMap { [$0.downOrdinal, $0.upOrdinal] }.max().map {
+            TimelineValue.nextOrdinal(after: $0)
+        } ?? 0
+        // Iterate extended grapheme clusters, so one emoji is one generated press.
+        return text.enumerated().map { index, character in
+            let downTime = TimelineValue.time(Double(index) * generatedKeyStride)
+            let downOrdinal = ordinal
+            ordinal = TimelineValue.nextOrdinal(after: ordinal)
+            let upOrdinal = ordinal
+            ordinal = TimelineValue.nextOrdinal(after: ordinal)
+            return Keystroke(
+                t: downTime,
+                keyCode: 0,
+                chars: String(character),
+                upT: TimelineValue.adding(downTime, generatedKeyHold),
+                downOrdinal: downOrdinal,
+                upOrdinal: upOrdinal
+            )
         }
-        guard !text.isEmpty else { return 0 }
-        return Double(text.count - 1) * 0.06 + 0.02
+    }
+
+    private static func derivedDuration(keystrokes: [Keystroke]) -> TimeInterval {
+        keystrokes.map {
+            max(TimelineValue.time($0.t), TimelineValue.time($0.upT))
+        }.max() ?? 0
     }
 }
 

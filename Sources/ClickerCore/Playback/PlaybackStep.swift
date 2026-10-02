@@ -6,7 +6,7 @@ public enum StepAction: Equatable, Sendable {
     case mouseDown(x: Double, y: Double, button: MouseButton, clickCount: Int, flags: UInt64)
     case mouseUp(x: Double, y: Double, button: MouseButton, clickCount: Int, flags: UInt64)
     case mouseDrag(x: Double, y: Double, button: MouseButton, flags: UInt64)
-    case keyDown(keyCode: UInt16, flags: UInt64, chars: String)
+    case keyDown(keyCode: UInt16, flags: UInt64, chars: String, isRepeat: Bool = false)
     case keyUp(keyCode: UInt16, flags: UInt64)
     case scroll(x: Double, y: Double, dx: Double, dy: Double, flags: UInt64)
 }

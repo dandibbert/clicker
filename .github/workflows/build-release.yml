@@ -33,7 +33,11 @@ jobs:
       CLICKER_BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # Installer provenance must identify the PR head, not a synthetic merge.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Verify toolchain and release version
+        id: source
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
@@ -50,31 +54,96 @@ jobs:
             version="${REF_NAME#v}"
           fi
           echo "CLICKER_VERSION=$version" >> "$GITHUB_ENV"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Check shell scripts
-        run: bash -n scripts/build-app.sh scripts/build-icon.sh scripts/package-release.sh
+        run: bash -n scripts/*.sh
       - name: Test packaging contracts
         run: python3 -B -m unittest discover -s Tests/Packaging -v
+      # Surface real native window previews before the longer verification and
+      # packaging steps, so layout review need not wait for a finished installer.
+      - name: Render native layout preview
+        # This is an early diagnostic pass. The same tests run again in the
+        # mandatory full suite below, which still gates every installer.
+        continue-on-error: true
+        env:
+          CLICKER_SNAPSHOT_DIR: ${{ github.workspace }}/dist/ui-preview
+        run: |
+          mkdir -p "$CLICKER_SNAPSHOT_DIR"
+          set -o pipefail
+          swift test --filter LibraryVisualHierarchyTests 2>&1 | tee "$CLICKER_SNAPSHOT_DIR/preview-test.log"
+      - name: Upload early native layout preview
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: Clicker-UI-preview-${{ matrix.arch }}-${{ steps.source.outputs.sha }}
+          path: dist/ui-preview/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Run Swift tests
+        env:
+          CLICKER_SNAPSHOT_DIR: ${{ github.workspace }}/dist/ui-snapshots
         run: swift test
-      - name: Build release archive
+      - name: Check Unicode capture with AddressSanitizer
+        if: matrix.arch == 'arm64'
+        run: swift test --sanitize=address --scratch-path .build-address-sanitizer --filter EventRecorderTests
+      - name: Build ZIP and drag-to-Applications DMG
         run: ./scripts/package-release.sh
       - name: Verify packaged binary and checksum
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
+          SOURCE_COMMIT: ${{ steps.source.outputs.sha }}
         run: |
           test "$(lipo -archs dist/Clicker.app/Contents/MacOS/Clicker)" = "$EXPECTED_ARCH"
           codesign --verify --deep --strict dist/Clicker.app
           cd dist
           shasum -a 256 -c ./*.sha256
-      - name: Upload archive
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          info = json.loads(Path("Clicker.app/Contents/Resources/build-info.json").read_text())
+          assert info["sourceCommit"] == os.environ["SOURCE_COMMIT"], info
+          assert info["sourceDirty"] == "false", info
+          assert info["architecture"] == os.environ["EXPECTED_ARCH"], info
+          PY
+      - name: Install and safely launch both package formats
+        env:
+          CLICKER_EXPECTED_ARCH: ${{ matrix.arch }}
+        run: ./scripts/smoke-test-package.sh
+      - name: Upload installer and exact-source provenance
+        id: installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: Clicker-macos-${{ matrix.arch }}
+          name: Clicker-macos-${{ matrix.arch }}-${{ steps.source.outputs.sha }}
           path: |
             dist/Clicker-*-macos-${{ matrix.arch }}.zip
-            dist/Clicker-*-macos-${{ matrix.arch }}.zip.sha256
+            dist/Clicker-*-macos-${{ matrix.arch }}.dmg
+            dist/Clicker-*-macos-${{ matrix.arch }}.build-info.json
+            dist/Clicker-*-macos-${{ matrix.arch }}.*.sha256
           if-no-files-found: error
           retention-days: 14
+      - name: Upload rendered UI and native launch evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: Clicker-QA-${{ matrix.arch }}-${{ steps.source.outputs.sha }}
+          path: |
+            dist/ui-snapshots/
+            dist/smoke-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Summarize verified installer
+        env:
+          SOURCE_COMMIT: ${{ steps.source.outputs.sha }}
+          INSTALLER_URL: ${{ steps.installer.outputs.artifact-url }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          {
+            echo "### Clicker $EXPECTED_ARCH"
+            echo "- Source commit: \`$SOURCE_COMMIT\`"
+            echo "- [Download installer bundle]($INSTALLER_URL) (DMG, ZIP, checksums, provenance; retained 14 days)"
+            echo "- Both formats were installed into fresh folders and opened a native window without input services."
+            echo "- Ad-hoc signed, not Developer ID signed or notarized; macOS 14+ required."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   release:
     name: Publish GitHub Release
@@ -100,8 +169,10 @@ jobs:
           cd release-assets
           version="${RELEASE_TAG#v}"
           for arch in arm64 x86_64; do
-            test -s "Clicker-${version}-macos-${arch}.zip"
-            test -s "Clicker-${version}-macos-${arch}.zip.sha256"
+            for suffix in zip dmg build-info.json; do
+              test -s "Clicker-${version}-macos-${arch}.${suffix}"
+              test -s "Clicker-${version}-macos-${arch}.${suffix}.sha256"
+            done
           done
           shasum -a 256 -c ./*.sha256
           # A rerun updates assets instead of failing on an existing release.
@@ -109,5 +180,5 @@ jobs:
             gh release create "$RELEASE_TAG" --verify-tag \
               --title "Clicker $RELEASE_TAG" --generate-notes --draft
           fi
-          gh release upload "$RELEASE_TAG" ./*.zip ./*.sha256 --clobber
+          gh release upload "$RELEASE_TAG" ./*.zip ./*.dmg ./*.build-info.json ./*.sha256 --clobber
           gh release edit "$RELEASE_TAG" --draft=false

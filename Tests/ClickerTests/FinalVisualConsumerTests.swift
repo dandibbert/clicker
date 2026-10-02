@@ -34,6 +34,8 @@ final class FinalVisualConsumerTests: XCTestCase {
         let appearance = fixture.appearance
         let hosting = fixture.hosting
 
+        XCTAssertEqual(fixture.state.activePlaybackScript?.id, script.id)
+
         let outline = try XCTUnwrap(
             nativeControls(in: hosting).compactMap { $0 as? NSOutlineView }.first,
             "The real ScriptDetailView action stack must render"
@@ -195,6 +197,61 @@ final class FinalVisualConsumerTests: XCTestCase {
     }
 
     @MainActor
+    func testPlaybackHighlightFollowsItsScriptWhenSelectionChanges() throws {
+        // Imported scripts can contain identical block IDs. A matching block ID
+        // alone must never make the selected script look like the playing script.
+        let sharedBlock = ActionBlock.wait(WaitBlock(duration: 1))
+        let selected = Script(name: "当前查看的脚本", blocks: [sharedBlock])
+        let playing = Script(name: "正在回放的脚本", blocks: [sharedBlock])
+        let size = CGSize(width: 600, height: 280)
+        let fixture = try HostedScriptDetailFixture(
+            script: selected,
+            size: size,
+            phase: .playing(iteration: 1, currentBlockID: sharedBlock.id),
+            playbackScript: playing
+        )
+        defer { fixture.tearDown() }
+        XCTAssertEqual(fixture.state.activePlaybackScript?.id, playing.id)
+        let canvas = ClickerVisualTheme.resolvedColor(for: .canvas, appearance: fixture.appearance)
+        let selection = ClickerVisualTheme.resolvedColor(for: .selection, appearance: fixture.appearance)
+
+        for (scriptID, isActive) in [(selected.id, false), (playing.id, true), (selected.id, false)] {
+            fixture.state.selectedScriptID = scriptID
+            fixture.settle()
+            let outline = try XCTUnwrap(
+                descendants(of: fixture.hosting).compactMap { $0 as? NSOutlineView }
+                    .first { $0.window === fixture.window }
+            )
+            XCTAssertEqual(outline.numberOfRows, 1)
+            let row = fixture.hosting.convert(outline.rect(ofRow: 0), from: outline)
+            let rowBody = CGRect(
+                x: row.minX + 180,
+                y: row.minY + 8,
+                width: 220,
+                height: row.height - 16
+            )
+            let bitmap = try bitmap(for: fixture.hosting)
+            XCTAssertGreaterThan(
+                renderedPixelFraction(
+                    in: bitmap,
+                    logicalSize: size,
+                    region: rowBody,
+                    near: isActive ? selection : canvas,
+                    tolerance: 0.03
+                ),
+                0.9,
+                "Only the script that owns playback may render an active row"
+            )
+            XCTAssertEqual(
+                visibleRecordCueBounds(in: bitmap, within: row, logicalSize: size) != nil,
+                isActive,
+                "The active trail must follow the playback source, including when navigating back"
+            )
+            XCTAssertEqual(fixture.state.activePlaybackScript?.id, playing.id)
+        }
+    }
+
+    @MainActor
     func testBottomAddActionBarStaysFixedEnabledAndClearOfLastRow() throws {
         let script = Script(
             name: "检查底部动作栏",
@@ -228,12 +285,6 @@ final class FinalVisualConsumerTests: XCTestCase {
         let buttonFrame = hosting.convert(addButton.bounds, from: addButton)
         XCTAssertTrue(bottom48.contains(buttonFrame), "Add hit target escaped bottom 48pt: \(buttonFrame)")
         XCTAssertTrue(addButton.isEnabled)
-        let outline = try XCTUnwrap(
-            (nativeControls(in: hosting) + descendants(of: hosting))
-                .compactMap { $0 as? NSOutlineView }
-                .first
-        )
-
         let barSurface = ClickerVisualTheme.resolvedColor(
             for: .elevatedSurface,
             appearance: appearance
@@ -262,17 +313,28 @@ final class FinalVisualConsumerTests: XCTestCase {
             )
         }
 
-        state.phase = .playing(iteration: 1, currentBlockID: nil)
+        state.playScriptFromShortcut(id: script.id)
         fixture.settle()
         XCTAssertFalse(addButton.isEnabled, "Add action must disable while scripts cannot be edited")
-        state.phase = .idle
+        state.togglePlay()
         fixture.settle()
         XCTAssertTrue(addButton.isEnabled, "Add action must re-enable with state.canEditScripts")
 
+        // SwiftUI can replace native views when the playback controls change.
+        // Resolve the current, attached outline after those transitions.
+        let outline = try XCTUnwrap(
+            descendants(of: hosting).compactMap { $0 as? NSOutlineView }
+                .first { $0.window === fixture.window }
+        )
+        XCTAssertEqual(outline.numberOfRows, script.blocks.count)
         let lastRow = outline.numberOfRows - 1
         XCTAssertGreaterThan(lastRow, 0)
         outline.scrollRowToVisible(lastRow)
-        fixture.settle()
+        fixture.settle(until: {
+            let frame = hosting.convert(outline.rect(ofRow: lastRow), from: outline)
+            return frame.maxY <= bottom48.minY + 1 && frame.minY > 0
+        })
+        XCTAssertTrue(outline.isDescendant(of: hosting))
         let lastRowFrame = hosting.convert(outline.rect(ofRow: lastRow), from: outline)
         XCTAssertLessThanOrEqual(
             lastRowFrame.maxY,
@@ -280,6 +342,7 @@ final class FinalVisualConsumerTests: XCTestCase {
             "The fixed add bar must not cover the last scrollable action row"
         )
         XCTAssertGreaterThan(lastRowFrame.minY, 0)
+        XCTAssertEqual(hosting.convert(addButton.bounds, from: addButton), buttonFrame)
     }
 
     @MainActor
@@ -290,6 +353,7 @@ final class FinalVisualConsumerTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let state = AppState(store: ScriptStore(directory: directory))
+        state.hasPermission = true
         let script = Script(
             name: "发布网页并整理窗口",
             blocks: [
@@ -353,14 +417,16 @@ final class FinalVisualConsumerTests: XCTestCase {
             let recordText = try XCTUnwrap(
                 recognizedText.first {
                     $0.text.replacingOccurrences(of: " ", with: "").contains("录制")
+                        && headerBounds.contains($0.frame)
                 },
-                "The real selected-script consumer must render the record action"
+                "The real selected-script header must render the record action"
             )
             let playbackText = try XCTUnwrap(
                 recognizedText.first {
                     $0.text.replacingOccurrences(of: " ", with: "").contains("回放")
+                        && headerBounds.contains($0.frame)
                 },
-                "The real selected-script consumer must render the playback action"
+                "The real selected-script header must render the playback action"
             )
             let headerSurface = try XCTUnwrap(
                 visibleColorBounds(

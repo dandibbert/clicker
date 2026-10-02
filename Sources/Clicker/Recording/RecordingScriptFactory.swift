@@ -33,7 +33,10 @@ enum RecordingScriptFactory {
             name: name,
             blocks: timeline.blocks,
             trailingDelay: timeline.trailingDelay,
-            targetBundleIdentifier: targetBundleIdentifier
+            targetBundleIdentifier: targetBundleIdentifier,
+            recordingInterruption: stopSource == .failure
+                ? "输入监听中断且无法恢复，此脚本只包含中断前捕获的操作。请检查系统权限并重新录制缺失内容。"
+                : nil
         )
     }
 }

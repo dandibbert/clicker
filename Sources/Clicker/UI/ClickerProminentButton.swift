@@ -3,13 +3,22 @@ import SwiftUI
 enum ClickerProminentButtonRole: Equatable {
     case recording
     case neutral
+    case secondary
 
     var fillRole: ClickerVisualTheme.ColorRole {
-        self == .recording ? .recordSurface : .playbackFill
+        switch self {
+        case .recording: .recordSurface
+        case .neutral: .playbackFill
+        case .secondary: .controlSurface
+        }
     }
 
     var foregroundRole: ClickerVisualTheme.ColorRole {
-        self == .recording ? .recordForeground : .prominentForeground
+        switch self {
+        case .recording: .recordForeground
+        case .neutral: .prominentForeground
+        case .secondary: .primaryText
+        }
     }
 
     var cueRole: ClickerVisualTheme.ColorRole? {

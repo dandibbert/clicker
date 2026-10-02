@@ -14,7 +14,12 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
     public var schemaVersion: Int
     public var trailingDelay: TimeInterval
     public var targetBundleIdentifier: String?
+    /// Only activate the saved application once, before playback, when explicitly enabled.
+    /// The target itself is retained as recording metadata; it never locks later focus.
+    public var startApplicationBeforePlayback: Bool
     public var playbackShortcut: ScriptShortcut?
+    /// Nil for complete recordings; persisted so a partial capture is never mistaken for a complete script.
+    public var recordingInterruption: String?
 
     public init(
         id: UUID = UUID(),
@@ -28,7 +33,9 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         schemaVersion _: Int = Script.currentSchemaVersion,
         trailingDelay: TimeInterval = 0,
         targetBundleIdentifier: String? = nil,
-        playbackShortcut: ScriptShortcut? = nil
+        startApplicationBeforePlayback: Bool = false,
+        playbackShortcut: ScriptShortcut? = nil,
+        recordingInterruption: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -41,13 +48,16 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         schemaVersion = Self.currentSchemaVersion
         self.trailingDelay = trailingDelay
         self.targetBundleIdentifier = targetBundleIdentifier
+        self.startApplicationBeforePlayback = startApplicationBeforePlayback
         self.playbackShortcut = playbackShortcut
+        self.recordingInterruption = recordingInterruption
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, createdAt, modifiedAt, blocks
         case repeatCount, repeatForever, repeatInterval
-        case schemaVersion, trailingDelay, targetBundleIdentifier, playbackShortcut
+        case schemaVersion, trailingDelay, targetBundleIdentifier, playbackShortcut, recordingInterruption
+        case startApplicationBeforePlayback
     }
 
     public init(from decoder: Decoder) throws {
@@ -77,6 +87,12 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
             String.self,
             forKey: .targetBundleIdentifier
         )
+        // Existing recordings keep their target metadata without silently opting
+        // into application switching under the new free cross-app playback policy.
+        startApplicationBeforePlayback = try container.decodeIfPresent(
+            Bool.self, forKey: .startApplicationBeforePlayback
+        ) ?? false
+        recordingInterruption = try container.decodeIfPresent(String.self, forKey: .recordingInterruption)
         playbackShortcut = try container.decodeIfPresent(
             ScriptShortcut.self,
             forKey: .playbackShortcut
@@ -96,7 +112,9 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         try container.encode(Self.currentSchemaVersion, forKey: .schemaVersion)
         try container.encode(trailingDelay, forKey: .trailingDelay)
         try container.encodeIfPresent(targetBundleIdentifier, forKey: .targetBundleIdentifier)
+        try container.encode(startApplicationBeforePlayback, forKey: .startApplicationBeforePlayback)
         try container.encodeIfPresent(playbackShortcut, forKey: .playbackShortcut)
+        try container.encodeIfPresent(recordingInterruption, forKey: .recordingInterruption)
     }
 
     private static func migrateLegacyBlocks(_ legacyBlocks: [ActionBlock]) -> [ActionBlock] {

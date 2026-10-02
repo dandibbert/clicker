@@ -37,10 +37,22 @@ public struct ScriptStoreLoadResult: Equatable, Sendable {
     }
 }
 
+/// Optional capability, so existing application stores and test doubles do not
+/// have to implement recovery to satisfy their ordinary persistence contract.
+public protocol ScriptRecovering: AnyObject {
+    func loadRecentlyDeleted() -> ScriptStoreLoadResult
+    func restoreRecentlyDeleted(id: UUID) throws -> Script
+}
+
 /// 脚本库：每脚本一个 JSON 文件，文件名 = "\(id).json"。
-public final class ScriptStore {
+public final class ScriptStore: ScriptRecovering {
     public let directory: URL
     private let fileSystem: ScriptStoreFileSystem
+
+    /// Kept inside this library, with no automatic purge or permanent deletion.
+    public var recentlyDeletedDirectory: URL {
+        directory.appendingPathComponent("Recently Deleted", isDirectory: true)
+    }
 
     /// 默认目录：~/Library/Application Support/Clicker/scripts/
     public static func defaultDirectory() -> URL {
@@ -118,9 +130,27 @@ public final class ScriptStore {
     }
 
     public func delete(id: UUID) throws {
+        _ = try moveToRecentlyDeleted(id: id)
+    }
+
+    @discardableResult
+    public func moveToRecentlyDeleted(id: UUID) throws -> URL {
         let url = fileURL(for: id)
+        let archived = recentlyDeletedDirectory.appendingPathComponent(url.lastPathComponent)
         do {
-            try fileSystem.removeItem(at: url)
+            // Never destroy an earlier recoverable copy with the same identity.
+            guard !fileSystem.fileExists(at: archived) else {
+                throw ScriptStoreIssue(
+                    operation: .delete,
+                    fileName: url.lastPathComponent,
+                    message: "最近删除中已存在同一脚本，请先恢复该副本。"
+                )
+            }
+            try fileSystem.createDirectory(at: recentlyDeletedDirectory)
+            try fileSystem.moveItem(at: url, to: archived)
+            return archived
+        } catch let issue as ScriptStoreIssue {
+            throw issue
         } catch {
             throw ScriptStoreIssue(
                 operation: .delete,
@@ -130,8 +160,55 @@ public final class ScriptStore {
         }
     }
 
+    public func loadRecentlyDeleted() -> ScriptStoreLoadResult {
+        loadAll(in: recentlyDeletedDirectory)
+    }
+
+    /// Restores the archived file only if its original identity is not in use.
+    /// A failed read, decode or move leaves the recoverable file untouched.
+    public func restoreRecentlyDeleted(id: UUID) throws -> Script {
+        let archived = recentlyDeletedDirectory.appendingPathComponent("\(id.uuidString).json")
+        let destination = fileURL(for: id)
+        guard !fileSystem.fileExists(at: destination) else {
+            throw ScriptStoreIssue(
+                operation: .replace,
+                fileName: destination.lastPathComponent,
+                message: "脚本库中已有同一脚本，恢复不会覆盖现有副本。"
+            )
+        }
+        let data: Data
+        do {
+            data = try fileSystem.read(at: archived)
+        } catch {
+            throw ScriptStoreIssue(operation: .read, fileName: archived.lastPathComponent,
+                                   message: String(describing: error))
+        }
+        let script: Script
+        do {
+            script = try ScriptJSONCodec.decode(data)
+            guard script.id == id else {
+                throw ScriptTransferError.invalidDocument("脚本标识与归档文件名不一致。")
+            }
+        } catch {
+            throw ScriptStoreIssue(operation: .decode, fileName: archived.lastPathComponent,
+                                   message: String(describing: error))
+        }
+        do {
+            try fileSystem.createDirectory(at: directory)
+            try fileSystem.moveItem(at: archived, to: destination)
+        } catch {
+            throw ScriptStoreIssue(operation: .replace, fileName: destination.lastPathComponent,
+                                   message: String(describing: error))
+        }
+        return script
+    }
+
     /// 加载全部脚本，按创建时间升序，并保留每个失败的结构化信息。
     public func loadAll() -> ScriptStoreLoadResult {
+        loadAll(in: directory)
+    }
+
+    private func loadAll(in directory: URL) -> ScriptStoreLoadResult {
         guard fileSystem.fileExists(at: directory) else {
             return ScriptStoreLoadResult(scripts: [], issues: [])
         }

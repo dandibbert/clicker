@@ -45,7 +45,7 @@ final class CompactHeaderPresentationTests: XCTestCase {
         let model = CompactScriptHeaderPresentation(script: script, phase: .idle)
 
         XCTAssertEqual(model.title, "录制 1")
-        XCTAssertEqual(model.metadata, "1 个动作 · 约 2.0 秒")
+        XCTAssertEqual(model.metadata, "1 个动作 · 1 轮 · 约 2.0 秒")
         XCTAssertFalse(model.showsPlaybackProgress)
     }
 

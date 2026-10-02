@@ -276,7 +276,6 @@ public enum EventGrouper {
                 if isShortcut(event) {
                     let matchedUpIndex = keyMatches.upIndexByDownIndex[index]
                     let matchedUp = matchedUpIndex.map { events[$0] }
-                    let effectiveRepeat = keyMatches.repeatDownIndexes.contains(index)
                     let duration: TimeInterval
                     let upFlags: UInt64
                     let upOrdinal: Int
@@ -300,7 +299,7 @@ public enum EventGrouper {
                             flags: event.flags,
                             upFlags: upFlags,
                             duration: duration,
-                            isRepeat: effectiveRepeat,
+                            isRepeat: event.isRepeat,
                             downOrdinal: index,
                             upOrdinal: upOrdinal
                         )),
@@ -368,7 +367,7 @@ public enum EventGrouper {
                                 upT: upTime,
                                 downFlags: nextEvent.flags,
                                 upFlags: upFlags,
-                                isRepeat: effectiveRepeat,
+                                isRepeat: nextEvent.isRepeat,
                                 downOrdinal: nextIndex,
                                 upOrdinal: upOrdinal
                             ))

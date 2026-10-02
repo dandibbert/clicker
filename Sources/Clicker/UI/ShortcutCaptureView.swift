@@ -18,15 +18,19 @@ struct ShortcutCaptureView: NSViewRepresentable {
     func updateNSView(_ nsView: CaptureKeyView, context: Context) {
         nsView.onCandidate = onCandidate
         DispatchQueue.main.async { [weak nsView] in
-            guard let nsView else { return }
-            nsView.window?.makeFirstResponder(nsView)
+            nsView?.requestCaptureFocus()
         }
+    }
+
+    static func dismantleNSView(_ nsView: CaptureKeyView, coordinator: ()) {
+        nsView.stopCapturing()
     }
 }
 
 final class CaptureKeyView: NSView {
     var onCandidate: (RecordingStopShortcut) -> Void
     private let controller = ShortcutCaptureController()
+    private var isCaptureActive = true
 
     init(onCandidate: @escaping (RecordingStopShortcut) -> Void) {
         self.onCandidate = onCandidate
@@ -36,15 +40,32 @@ final class CaptureKeyView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    override var acceptsFirstResponder: Bool { true }
+    override var acceptsFirstResponder: Bool { isCaptureActive }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        window?.makeFirstResponder(self)
+        requestCaptureFocus()
+    }
+
+    func requestCaptureFocus() {
+        guard isCaptureActive, let window else { return }
+        window.makeFirstResponder(self)
+    }
+
+    func stopCapturing() {
+        isCaptureActive = false
+        if let window, window.firstResponder === self {
+            window.makeFirstResponder(nil)
+        }
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil, window != nil { stopCapturing() }
+        super.viewWillMove(toWindow: newWindow)
     }
 
     override func keyDown(with event: NSEvent) {
-        guard let candidate = controller.candidate(
+        guard isCaptureActive, let candidate = controller.candidate(
             keyCode: event.keyCode,
             flags: UInt64(event.modifierFlags.rawValue)
         ) else { return }

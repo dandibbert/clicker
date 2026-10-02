@@ -158,6 +158,7 @@ struct ScriptRowPresentation: Equatable {
 enum ClickerEmptyStateKind: Equatable {
     case emptyLibrary
     case noSelection
+    case noSearchResults
     case permissionRequired
     case emptyScript
 }
@@ -174,8 +175,14 @@ struct ClickerEmptyStatePresentation: Equatable {
         case .emptyLibrary:
             systemImage = "cursorarrow.click.badge.clock"
             title = "还没有脚本"
-            description = "录制一段操作，创建你的第一个脚本。"
+            description = "录制一段操作，或新建脚本手动添加动作。"
             actionTitle = "开始录制"
+            secondaryActionTitle = "新建空白脚本"
+        case .noSearchResults:
+            systemImage = "magnifyingglass"
+            title = "没有匹配的脚本"
+            description = "换个名称搜索，或清除搜索查看全部脚本。"
+            actionTitle = "清除搜索"
             secondaryActionTitle = nil
         case .noSelection:
             systemImage = "sidebar.left"
@@ -212,12 +219,17 @@ struct PrimaryActionPresentation: Equatable {
     let isEnabled: Bool
     let accessibilityLabel: String
 
-    static func pair(phase: AppPhase, hasPlayableScript: Bool) -> [PrimaryActionPresentation] {
+    static func pair(
+        phase: AppPhase,
+        hasPlayableScript: Bool,
+        canRecord: Bool = true,
+        canPlay: Bool = true
+    ) -> [PrimaryActionPresentation] {
         switch phase {
         case .idle:
             return [
-                recordStart(),
-                playbackStart(isEnabled: hasPlayableScript),
+                recordStart(isEnabled: canRecord),
+                playbackStart(isEnabled: hasPlayableScript && canPlay),
             ]
         case .countdown:
             return [
@@ -280,4 +292,13 @@ struct PrimaryActionPresentation: Equatable {
         isEnabled: true,
         accessibilityLabel: "停止回放"
     )
+}
+
+
+enum ScriptLibrarySearch {
+    static func filter(_ scripts: [Script], query: String) -> [Script] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return scripts }
+        return scripts.filter { $0.name.localizedStandardContains(query) }
+    }
 }

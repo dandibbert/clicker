@@ -5,16 +5,22 @@ struct ClickerEmptyStateView: View {
     private let presentation: ClickerEmptyStatePresentation
     private let action: (() -> Void)?
     private let secondaryAction: (() -> Void)?
+    private let isActionEnabled: Bool
+    private let isSecondaryActionEnabled: Bool
 
     init(
         kind: ClickerEmptyStateKind,
         action: (() -> Void)? = nil,
-        secondaryAction: (() -> Void)? = nil
+        secondaryAction: (() -> Void)? = nil,
+        isActionEnabled: Bool = true,
+        isSecondaryActionEnabled: Bool = true
     ) {
         self.kind = kind
         presentation = ClickerEmptyStatePresentation(kind: kind)
         self.action = action
         self.secondaryAction = secondaryAction
+        self.isActionEnabled = isActionEnabled
+        self.isSecondaryActionEnabled = isSecondaryActionEnabled
     }
 
     var body: some View {
@@ -44,6 +50,7 @@ struct ClickerEmptyStateView: View {
                         ClickerProminentButton(role: primaryActionRole, action: action) {
                             Text(actionTitle)
                         }
+                        .disabled(!isActionEnabled)
                     }
 
                     if let secondaryActionTitle = presentation.secondaryActionTitle,
@@ -52,6 +59,7 @@ struct ClickerEmptyStateView: View {
                             .buttonStyle(.bordered)
                             .tint(ClickerVisualTheme.focusRing)
                             .foregroundStyle(ClickerVisualTheme.primaryText)
+                            .disabled(!isSecondaryActionEnabled)
                     }
                 }
             }
@@ -61,8 +69,6 @@ struct ClickerEmptyStateView: View {
     }
 
     private var primaryActionRole: ClickerProminentButtonRole {
-        kind == .permissionRequired
-            ? .neutral
-            : .recording
+        kind == .emptyLibrary || kind == .emptyScript ? .recording : .neutral
     }
 }

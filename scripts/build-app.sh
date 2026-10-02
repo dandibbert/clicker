@@ -14,6 +14,18 @@ if [[ ! "$BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
     exit 64
 fi
 
+# Record the source that was actually checked out, including pull-request heads.
+# Source archives without .git remain usable, but must not claim a commit identity.
+SOURCE_COMMIT=$(git rev-parse --verify HEAD 2>/dev/null || printf 'unknown')
+SOURCE_DIRTY=unknown
+if [[ "$SOURCE_COMMIT" != unknown ]]; then
+    SOURCE_DIRTY=false
+    if ! git diff-index --quiet HEAD --; then SOURCE_DIRTY=true; fi
+    if [[ -n "$(git ls-files --others --exclude-standard -- Sources Package.swift Package.resolved Resources scripts)" ]]; then
+        SOURCE_DIRTY=true
+    fi
+fi
+
 # Forward Swift build options (e.g. --triple) and resolve the matching output path.
 swift build -c release "$@"
 BIN_PATH=$(swift build -c release "$@" --show-bin-path)
@@ -24,6 +36,27 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BIN_PATH/Clicker" "$APP/Contents/MacOS/Clicker"
 ./scripts/build-icon.sh Resources/AppIcon.svg "$APP/Contents/Resources/Clicker.icns"
+ARCH=$(lipo -archs "$APP/Contents/MacOS/Clicker")
+case "$ARCH" in
+    arm64|x86_64) ;;
+    *) echo "Unsupported release architecture: $ARCH" >&2; exit 65 ;;
+esac
+SIGNING_IDENTITY="${CLICKER_SIGNING_IDENTITY:--}"
+SIGNING_KIND=custom
+if [[ "$SIGNING_IDENTITY" == - ]]; then SIGNING_KIND=ad-hoc; fi
+cat > "$APP/Contents/Resources/build-info.json" <<JSON
+{
+  "app": "Clicker",
+  "version": "$VERSION",
+  "buildNumber": "$BUILD_NUMBER",
+  "architecture": "$ARCH",
+  "sourceCommit": "$SOURCE_COMMIT",
+  "sourceDirty": "$SOURCE_DIRTY",
+  "signing": "$SIGNING_KIND",
+  "notarized": false,
+  "minimumMacOS": "14.0"
+}
+JSON
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -38,6 +71,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
+    <key>ClickerSourceCommit</key><string>$SOURCE_COMMIT</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSAccessibilityUsageDescription</key>
@@ -48,7 +82,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-SIGNING_IDENTITY="${CLICKER_SIGNING_IDENTITY:--}"
 if [ "$SIGNING_IDENTITY" = "-" ]; then
     codesign --force --deep --sign - --identifier local.rayscripts.clicker "$APP"
     echo "提示：当前为 ad-hoc 签名；更新应用后 macOS 可能要求重新授权辅助功能和输入监控。"

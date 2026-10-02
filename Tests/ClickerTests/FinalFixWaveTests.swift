@@ -131,7 +131,7 @@ final class FinalFixWaveTests: XCTestCase {
                             keyCode: 8,
                             flags: KeyCodeMap.maskCommand
                         )),
-                        onSave: { _ in }
+                        onSave: { _ in true }
                     )
                     .environment(\.colorScheme, appearanceFixture.1)
                     .tint(.blue)
@@ -307,6 +307,7 @@ final class FinalFixWaveTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let state = AppState(store: ScriptStore(directory: directory))
+        state.hasPermission = true
         let script = Script(
             name: "辅助字号脚本",
             blocks: [.wait(WaitBlock(duration: 1))],

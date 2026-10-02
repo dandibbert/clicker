@@ -8,11 +8,6 @@ public enum BlockExpander {
         var ordinal: Int
     }
 
-    /// 编辑文本生成事件时，字符按下到抬起的间隔。
-    static let keyHold: TimeInterval = 0.02
-    /// 编辑文本生成事件时，相邻字符按下的间隔。
-    static let keyStride: TimeInterval = 0.06
-
     private static func sanitizedTime(_ time: TimeInterval) -> TimeInterval {
         TimelineValue.time(time)
     }
@@ -197,63 +192,28 @@ public enum BlockExpander {
                 }
 
             case .typeText(let typeText):
-                let recordedText = typeText.keystrokes.map(\.chars).joined()
-                if recordedText == typeText.text, !typeText.keystrokes.isEmpty {
-                    for keystroke in typeText.keystrokes {
-                        let downTime = sanitizedTime(keystroke.t)
-                        let upTime = max(downTime, sanitizedTime(keystroke.upT))
-                        appendStep(
-                            localTime: downTime,
-                            ordinal: keystroke.downOrdinal,
-                            action: .keyDown(
-                                keyCode: keystroke.keyCode,
-                                flags: keystroke.downFlags,
-                                chars: keystroke.chars
-                            ),
-                            blockID: typeText.id
-                        )
-                        appendKeyRelease(
-                            localTime: upTime,
+                for keystroke in typeText.playbackKeystrokes {
+                    let downTime = sanitizedTime(keystroke.t)
+                    let upTime = max(downTime, sanitizedTime(keystroke.upT))
+                    appendStep(
+                        localTime: downTime,
+                        ordinal: keystroke.downOrdinal,
+                        action: .keyDown(
                             keyCode: keystroke.keyCode,
-                            flags: keystroke.upFlags,
-                            ordinal: keystroke.upOrdinal,
-                            isRepeat: keystroke.isRepeat,
-                            blockID: typeText.id
-                        )
-                    }
-                } else {
-                    let existingOrdinals = typeText.keystrokes.flatMap {
-                        [$0.downOrdinal, $0.upOrdinal]
-                    }
-                    var ordinal = existingOrdinals.max().map {
-                        TimelineValue.nextOrdinal(after: $0)
-                    } ?? 0
-                    var offset: TimeInterval = 0
-                    var generatedDuration: TimeInterval = 0
-                    for character in typeText.text {
-                        let upTime = adding(offset, keyHold)
-                        appendStep(
-                            localTime: offset,
-                            ordinal: ordinal,
-                            action: .keyDown(
-                                keyCode: 0,
-                                flags: 0,
-                                chars: String(character)
-                            ),
-                            blockID: typeText.id
-                        )
-                        ordinal = TimelineValue.nextOrdinal(after: ordinal)
-                        appendStep(
-                            localTime: upTime,
-                            ordinal: ordinal,
-                            action: .keyUp(keyCode: 0, flags: 0),
-                            blockID: typeText.id
-                        )
-                        ordinal = TimelineValue.nextOrdinal(after: ordinal)
-                        generatedDuration = max(generatedDuration, upTime)
-                        offset = adding(offset, keyStride)
-                    }
-                    effectiveDuration = max(effectiveDuration, generatedDuration)
+                            flags: keystroke.downFlags,
+                            chars: keystroke.chars,
+                            isRepeat: keystroke.isRepeat
+                        ),
+                        blockID: typeText.id
+                    )
+                    appendKeyRelease(
+                        localTime: upTime,
+                        keyCode: keystroke.keyCode,
+                        flags: keystroke.upFlags,
+                        ordinal: keystroke.upOrdinal,
+                        isRepeat: keystroke.isRepeat,
+                        blockID: typeText.id
+                    )
                 }
 
             case .shortcut(let shortcut):
@@ -263,7 +223,8 @@ public enum BlockExpander {
                     action: .keyDown(
                         keyCode: shortcut.keyCode,
                         flags: shortcut.flags,
-                        chars: ""
+                        chars: "",
+                        isRepeat: shortcut.isRepeat
                     ),
                     blockID: shortcut.id
                 )
