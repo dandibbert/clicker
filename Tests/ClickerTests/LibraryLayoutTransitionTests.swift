@@ -150,13 +150,28 @@ final class LibraryLayoutTransitionTests: XCTestCase {
             XCTAssertEqual(fixture.state.selectedScriptID, script.id)
             let bitmap = try fixture.snapshot(named: "search-no-results")
             let text = try fixture.recognizedText(in: bitmap)
-            XCTAssertTrue(text.contains { $0.text.contains("没有匹配的脚本") })
             XCTAssertFalse(text.contains { $0.text.contains("创建第一个脚本") },
                            "Zero search matches is not an empty library")
-            let noResults = try XCTUnwrap(text.first { $0.text.contains("没有匹配的脚本") })
-            XCTAssertTrue(fixture.frame(of: try fixture.sidebar()).contains(noResults.frame))
-            try editSearch("", in: fixture)
-            fixture.settle(until: { outline.numberOfRows == originalIDs.count })
+            let sidebar = try fixture.sidebar()
+            let sidebarFrame = fixture.frame(of: sidebar)
+            let searchBottom = fixture.frame(of: try fixture.searchField()).maxY
+            // The search-field xmark has the same accessibility label. Select
+            // the actual no-results text Button below the measured search field.
+            let clear = try fixture.action(named: "清除搜索", in: sidebar,
+                                           belowY: searchBottom - sidebarFrame.minY)
+            XCTAssertNotNil(clear.nativeButton, "The no-results clear action must remain a native Button")
+            XCTAssertTrue(clear.isEnabled)
+            let clearFrame = fixture.frame(of: clear)
+            XCTAssertTrue(sidebarFrame.contains(clearFrame))
+            let noticeRegion = CGRect(x: sidebarFrame.minX, y: searchBottom,
+                                      width: sidebarFrame.width, height: clearFrame.minY - searchBottom)
+            XCTAssertGreaterThan(noticeRegion.height, 0)
+            XCTAssertTrue(text.contains { noticeRegion.contains($0.frame) && $0.text.count >= 2 },
+                          "Visible no-results label ink must remain above the clear action, regardless of CJK OCR spelling")
+            let search = try fixture.searchField()
+            try clear.press()
+            fixture.settle(until: { outline.numberOfRows == originalIDs.count && search.stringValue.isEmpty })
+            XCTAssertEqual(search.stringValue, "")
             try fixture.assertPopulatedLibrary(expectedRows: 2)
             XCTAssertEqual(fixture.state.scripts.map(\.id), originalIDs)
             XCTAssertEqual(fixture.state.selectedScriptID, script.id)
@@ -235,6 +250,7 @@ final class LibraryLayoutTransitionTests: XCTestCase {
             message: "请先重试保存、另存或明确丢弃当前录制，再开始新的录制。"
         )
         fixture.settle()
+        try fixture.snapshot(named: "empty-recovery-notices")
         XCTAssertNotNil(fixture.state.unsavedRecording)
         XCTAssertTrue(fixture.state.scripts.isEmpty)
         XCTAssertFalse(fixture.descendants(of: fixture.host).contains { $0 is NSSplitView })
@@ -247,7 +263,6 @@ final class LibraryLayoutTransitionTests: XCTestCase {
             XCTAssertTrue(fixture.host.bounds.contains(frame), "Recovery controls must stay above the welcome: \(frame)")
             recoveryBottom = max(recoveryBottom, frame.maxY)
         }
-        try fixture.snapshot(named: "empty-recovery-notices")
         let scroll = try XCTUnwrap(fixture.descendants(of: fixture.host).compactMap { $0 as? NSScrollView }.first)
         let document = try XCTUnwrap(scroll.documentView)
         XCTAssertGreaterThan(document.bounds.height, scroll.contentView.bounds.height,

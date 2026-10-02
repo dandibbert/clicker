@@ -79,9 +79,13 @@ final class LibraryVisualHierarchyTests: XCTestCase {
                     let bitmap = try fixture.snapshot(named: "empty-no-permission")
                     let text = try fixture.recognizedText(in: bitmap)
                     try fixture.assertEmptyWelcome(text: text, canRecord: false)
-                    let notice = try XCTUnwrap(text.first { $0.text.contains("录制与回放需要权限") })
+                    let permission = try fixture.action(named: "权限设置")
+                    XCTAssertNotNil(permission.nativeButton, "Permission help must remain a real native Button")
+                    XCTAssertTrue(permission.isEnabled)
+                    let noticeFrame = fixture.frame(of: permission)
+                    XCTAssertTrue(fixture.host.bounds.contains(noticeFrame))
                     let heading = try XCTUnwrap(text.first { $0.text.contains("创建第一个脚本") })
-                    XCTAssertGreaterThan(heading.frame.minY, notice.frame.maxY,
+                    XCTAssertGreaterThan(heading.frame.minY, noticeFrame.maxY,
                                          "Permission help must reserve space rather than cover the welcome")
                     XCTAssertTrue(fixture.state.canEditScripts)
                     XCTAssertEqual(fixture.state.phase, .idle)
@@ -233,6 +237,13 @@ final class HostedLibraryHierarchyFixture {
     }
 
     func assertPopulatedLibrary(expectedRows: Int) throws {
+        // AppState publishes selection before SwiftUI remounts and selects the
+        // native row after undo/redo or a first-script layout transition.
+        settle(until: {
+            guard let outline = self.descendants(of: self.host).compactMap({ $0 as? NSOutlineView })
+                .min(by: { self.frame(of: $0).minX < self.frame(of: $1).minX }) else { return false }
+            return outline.numberOfRows == expectedRows && (expectedRows == 0 || outline.selectedRow >= 0)
+        })
         let split = try splitView()
         XCTAssertEqual(descendants(of: host).filter { $0 is NSSplitView }.count, 1)
         // NSSplitView also owns native divider/accessory views. Identify its
@@ -278,7 +289,7 @@ final class HostedLibraryHierarchyFixture {
         }
     }
 
-    func action(named name: String, in requestedRoot: NSView? = nil) throws -> LibraryRenderedAction {
+    func action(named name: String, in requestedRoot: NSView? = nil, belowY: CGFloat? = nil) throws -> LibraryRenderedAction {
         let root = requestedRoot ?? host
         root.layoutSubtreeIfNeeded()
         root.displayIfNeeded()
@@ -297,9 +308,23 @@ final class HostedLibraryHierarchyFixture {
                                                   width: value.width, height: value.height)
         }
         let views = descendants(of: root).filter { !$0.isHiddenOrHasHiddenAncestor }
-        let nativeButtons = views.compactMap { $0 as? NSButton }
+        let minimumY = belowY ?? -CGFloat.infinity
+        let nativeButtons = views.compactMap { $0 as? NSButton }.filter { rect(of: $0).minY >= minimumY }
+        let requestedName = normalizedVisualText(name)
+        let namedButtons = nativeButtons.filter { button in
+            [button.accessibilityLabel() ?? "", button.accessibilityTitle() ?? "", button.title,
+             button.attributedTitle.string].contains { value in
+                let label = normalizedVisualText(value)
+                return label == requestedName || (name == "最近删除" && label.hasPrefix(requestedName))
+            }
+        }
+        if let native = namedButtons.first {
+            XCTAssertEqual(namedButtons.count, 1, "Native \(name) must identify one control")
+            return LibraryRenderedAction(root: root, bounds: rect(of: native),
+                                         isEnabled: native.isEnabled, nativeButton: native)
+        }
         let customBounds = views.map { rect(of: $0) }.filter {
-            (36...44).contains($0.height) && (40...220).contains($0.width)
+            (36...44).contains($0.height) && (40...220).contains($0.width) && $0.minY >= minimumY
         }
         // Vision sometimes groups adjacent row copy with a Button label. Ask
         // Vision for that fixed label's own substring bounds, not the whole row.
@@ -311,7 +336,15 @@ final class HostedLibraryHierarchyFixture {
             let sidebarFrame = frame(of: try sidebar())
             labels = labels.filter { $0.minX > sidebarFrame.maxX }
         }
-        XCTAssertEqual(labels.count, 1, "One rendered \(name) control expected: \(labels)")
+        let nativeDiagnostic = nativeButtons.map {
+            "\(type(of: $0)) title=\($0.title) label=\($0.accessibilityLabel() ?? "nil") frame=\(rect(of: $0))"
+        }.joined(separator: "; ")
+        var recognizedDiagnostic = ""
+        if labels.count != 1 {
+            recognizedDiagnostic = try recognizedText(in: bitmap, size: root.bounds.size)
+                .map { "\($0.text) @ \($0.frame)" }.joined(separator: "; ")
+        }
+        XCTAssertEqual(labels.count, 1, "One rendered \(name) control expected: \(labels); native controls: \(nativeDiagnostic); OCR: \(recognizedDiagnostic)")
         let label = try XCTUnwrap(labels.first, "The \(name) control must be visibly discoverable")
         // Native bordered Buttons can have empty titles because SwiftUI draws
         // their labels separately. Match the rendered label to their real bounds.

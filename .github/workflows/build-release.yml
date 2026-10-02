@@ -67,7 +67,10 @@ jobs:
         continue-on-error: true
         env:
           CLICKER_SNAPSHOT_DIR: ${{ github.workspace }}/dist/ui-preview
-        run: swift test --filter LibraryVisualHierarchyTests
+        run: |
+          mkdir -p "$CLICKER_SNAPSHOT_DIR"
+          set -o pipefail
+          swift test --filter LibraryVisualHierarchyTests 2>&1 | tee "$CLICKER_SNAPSHOT_DIR/preview-test.log"
       - name: Upload early native layout preview
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

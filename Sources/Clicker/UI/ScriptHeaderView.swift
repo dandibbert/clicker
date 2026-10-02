@@ -219,10 +219,11 @@ struct ScriptHeaderView: View {
     @ViewBuilder
     private func playbackProgress(width: CGFloat) -> some View {
         if let playbackProgressText = presentation.playbackProgressText {
-            // Keep an extreme finite fraction on two complete lines rather than
-            // letting word wrapping isolate "第" and clip the final digits.
-            let displayText = playbackProgressText.count > 26
-                ? playbackProgressText.replacingOccurrences(of: "/", with: "/\n")
+            // Label long current/total values on separate complete lines. This
+            // avoids both clipping and an ambiguous separator at a line ending.
+            let parts = playbackProgressText.split(separator: "/", maxSplits: 1)
+            let displayText = playbackProgressText.count > 26 && parts.count == 2
+                ? "\(parts[0]) 轮\n共 \(parts[1])"
                 : playbackProgressText
             Text(displayText)
                 .font(.caption)

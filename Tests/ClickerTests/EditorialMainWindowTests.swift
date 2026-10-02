@@ -233,7 +233,7 @@ final class EditorialMainWindowTests: XCTestCase {
         try assertPlayingMainWindow(
             script: script,
             phase: .playing(iteration: Int.max, currentBlockID: block.id),
-            expectedProgress: "第\(Int.max)/\(Int.max)轮"
+            expectedProgress: "第\(Int.max)轮共\(Int.max)轮"
         )
     }
 
@@ -374,7 +374,7 @@ final class EditorialMainWindowTests: XCTestCase {
             .map(\.text)
             .joined()
             .replacingOccurrences(of: " ", with: "")
-        let progressGlyphs = progressCopy.filter { "第0123456789/轮".contains($0) }
+        let progressGlyphs = progressCopy.filter { "第共0123456789/轮".contains($0) }
         XCTAssertEqual(
             progressGlyphs,
             expectedProgress,
