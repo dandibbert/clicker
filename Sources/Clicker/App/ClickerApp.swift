@@ -46,6 +46,7 @@ struct ClickerApp: App {
                     }
                 }
         }
+        .defaultSize(width: 820, height: 540)
 
         Settings {
             ClickerSettingsView()

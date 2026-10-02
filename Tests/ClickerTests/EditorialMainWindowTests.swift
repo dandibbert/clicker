@@ -361,10 +361,10 @@ final class EditorialMainWindowTests: XCTestCase {
             XCTAssertTrue(headerBounds.contains(frame), "\(placeholder) escaped header: \(frame)")
         }
         let progressRegion = CGRect(
-            x: headerBounds.maxX - 200,
-            y: headerBounds.minY,
-            width: 200,
-            height: min(56, headerBounds.height)
+            x: headerBounds.maxX - 156,
+            y: headerBounds.minY + headerBounds.height / 2,
+            width: 144,
+            height: headerBounds.height / 2
         )
         XCTAssertFalse(title.intersects(progressRegion), "Title/mode copy overlaps the playback progress region")
         let progressCopy = recognizedText

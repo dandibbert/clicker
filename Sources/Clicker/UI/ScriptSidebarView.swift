@@ -148,22 +148,35 @@ struct ScriptSidebarView: View {
         .scrollContentBackground(.hidden)
         .overlay {
             if !scripts.isEmpty && filteredScripts.isEmpty {
-                ClickerEmptyStateView(kind: .noSearchResults, action: { searchText = "" })
+                VStack(spacing: ClickerVisualTheme.spacing8) {
+                    Text("没有匹配的脚本")
+                        .font(.callout)
+                        .foregroundStyle(ClickerVisualTheme.secondaryText)
+                    Button("清除搜索") { searchText = "" }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(ClickerVisualTheme.primaryText)
+                }
+                .padding(ClickerVisualTheme.spacing16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
     }
 
     private var libraryActions: some View {
         HStack(spacing: ClickerVisualTheme.spacing8) {
-            Button(action: createBlank) { Label("新建", systemImage: "plus") }
+            ClickerProminentButton(role: .secondary, action: createBlank) {
+                Label("新建", systemImage: "plus").frame(maxWidth: .infinity)
+            }
                 .disabled(!canEditScripts)
                 .help("新建空白脚本")
-            Spacer(minLength: 0)
-            Button(action: onRecord) { Label("录制", systemImage: "record.circle") }
+            ClickerProminentButton(role: .secondary, action: onRecord) {
+                Label("录制", systemImage: "record.circle").frame(maxWidth: .infinity)
+            }
                 .disabled(!canStartRecording)
                 .help(canStartRecording ? "录制新脚本" : "录制需要系统权限，或等待当前操作结束")
         }
-        .padding(ClickerVisualTheme.spacing12)
+        .padding(.horizontal, ClickerVisualTheme.spacing12)
+        .frame(height: 48)
     }
 
     @ViewBuilder

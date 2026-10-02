@@ -7,49 +7,52 @@ struct MainView: View {
     @Environment(\.openSettings) private var openSettings
     @State private var shortcutEditorScriptID: UUID?
     @State private var showsPermissionChecklist = false
+    @State private var importCandidate: ScriptImportCandidate?
+    @State private var importError: String?
+    var importPicker: @MainActor () throws -> ScriptImportCandidate? = { try ScriptTransferPanels.chooseImport() }
 
     var body: some View {
         ClickerNeutralControlScope {
             VStack(spacing: 0) {
                 statusNotices
-                NavigationSplitView {
-                    ScriptListView()
-                        .navigationSplitViewColumnWidth(
-                            min: 210,
-                            ideal: ClickerVisualTheme.sidebarIdealWidth,
-                            max: 250
-                        )
-                } detail: {
-                    if state.selectedScript == nil {
-                        ClickerEmptyStateView(
-                            kind: state.scripts.isEmpty ? .emptyLibrary : .noSelection,
-                            action: { state.toggleRecord(source: .ui) },
-                            secondaryAction: { state.createBlankScript() },
-                            isActionEnabled: state.canStartRecording && state.hasPermission,
-                            isSecondaryActionEnabled: state.canEditScripts
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(ClickerVisualTheme.canvas)
-                    } else {
-                        ScriptDetailView()
+                if state.scripts.isEmpty {
+                    EmptyLibraryWelcomeView(onImport: chooseImport)
+                } else {
+                    NavigationSplitView {
+                        ScriptListView(onImport: chooseImport)
+                            .navigationSplitViewColumnWidth(
+                                min: 210,
+                                ideal: ClickerVisualTheme.sidebarIdealWidth,
+                                max: 250
+                            )
+                    } detail: {
+                        if state.selectedScript == nil {
+                            ClickerEmptyStateView(kind: .noSelection)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(ClickerVisualTheme.canvas)
+                        } else {
+                            ScriptDetailView()
+                        }
                     }
                 }
             }
         }
         .toolbar {
             ToolbarItemGroup {
-                Button { LibraryHistoryKeyboardSupport.undo(in: state) } label: {
-                    Label("撤销", systemImage: "arrow.uturn.backward")
+                if !state.scripts.isEmpty || state.canUndo || state.canRedo {
+                    Button { LibraryHistoryKeyboardSupport.undo(in: state) } label: {
+                        Label("撤销", systemImage: "arrow.uturn.backward")
+                    }
+                    .disabled(!state.canUndo)
+                    .keyboardShortcut("z", modifiers: .command)
+                    .help("撤销（⌘Z）")
+                    Button { LibraryHistoryKeyboardSupport.redo(in: state) } label: {
+                        Label("重做", systemImage: "arrow.uturn.forward")
+                    }
+                    .disabled(!state.canRedo)
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                    .help("重做（⇧⌘Z）")
                 }
-                .disabled(!state.canUndo)
-                .keyboardShortcut("z", modifiers: .command)
-                .help("撤销（⌘Z）")
-                Button { LibraryHistoryKeyboardSupport.redo(in: state) } label: {
-                    Label("重做", systemImage: "arrow.uturn.forward")
-                }
-                .disabled(!state.canRedo)
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-                .help("重做（⇧⌘Z）")
                 Button(action: openPermissionChecklist) {
                     Label("系统权限", systemImage: state.hasPermission ? "checkmark.shield" : "exclamationmark.shield")
                 }
@@ -59,13 +62,15 @@ struct MainView: View {
                 }
             }
             ToolbarItem {
-                Button {
-                    shortcutEditorScriptID = state.selectedScriptID
-                } label: {
-                    Label(scriptShortcutToolbarTitle, systemImage: "keyboard.badge.ellipsis")
+                if state.selectedScriptID != nil {
+                    Button {
+                        shortcutEditorScriptID = state.selectedScriptID
+                    } label: {
+                        Label(scriptShortcutToolbarTitle, systemImage: "keyboard.badge.ellipsis")
+                    }
+                    .disabled(state.selectedScriptID == nil || !state.canEditScripts)
+                    .help("设置当前脚本的全局回放快捷键")
                 }
-                .disabled(state.selectedScriptID == nil || !state.canEditScripts)
-                .help("设置当前脚本的全局回放快捷键")
             }
             ToolbarItem {
                 SettingsButton { openSettings() }
@@ -78,6 +83,18 @@ struct MainView: View {
         )) { target in
             ScriptPlaybackShortcutView(scriptID: target.id)
                 .environmentObject(state)
+        }
+        .sheet(item: $importCandidate) { candidate in
+            ScriptImportPreview(candidate: candidate)
+                .environmentObject(state)
+        }
+        .alert("导入失败", isPresented: Binding(
+            get: { importError != nil },
+            set: { if !$0 { importError = nil } }
+        )) {
+            Button("好", role: .cancel) { importError = nil }
+        } message: {
+            Text(importError ?? "无法读取脚本文件")
         }
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -120,6 +137,15 @@ struct MainView: View {
             Button("好", role: .cancel) {}
         } message: {
             Text(scriptHotKeyIssueMessage)
+        }
+    }
+
+    private func chooseImport() {
+        guard state.canEditScripts else { return }
+        do {
+            importCandidate = try importPicker()
+        } catch {
+            importError = error.localizedDescription
         }
     }
 

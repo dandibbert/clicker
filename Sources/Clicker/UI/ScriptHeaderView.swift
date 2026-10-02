@@ -89,13 +89,11 @@ struct ScriptHeaderView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
+        Group {
             if layoutPolicy.usesAccessibilityLayout {
                 accessibilityComposition
-            } else if geometry.size.width < 700 {
-                compactComposition
             } else {
-                wideComposition
+                compactComposition
             }
         }
         .frame(height: layoutPolicy.headerHeight)
@@ -126,35 +124,11 @@ struct ScriptHeaderView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var wideComposition: some View {
-        HStack(spacing: 18) {
-            identity
-                .frame(minWidth: 130, maxWidth: .infinity, alignment: .leading)
-
-            PrimaryActionBar(
-                phase: state.phase,
-                hasPlayableScript: ScriptPlaybackEligibility.isPlayable(script),
-                canRecord: state.canStartRecording && state.hasPermission,
-                canPlay: state.hasPermission
-            )
-            .fixedSize(horizontal: true, vertical: false)
-
-            repeatParameters
-                .fixedSize(horizontal: true, vertical: false)
-        }
-        .padding(.horizontal, 22)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: ClickerVisualTheme.compactHeaderHeight)
-    }
-
     private var compactComposition: some View {
         VStack(spacing: ClickerVisualTheme.spacing4) {
-            HStack(spacing: ClickerVisualTheme.spacing12) {
+            HStack(spacing: ClickerVisualTheme.spacing16) {
                 identity
                     .frame(maxWidth: .infinity, alignment: .leading)
-                playbackProgress(width: 176)
-            }
-            HStack(spacing: ClickerVisualTheme.spacing12) {
                 PrimaryActionBar(
                     phase: state.phase,
                     hasPlayableScript: ScriptPlaybackEligibility.isPlayable(script),
@@ -162,9 +136,12 @@ struct ScriptHeaderView: View {
                     canPlay: state.hasPermission
                 )
                 .fixedSize(horizontal: true, vertical: false)
-                repeatSettings
-                    .fixedSize(horizontal: true, vertical: false)
+            }
+            HStack(spacing: ClickerVisualTheme.spacing16) {
+                repeatControls
+                intervalControls
                 Spacer(minLength: 0)
+                playbackProgress(width: 144)
             }
         }
         .padding(.horizontal, ClickerVisualTheme.spacing12)
@@ -199,20 +176,6 @@ struct ScriptHeaderView: View {
             .foregroundStyle(ClickerVisualTheme.secondaryText)
             .lineLimit(1)
             .help(presentation.metadata)
-        }
-    }
-
-    private var repeatParameters: some View {
-        HStack(spacing: ClickerVisualTheme.spacing4) {
-            repeatSettings
-            playbackProgress(width: 144)
-        }
-    }
-
-    private var repeatSettings: some View {
-        HStack(spacing: ClickerVisualTheme.spacing4) {
-            repeatControls
-            intervalControls
         }
     }
 
