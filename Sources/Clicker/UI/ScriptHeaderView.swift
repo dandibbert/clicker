@@ -91,8 +91,6 @@ struct ScriptHeaderView: View {
                 .fixedSize(horizontal: true, vertical: false)
             intervalControls
                 .fixedSize(horizontal: true, vertical: false)
-            deliveryModeControl
-                .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.horizontal, ClickerVisualTheme.spacing12)
         .padding(.vertical, ClickerVisualTheme.spacing12)
@@ -133,8 +131,6 @@ struct ScriptHeaderView: View {
                 .fixedSize(horizontal: true, vertical: false)
                 repeatSettings
                     .fixedSize(horizontal: true, vertical: false)
-                deliveryModeControl
-                    .fixedSize(horizontal: true, vertical: false)
                 Spacer(minLength: 0)
             }
         }
@@ -144,10 +140,13 @@ struct ScriptHeaderView: View {
 
     private var identity: some View {
         VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing4) {
-            Text(presentation.title)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(ClickerVisualTheme.primaryText)
-                .lineLimit(1)
+            HStack(spacing: ClickerVisualTheme.spacing4) {
+                Text(presentation.title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(ClickerVisualTheme.primaryText)
+                    .lineLimit(1)
+                deliveryModeControl
+            }
             Text(presentation.metadata)
             .font(.caption)
             .foregroundStyle(ClickerVisualTheme.secondaryText)
@@ -158,7 +157,6 @@ struct ScriptHeaderView: View {
     private var repeatParameters: some View {
         HStack(spacing: ClickerVisualTheme.spacing4) {
             repeatSettings
-            deliveryModeControl
             playbackProgress(width: 144)
         }
     }
@@ -208,27 +206,24 @@ struct ScriptHeaderView: View {
     }
 
     private var deliveryModeControl: some View {
-        HStack(spacing: layoutPolicy.compactControlSpacing) {
-            Text("模式")
-            Picker("回放模式", selection: Binding(
-                get: { script.playbackDeliveryMode },
-                set: { updatePlaybackDeliveryMode($0) }
-            )) {
-                Text("前台").tag(PlaybackDeliveryMode.foreground)
-                Text("后台").tag(PlaybackDeliveryMode.background)
-                    .disabled(!hasRecordedTarget)
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .frame(width: 72)
-            .help(
-                hasRecordedTarget
-                    ? "后台模式会把事件定向发送给录制目标，不切换桌面或焦点。"
-                    : "这个脚本没有录制目标，无法使用后台模式。"
-            )
+        Picker("回放模式", selection: Binding(
+            get: { script.playbackDeliveryMode },
+            set: { updatePlaybackDeliveryMode($0) }
+        )) {
+            Text("前台").tag(PlaybackDeliveryMode.foreground)
+            Text("后台").tag(PlaybackDeliveryMode.background)
+                .disabled(!hasRecordedTarget)
         }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .frame(width: 66)
         .fixedSize(horizontal: true, vertical: false)
         .disabled(!state.canEditScripts)
+        .help(
+            hasRecordedTarget
+                ? "后台模式会把事件定向发送给录制目标，不切换桌面或焦点。"
+                : "这个脚本没有录制目标，无法使用后台模式。"
+        )
     }
 
     private var hasRecordedTarget: Bool {
