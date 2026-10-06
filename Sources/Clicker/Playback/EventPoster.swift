@@ -6,7 +6,11 @@ import ClickerCore
 enum EventPoster {
     enum Destination: Equatable {
         case system
-        case process(pid: pid_t, windowID: CGWindowID?)
+        case process(
+            pid: pid_t,
+            windowID: CGWindowID?,
+            translation: CGPoint = .zero
+        )
     }
 
     static func scrollDelta(_ value: Double) -> Int32 {
@@ -35,7 +39,7 @@ enum EventPoster {
         case .system:
             event.post(tap: .cghidEventTap)
 
-        case .process(let pid, let windowID):
+        case .process(let pid, let windowID, _):
             event.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(pid))
             if windowAware, let windowID {
                 let value = Int64(windowID)
@@ -52,13 +56,30 @@ enum EventPoster {
         }
     }
 
+    static func translatedPoint(
+        x: Double,
+        y: Double,
+        destination: Destination
+    ) -> CGPoint {
+        switch destination {
+        case .system:
+            return CGPoint(x: x, y: y)
+        case .process(_, _, let translation):
+            return CGPoint(
+                x: x + translation.x,
+                y: y + translation.y
+            )
+        }
+    }
+
     static func post(_ action: StepAction, to destination: Destination = .system) {
         switch action {
         case .mouseMove(let x, let y, let flags):
+            let point = translatedPoint(x: x, y: y, destination: destination)
             guard let event = CGEvent(
                 mouseEventSource: nil,
                 mouseType: .mouseMoved,
-                mouseCursorPosition: CGPoint(x: x, y: y),
+                mouseCursorPosition: point,
                 mouseButton: .left
             ) else { return }
             event.flags = CGEventFlags(rawValue: flags)
@@ -67,10 +88,11 @@ enum EventPoster {
         case .mouseDown(let x, let y, let button, let clickCount, let flags):
             let type: CGEventType = button == .left ? .leftMouseDown : .rightMouseDown
             let cgButton: CGMouseButton = button == .left ? .left : .right
+            let point = translatedPoint(x: x, y: y, destination: destination)
             guard let event = CGEvent(
                 mouseEventSource: nil,
                 mouseType: type,
-                mouseCursorPosition: CGPoint(x: x, y: y),
+                mouseCursorPosition: point,
                 mouseButton: cgButton
             ) else { return }
             event.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
@@ -80,10 +102,11 @@ enum EventPoster {
         case .mouseUp(let x, let y, let button, let clickCount, let flags):
             let type: CGEventType = button == .left ? .leftMouseUp : .rightMouseUp
             let cgButton: CGMouseButton = button == .left ? .left : .right
+            let point = translatedPoint(x: x, y: y, destination: destination)
             guard let event = CGEvent(
                 mouseEventSource: nil,
                 mouseType: type,
-                mouseCursorPosition: CGPoint(x: x, y: y),
+                mouseCursorPosition: point,
                 mouseButton: cgButton
             ) else { return }
             event.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
@@ -93,10 +116,11 @@ enum EventPoster {
         case .mouseDrag(let x, let y, let button, let flags):
             let type: CGEventType = button == .left ? .leftMouseDragged : .rightMouseDragged
             let cgButton: CGMouseButton = button == .left ? .left : .right
+            let point = translatedPoint(x: x, y: y, destination: destination)
             guard let event = CGEvent(
                 mouseEventSource: nil,
                 mouseType: type,
-                mouseCursorPosition: CGPoint(x: x, y: y),
+                mouseCursorPosition: point,
                 mouseButton: cgButton
             ) else { return }
             event.flags = CGEventFlags(rawValue: flags)
@@ -136,7 +160,7 @@ enum EventPoster {
                 wheel2: scrollDelta(dx),
                 wheel3: 0
             ) else { return }
-            event.location = CGPoint(x: x, y: y)
+            event.location = translatedPoint(x: x, y: y, destination: destination)
             event.flags = CGEventFlags(rawValue: flags)
             deliver(event, to: destination, windowAware: true)
         }

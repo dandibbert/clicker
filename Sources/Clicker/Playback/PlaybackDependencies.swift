@@ -66,7 +66,7 @@ final class SystemPlaybackEventPoster: PlaybackEventPosting {
         case .background:
             guard
                 let bundleIdentifier = script.targetBundleIdentifier,
-                let target = BackgroundPlaybackTargetResolver.resolve(
+                let initialTarget = BackgroundPlaybackTargetResolver.resolve(
                     bundleIdentifier: bundleIdentifier
                 )
             else {
@@ -74,7 +74,53 @@ final class SystemPlaybackEventPoster: PlaybackEventPosting {
                 return false
             }
 
-            destination = .process(pid: target.pid, windowID: target.windowID)
+            var target = initialTarget
+            var translation = CGPoint.zero
+
+            if !initialTarget.isOnScreen {
+                guard
+                    let displayBounds = BackgroundVirtualDisplayManager.ensureDisplay(),
+                    BackgroundWindowRelocator.moveTargetWindow(
+                        bundleIdentifier: bundleIdentifier,
+                        to: displayBounds
+                    )
+                else {
+                    NSLog("[Clicker] background playback: virtual-display fallback unavailable")
+                    destination = .system
+                    return false
+                }
+
+                let movedTarget = BackgroundPlaybackTargetResolver.resolve(
+                    bundleIdentifier: bundleIdentifier
+                )
+                guard let movedTarget, movedTarget.isOnScreen else {
+                    NSLog("[Clicker] background playback: target window remained off-screen")
+                    destination = .system
+                    return false
+                }
+
+                if let before = initialTarget.bounds, let after = movedTarget.bounds {
+                    translation = CGPoint(
+                        x: after.minX - before.minX,
+                        y: after.minY - before.minY
+                    )
+                }
+                target = movedTarget
+            }
+
+            NSLog(
+                "[Clicker] background playback: pid=%d window=%u onScreen=%@ dx=%.1f dy=%.1f",
+                target.pid,
+                target.windowID ?? 0,
+                target.isOnScreen ? "yes" : "no",
+                translation.x,
+                translation.y
+            )
+            destination = .process(
+                pid: target.pid,
+                windowID: target.windowID,
+                translation: translation
+            )
             return true
         }
     }

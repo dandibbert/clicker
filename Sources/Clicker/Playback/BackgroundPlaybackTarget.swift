@@ -4,6 +4,8 @@ import CoreGraphics
 struct BackgroundPlaybackTarget: Equatable {
     let pid: pid_t
     let windowID: CGWindowID?
+    let bounds: CGRect?
+    let isOnScreen: Bool
 }
 
 /// Resolves a recorded bundle identifier to a live process and, when possible,
@@ -19,13 +21,25 @@ enum BackgroundPlaybackTargetResolver {
         }
 
         let pid = application.processIdentifier
+        guard let window = firstTopLevelWindow(for: pid) else {
+            return BackgroundPlaybackTarget(
+                pid: pid,
+                windowID: nil,
+                bounds: nil,
+                isOnScreen: false
+            )
+        }
         return BackgroundPlaybackTarget(
             pid: pid,
-            windowID: firstTopLevelWindowID(for: pid)
+            windowID: window.id,
+            bounds: window.bounds,
+            isOnScreen: window.isOnScreen
         )
     }
 
-    private static func firstTopLevelWindowID(for pid: pid_t) -> CGWindowID? {
+    private static func firstTopLevelWindow(
+        for pid: pid_t
+    ) -> (id: CGWindowID, bounds: CGRect?, isOnScreen: Bool)? {
         let options: CGWindowListOption = [.optionAll, .excludeDesktopElements]
         guard let entries = CGWindowListCopyWindowInfo(options, kCGNullWindowID)
             as? [[String: Any]] else {
@@ -43,7 +57,20 @@ enum BackgroundPlaybackTargetResolver {
                 continue
             }
 
-            return CGWindowID(number.uint32Value)
+            let bounds: CGRect? = {
+                guard let dictionary = entry[kCGWindowBounds as String] as? NSDictionary else {
+                    return nil
+                }
+                return CGRect(dictionaryRepresentation: dictionary)
+            }()
+            let isOnScreen = (
+                entry[kCGWindowIsOnscreen as String] as? NSNumber
+            )?.boolValue ?? false
+            return (
+                id: CGWindowID(number.uint32Value),
+                bounds: bounds,
+                isOnScreen: isOnScreen
+            )
         }
 
         return nil
