@@ -91,6 +91,8 @@ struct ScriptHeaderView: View {
                 .fixedSize(horizontal: true, vertical: false)
             intervalControls
                 .fixedSize(horizontal: true, vertical: false)
+            deliveryModeControl
+                .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.horizontal, ClickerVisualTheme.spacing12)
         .padding(.vertical, ClickerVisualTheme.spacing12)
@@ -131,6 +133,8 @@ struct ScriptHeaderView: View {
                 .fixedSize(horizontal: true, vertical: false)
                 repeatSettings
                     .fixedSize(horizontal: true, vertical: false)
+                deliveryModeControl
+                    .fixedSize(horizontal: true, vertical: false)
                 Spacer(minLength: 0)
             }
         }
@@ -154,6 +158,7 @@ struct ScriptHeaderView: View {
     private var repeatParameters: some View {
         HStack(spacing: ClickerVisualTheme.spacing4) {
             repeatSettings
+            deliveryModeControl
             playbackProgress(width: 144)
         }
     }
@@ -202,6 +207,35 @@ struct ScriptHeaderView: View {
         .disabled(!state.canEditScripts)
     }
 
+    private var deliveryModeControl: some View {
+        HStack(spacing: layoutPolicy.compactControlSpacing) {
+            Text("模式")
+            Picker("回放模式", selection: Binding(
+                get: { script.playbackDeliveryMode },
+                set: { updatePlaybackDeliveryMode($0) }
+            )) {
+                Text("前台").tag(PlaybackDeliveryMode.foreground)
+                Text("后台").tag(PlaybackDeliveryMode.background)
+                    .disabled(!hasRecordedTarget)
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 72)
+            .help(
+                hasRecordedTarget
+                    ? "后台模式会把事件定向发送给录制目标，不切换桌面或焦点。"
+                    : "这个脚本没有录制目标，无法使用后台模式。"
+            )
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .disabled(!state.canEditScripts)
+    }
+
+    private var hasRecordedTarget: Bool {
+        guard let target = script.targetBundleIdentifier else { return false }
+        return !target.isEmpty
+    }
+
     @ViewBuilder
     private func playbackProgress(width: CGFloat) -> some View {
         if let playbackProgressText = presentation.playbackProgressText {
@@ -229,6 +263,13 @@ struct ScriptHeaderView: View {
     private func updateRepeatInterval(_ interval: TimeInterval) {
         var updated = script
         updated.repeatInterval = max(0, interval)
+        state.update(updated)
+    }
+
+    private func updatePlaybackDeliveryMode(_ mode: PlaybackDeliveryMode) {
+        if mode == .background && !hasRecordedTarget { return }
+        var updated = script
+        updated.playbackDeliveryMode = mode
         state.update(updated)
     }
 }
