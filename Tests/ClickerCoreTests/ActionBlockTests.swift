@@ -98,7 +98,7 @@ final class ActionBlockTests: XCTestCase {
         decoder.dateDecodingStrategy = .millisecondsSince1970
         let script = try decoder.decode(Script.self, from: legacyV1ScriptData)
 
-        XCTAssertEqual(script.schemaVersion, 4)
+        XCTAssertEqual(script.schemaVersion, 5)
         XCTAssertEqual(script.trailingDelay, 0)
         XCTAssertNil(script.targetBundleIdentifier)
         XCTAssertEqual(script.blocks.count, 7)
@@ -152,11 +152,11 @@ final class ActionBlockTests: XCTestCase {
         var currentObject = try XCTUnwrap(
             JSONSerialization.jsonObject(with: legacyV1ScriptData) as? [String: Any]
         )
-        currentObject["schemaVersion"] = 4
+        currentObject["schemaVersion"] = 5
         let currentData = try JSONSerialization.data(withJSONObject: currentObject)
-        XCTAssertEqual(try decoder.decode(Script.self, from: currentData).schemaVersion, 4)
+        XCTAssertEqual(try decoder.decode(Script.self, from: currentData).schemaVersion, 5)
 
-        for schemaVersion in [0, 5, 99] {
+        for schemaVersion in [0, 6, 99] {
             var object = try XCTUnwrap(
                 JSONSerialization.jsonObject(with: legacyV1ScriptData) as? [String: Any]
             )
@@ -274,7 +274,7 @@ final class ActionBlockTests: XCTestCase {
             repeatCount: 3,
             repeatForever: true,
             repeatInterval: 0.7,
-            schemaVersion: 4,
+            schemaVersion: 5,
             trailingDelay: 0.8,
             targetBundleIdentifier: "com.example.target"
         )
@@ -293,7 +293,7 @@ final class ActionBlockTests: XCTestCase {
         )
         XCTAssertEqual(decoded.blocks.map(\.overlapBefore), Array(repeating: 0, count: 7))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(object["schemaVersion"] as? Int, 4)
+        XCTAssertEqual(object["schemaVersion"] as? Int, 5)
     }
 
     func testTimelineDefaultsAndActionBlockHelpers() {
@@ -345,12 +345,13 @@ final class ActionBlockTests: XCTestCase {
 
     func testScriptDefaultsToCurrentSchema() {
         let script = Script(name: "测试")
-        XCTAssertEqual(script.schemaVersion, 4)
+        XCTAssertEqual(script.schemaVersion, 5)
         XCTAssertEqual(script.repeatCount, 1)
         XCTAssertFalse(script.repeatForever)
         XCTAssertEqual(script.repeatInterval, 0)
         XCTAssertEqual(script.trailingDelay, 0)
         XCTAssertNil(script.targetBundleIdentifier)
+        XCTAssertEqual(script.playbackDeliveryMode, .foreground)
         XCTAssertNil(script.playbackShortcut)
         XCTAssertTrue(script.blocks.isEmpty)
     }
