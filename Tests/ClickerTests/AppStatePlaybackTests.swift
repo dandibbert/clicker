@@ -30,6 +30,30 @@ final class AppStatePlaybackTests: XCTestCase {
         XCTAssertEqual(context.application.restoreCallCount, 0)
     }
 
+    func testBackgroundPlaybackKeepsCurrentFocusAndSkipsApplicationActivation() async {
+        let script = playableScript(
+            targetBundleIdentifier: "com.example.background",
+            playbackDeliveryMode: .background
+        )
+        let context = makeContext(
+            script: script,
+            recentTarget: "com.example.current"
+        )
+        defer { try? FileManager.default.removeItem(at: context.directory) }
+
+        context.state.togglePlay()
+
+        XCTAssertTrue(context.application.activationAttempts.isEmpty)
+        XCTAssertEqual(context.application.hideCallCount, 0)
+        XCTAssertEqual(context.playback.playedScripts, [script])
+
+        context.playback.finish(session: 0)
+        await Task.yield()
+
+        XCTAssertEqual(context.application.restoreCallCount, 0)
+        XCTAssertEqual(context.state.phase, .idle)
+    }
+
     func testScriptShortcutIgnoresUnknownUnplayableAndBusyRequests() {
         let playable = playableScript()
         let empty = Script(name: "empty")
@@ -303,11 +327,15 @@ final class AppStatePlaybackTests: XCTestCase {
         XCTAssertTrue(state.canEditScripts)
     }
 
-    private func playableScript(targetBundleIdentifier: String? = nil) -> Script {
+    private func playableScript(
+        targetBundleIdentifier: String? = nil,
+        playbackDeliveryMode: PlaybackDeliveryMode = .foreground
+    ) -> Script {
         Script(
             name: "playable",
             blocks: [.wait(WaitBlock(duration: 1))],
-            targetBundleIdentifier: targetBundleIdentifier
+            targetBundleIdentifier: targetBundleIdentifier,
+            playbackDeliveryMode: playbackDeliveryMode
         )
     }
 
