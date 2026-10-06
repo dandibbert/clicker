@@ -63,7 +63,7 @@ final class TimelineV4Tests: XCTestCase {
         let decoded = try decoder.decode(Script.self, from: data)
 
         XCTAssertEqual(decoded, script)
-        XCTAssertEqual(decoded.schemaVersion, 4)
+        XCTAssertEqual(decoded.schemaVersion, 5)
         XCTAssertEqual(decoded.blocks.map(\.startOffset), [0.25, 0.5, 0.75, 1])
         XCTAssertEqual(encoded.components(separatedBy: "\"startOffset\"").count - 1, 4)
         XCTAssertFalse(encoded.contains("\"delayBefore\""))
@@ -111,7 +111,7 @@ final class TimelineV4Tests: XCTestCase {
 
         let script = try decoder.decode(Script.self, from: data)
 
-        XCTAssertEqual(script.schemaVersion, 4)
+        XCTAssertEqual(script.schemaVersion, 5)
         for (actual, expected) in zip(script.blocks.map(\.startOffset), [0.4, 1.1, 1.6, 3.7]) {
             XCTAssertEqual(actual, expected, accuracy: 0.000_001)
         }
