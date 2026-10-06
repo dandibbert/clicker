@@ -73,6 +73,23 @@ struct ScriptHeaderView: View {
         }
         .frame(height: layoutPolicy.headerHeight)
         .background(ClickerVisualTheme.controlSurface)
+        .contextMenu {
+            Menu("回放模式") {
+                Button(
+                    script.playbackDeliveryMode == .foreground ? "✓ 前台" : "前台"
+                ) {
+                    updatePlaybackDeliveryMode(.foreground)
+                }
+                .disabled(!state.canEditScripts)
+
+                Button(
+                    script.playbackDeliveryMode == .background ? "✓ 后台" : "后台"
+                ) {
+                    updatePlaybackDeliveryMode(.background)
+                }
+                .disabled(!state.canEditScripts || !hasRecordedTarget)
+            }
+        }
     }
 
     private var accessibilityComposition: some View {
@@ -229,6 +246,19 @@ struct ScriptHeaderView: View {
     private func updateRepeatInterval(_ interval: TimeInterval) {
         var updated = script
         updated.repeatInterval = max(0, interval)
+        state.update(updated)
+    }
+
+    private var hasRecordedTarget: Bool {
+        guard let target = script.targetBundleIdentifier else { return false }
+        return !target.isEmpty
+    }
+
+    private func updatePlaybackDeliveryMode(_ mode: PlaybackDeliveryMode) {
+        guard state.canEditScripts else { return }
+        if mode == .background && !hasRecordedTarget { return }
+        var updated = script
+        updated.playbackDeliveryMode = mode
         state.update(updated)
     }
 }
