@@ -318,12 +318,15 @@ final class AppState: ObservableObject {
             guard let script = selectedScript else { return }
             guard ScriptPlaybackEligibility.isPlayable(script) else { return }
             let fallback = externalApplicationTracker.mostRecentExternalBundleIdentifier
-            application.hideClicker()
+            let usesBackgroundDelivery = script.playbackDeliveryMode == .background
+            if !usesBackgroundDelivery {
+                application.hideClicker()
+            }
             startPlayback(
                 script: script,
                 saved: script.targetBundleIdentifier,
                 fallback: fallback,
-                restoresClicker: true
+                restoresClicker: !usesBackgroundDelivery
             )
         case .countdown, .recording:
             break
@@ -350,7 +353,9 @@ final class AppState: ObservableObject {
         fallback: String?,
         restoresClicker: Bool
     ) {
-        activatePlaybackTarget(saved: saved, fallback: fallback)
+        if script.playbackDeliveryMode == .foreground {
+            activatePlaybackTarget(saved: saved, fallback: fallback)
+        }
         playbackGeneration += 1
         let generation = playbackGeneration
         playbackFocusGeneration = restoresClicker ? generation : nil
