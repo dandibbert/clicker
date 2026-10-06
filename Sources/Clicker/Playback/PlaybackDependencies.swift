@@ -10,7 +10,14 @@ protocol PlaybackTiming: AnyObject {
 
 @MainActor
 protocol PlaybackEventPosting: AnyObject {
+    func begin(script: Script) -> Bool
     func post(_ action: StepAction)
+    func end()
+}
+
+extension PlaybackEventPosting {
+    func begin(script _: Script) -> Bool { true }
+    func end() {}
 }
 
 @MainActor
@@ -48,7 +55,35 @@ final class SystemPlaybackTiming: PlaybackTiming {
 
 @MainActor
 final class SystemPlaybackEventPoster: PlaybackEventPosting {
+    private var destination: EventPoster.Destination = .system
+
+    func begin(script: Script) -> Bool {
+        switch script.playbackDeliveryMode {
+        case .foreground:
+            destination = .system
+            return true
+
+        case .background:
+            guard
+                let bundleIdentifier = script.targetBundleIdentifier,
+                let target = BackgroundPlaybackTargetResolver.resolve(
+                    bundleIdentifier: bundleIdentifier
+                )
+            else {
+                destination = .system
+                return false
+            }
+
+            destination = .process(pid: target.pid, windowID: target.windowID)
+            return true
+        }
+    }
+
     func post(_ action: StepAction) {
-        EventPoster.post(action)
+        EventPoster.post(action, to: destination)
+    }
+
+    func end() {
+        destination = .system
     }
 }
