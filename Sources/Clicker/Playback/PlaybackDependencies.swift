@@ -1,5 +1,6 @@
 import AppKit
 import ClickerCore
+import CVirtualDisplayPrivate
 
 @MainActor
 protocol PlaybackTiming: AnyObject {
@@ -56,8 +57,12 @@ final class SystemPlaybackTiming: PlaybackTiming {
 @MainActor
 final class SystemPlaybackEventPoster: PlaybackEventPosting {
     private var destination: EventPoster.Destination = .system
+    private var parkedWindowID: CGWindowID?
+    private var parkingInfo: ClickerSpaceParkingInfo?
 
     func begin(script: Script) -> Bool {
+        restoreParkingIfNeeded()
+
         switch script.playbackDeliveryMode {
         case .foreground:
             destination = .system
@@ -75,51 +80,45 @@ final class SystemPlaybackEventPoster: PlaybackEventPosting {
             }
 
             var target = initialTarget
-            var translation = CGPoint.zero
 
             if !initialTarget.isOnScreen {
-                guard
-                    let displayBounds = BackgroundVirtualDisplayManager.ensureDisplay(),
-                    BackgroundWindowRelocator.moveTargetWindow(
-                        bundleIdentifier: bundleIdentifier,
-                        to: displayBounds
-                    )
-                else {
-                    NSLog("[Clicker] background playback: virtual-display fallback unavailable")
+                guard let windowID = initialTarget.windowID else {
+                    NSLog("[Clicker] background playback: target has no window ID")
                     destination = .system
                     return false
                 }
 
-                let movedTarget = BackgroundPlaybackTargetResolver.resolve(
-                    bundleIdentifier: bundleIdentifier
+                var info = ClickerSpaceParkingInfo()
+                guard clicker_window_park_on_current_space(windowID, &info) else {
+                    NSLog("[Clicker] background playback: verified Space parking failed")
+                    destination = .system
+                    return false
+                }
+
+                parkedWindowID = windowID
+                parkingInfo = info
+                target = BackgroundPlaybackTargetResolver.resolve(
+                    bundleIdentifier: bundleIdentifier,
+                    preferredWindowID: windowID
+                ) ?? initialTarget
+
+                NSLog(
+                    "[Clicker] background playback parked window=%u sourceSpace=%llu currentSpace=%llu",
+                    windowID,
+                    info.sourceSpaceID,
+                    info.targetSpaceID
                 )
-                guard let movedTarget, movedTarget.isOnScreen else {
-                    NSLog("[Clicker] background playback: target window remained off-screen")
-                    destination = .system
-                    return false
-                }
-
-                if let before = initialTarget.bounds, let after = movedTarget.bounds {
-                    translation = CGPoint(
-                        x: after.minX - before.minX,
-                        y: after.minY - before.minY
-                    )
-                }
-                target = movedTarget
             }
 
-            NSLog(
-                "[Clicker] background playback: pid=%d window=%u onScreen=%@ dx=%.1f dy=%.1f",
-                target.pid,
-                target.windowID ?? 0,
-                target.isOnScreen ? "yes" : "no",
-                translation.x,
-                translation.y
-            )
             destination = .process(
                 pid: target.pid,
-                windowID: target.windowID,
-                translation: translation
+                windowID: target.windowID
+            )
+            NSLog(
+                "[Clicker] background playback ready: pid=%d window=%u originalOnScreen=%@",
+                target.pid,
+                target.windowID ?? 0,
+                initialTarget.isOnScreen ? "yes" : "no"
             )
             return true
         }
@@ -130,6 +129,28 @@ final class SystemPlaybackEventPoster: PlaybackEventPosting {
     }
 
     func end() {
+        restoreParkingIfNeeded()
         destination = .system
+    }
+
+    private func restoreParkingIfNeeded() {
+        guard var info = parkingInfo, let windowID = parkedWindowID else {
+            parkingInfo = nil
+            parkedWindowID = nil
+            return
+        }
+
+        let restored = clicker_window_restore_from_parking(
+            windowID,
+            &info
+        )
+        if !restored {
+            NSLog(
+                "[Clicker] warning: failed restoring parked background window=%u",
+                windowID
+            )
+        }
+        parkingInfo = nil
+        parkedWindowID = nil
     }
 }

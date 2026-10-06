@@ -12,7 +12,10 @@ struct BackgroundPlaybackTarget: Equatable {
 /// its top-level window. The window lookup intentionally uses optionAll so
 /// windows on inactive Spaces remain eligible.
 enum BackgroundPlaybackTargetResolver {
-    static func resolve(bundleIdentifier: String) -> BackgroundPlaybackTarget? {
+    static func resolve(
+        bundleIdentifier: String,
+        preferredWindowID: CGWindowID? = nil
+    ) -> BackgroundPlaybackTarget? {
         guard !bundleIdentifier.isEmpty,
               let application = NSRunningApplication.runningApplications(
                 withBundleIdentifier: bundleIdentifier
@@ -21,7 +24,10 @@ enum BackgroundPlaybackTargetResolver {
         }
 
         let pid = application.processIdentifier
-        guard let window = firstTopLevelWindow(for: pid) else {
+        guard let window = firstTopLevelWindow(
+            for: pid,
+            preferredWindowID: preferredWindowID
+        ) else {
             return BackgroundPlaybackTarget(
                 pid: pid,
                 windowID: nil,
@@ -38,7 +44,8 @@ enum BackgroundPlaybackTargetResolver {
     }
 
     private static func firstTopLevelWindow(
-        for pid: pid_t
+        for pid: pid_t,
+        preferredWindowID: CGWindowID?
     ) -> (id: CGWindowID, bounds: CGRect?, isOnScreen: Bool)? {
         let options: CGWindowListOption = [.optionAll, .excludeDesktopElements]
         guard let entries = CGWindowListCopyWindowInfo(options, kCGNullWindowID)
@@ -46,6 +53,7 @@ enum BackgroundPlaybackTargetResolver {
             return nil
         }
 
+        var fallback: (id: CGWindowID, bounds: CGRect?, isOnScreen: Bool)?
         for entry in entries {
             guard
                 let ownerPID = entry[kCGWindowOwnerPID as String] as? NSNumber,
@@ -66,13 +74,20 @@ enum BackgroundPlaybackTargetResolver {
             let isOnScreen = (
                 entry[kCGWindowIsOnscreen as String] as? NSNumber
             )?.boolValue ?? false
-            return (
+            let candidate = (
                 id: CGWindowID(number.uint32Value),
                 bounds: bounds,
                 isOnScreen: isOnScreen
             )
+
+            if candidate.id == preferredWindowID {
+                return candidate
+            }
+            if fallback == nil {
+                fallback = candidate
+            }
         }
 
-        return nil
+        return fallback
     }
 }
