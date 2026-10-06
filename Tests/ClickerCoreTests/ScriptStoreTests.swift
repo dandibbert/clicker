@@ -77,7 +77,7 @@ final class ScriptStoreTests: XCTestCase {
         XCTAssertEqual(store.loadAll().scripts.map(\.name), ["A", "B"])
     }
 
-    func testV1FixtureLoadsAndNextSaveWritesSchemaVersion4() throws {
+    func testV1FixtureLoadsAndNextSaveWritesSchemaVersion5() throws {
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         try legacyV1ScriptData.write(to: tmpDir.appendingPathComponent("legacy.json"))
 
@@ -87,15 +87,16 @@ final class ScriptStoreTests: XCTestCase {
         XCTAssertEqual(loaded.count, 1)
         XCTAssertTrue(result.issues.isEmpty)
         let script = try XCTUnwrap(loaded.first)
-        XCTAssertEqual(script.schemaVersion, 4)
+        XCTAssertEqual(script.schemaVersion, 5)
         XCTAssertEqual(script.trailingDelay, 0)
         XCTAssertNil(script.targetBundleIdentifier)
+        XCTAssertEqual(script.playbackDeliveryMode, .foreground)
 
         try store.save(script)
         let savedURL = tmpDir.appendingPathComponent("\(script.id.uuidString).json")
         let savedData = try Data(contentsOf: savedURL)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: savedData) as? [String: Any])
-        XCTAssertEqual(object["schemaVersion"] as? Int, 4)
+        XCTAssertEqual(object["schemaVersion"] as? Int, 5)
     }
 
     func testPartialTemporaryWriteDoesNotChangeExistingDestination() throws {
