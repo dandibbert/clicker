@@ -1,7 +1,7 @@
 import Foundation
 
 public struct Script: Codable, Equatable, Sendable, Identifiable {
-    public static let currentSchemaVersion = 4
+    public static let currentSchemaVersion = 5
 
     public var id: UUID
     public var name: String
@@ -14,6 +14,7 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
     public var schemaVersion: Int
     public var trailingDelay: TimeInterval
     public var targetBundleIdentifier: String?
+    public var playbackDeliveryMode: PlaybackDeliveryMode
     public var playbackShortcut: ScriptShortcut?
 
     public init(
@@ -28,6 +29,7 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         schemaVersion _: Int = Script.currentSchemaVersion,
         trailingDelay: TimeInterval = 0,
         targetBundleIdentifier: String? = nil,
+        playbackDeliveryMode: PlaybackDeliveryMode = .foreground,
         playbackShortcut: ScriptShortcut? = nil
     ) {
         self.id = id
@@ -41,13 +43,14 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         schemaVersion = Self.currentSchemaVersion
         self.trailingDelay = trailingDelay
         self.targetBundleIdentifier = targetBundleIdentifier
+        self.playbackDeliveryMode = playbackDeliveryMode
         self.playbackShortcut = playbackShortcut
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, createdAt, modifiedAt, blocks
         case repeatCount, repeatForever, repeatInterval
-        case schemaVersion, trailingDelay, targetBundleIdentifier, playbackShortcut
+        case schemaVersion, trailingDelay, targetBundleIdentifier, playbackDeliveryMode, playbackShortcut
     }
 
     public init(from decoder: Decoder) throws {
@@ -77,6 +80,10 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
             String.self,
             forKey: .targetBundleIdentifier
         )
+        playbackDeliveryMode = try container.decodeIfPresent(
+            PlaybackDeliveryMode.self,
+            forKey: .playbackDeliveryMode
+        ) ?? .foreground
         playbackShortcut = try container.decodeIfPresent(
             ScriptShortcut.self,
             forKey: .playbackShortcut
@@ -96,6 +103,7 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         try container.encode(Self.currentSchemaVersion, forKey: .schemaVersion)
         try container.encode(trailingDelay, forKey: .trailingDelay)
         try container.encodeIfPresent(targetBundleIdentifier, forKey: .targetBundleIdentifier)
+        try container.encode(playbackDeliveryMode, forKey: .playbackDeliveryMode)
         try container.encodeIfPresent(playbackShortcut, forKey: .playbackShortcut)
     }
 
@@ -116,6 +124,18 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
                 .withStartOffset(start)
                 .clearingLegacyTiming()
                 .assigningLegacyOrdinals(next: &nextOrdinal)
+        }
+    }
+}
+
+public enum PlaybackDeliveryMode: String, Codable, CaseIterable, Sendable {
+    case foreground
+    case background
+
+    public var displayName: String {
+        switch self {
+        case .foreground: return "前台"
+        case .background: return "后台"
         }
     }
 }
