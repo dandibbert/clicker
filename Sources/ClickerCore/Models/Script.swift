@@ -68,7 +68,9 @@ public struct Script: Codable, Equatable, Sendable, Identifiable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         modifiedAt = try container.decode(Date.self, forKey: .modifiedAt)
         let decodedBlocks = try container.decode([ActionBlock].self, forKey: .blocks)
-        blocks = decodedVersion < Self.currentSchemaVersion
+        // Schema v4 introduced the absolute timeline. Schema v5 only adds
+        // playback delivery metadata, so v4 scripts must not be migrated again.
+        blocks = decodedVersion < 4
             ? Self.migrateLegacyBlocks(decodedBlocks)
             : decodedBlocks.map { $0.clearingLegacyTiming() }
         repeatCount = try container.decode(Int.self, forKey: .repeatCount)
