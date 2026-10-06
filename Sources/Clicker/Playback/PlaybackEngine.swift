@@ -40,6 +40,7 @@ final class PlaybackEngine: PlaybackControlling {
         let gen = generation
         let plan = BlockExpander.plan(for: script)
         guard !plan.steps.isEmpty || plan.duration > 0 else { onFinish(); return }
+        guard poster.begin(script: script) else { onFinish(); return }
         activeGeneration = gen
         pressedInputs = PressedInputTracker()
 
@@ -122,5 +123,6 @@ final class PlaybackEngine: PlaybackControlling {
         for action in releaseActions {
             poster.post(action)
         }
+        poster.end()
     }
 }
