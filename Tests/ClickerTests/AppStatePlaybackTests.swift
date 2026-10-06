@@ -54,6 +54,22 @@ final class AppStatePlaybackTests: XCTestCase {
         XCTAssertEqual(context.state.phase, .idle)
     }
 
+    func testBackgroundPlaybackWithoutRecordedTargetIsRejected() {
+        let script = playableScript(
+            targetBundleIdentifier: nil,
+            playbackDeliveryMode: .background
+        )
+        let context = makeContext(script: script, recentTarget: "com.example.current")
+        defer { try? FileManager.default.removeItem(at: context.directory) }
+
+        context.state.togglePlay()
+
+        XCTAssertTrue(context.playback.playedScripts.isEmpty)
+        XCTAssertTrue(context.application.activationAttempts.isEmpty)
+        XCTAssertEqual(context.application.hideCallCount, 0)
+        XCTAssertEqual(context.state.phase, .idle)
+    }
+
     func testScriptShortcutIgnoresUnknownUnplayableAndBusyRequests() {
         let playable = playableScript()
         let empty = Script(name: "empty")
