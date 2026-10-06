@@ -103,7 +103,6 @@ bool clicker_virtual_display_start(
         );
         if (!display) {
             NSLog(@"[Clicker] CGVirtualDisplay initWithDescriptor failed");
-            [descriptor release];
             return false;
         }
 
@@ -122,12 +121,8 @@ bool clicker_virtual_display_start(
             sel_registerName("applySettings:"),
             settings
         );
-        [descriptor release];
-        [mode release];
-        [settings release];
         if (!applied) {
             NSLog(@"[Clicker] CGVirtualDisplay applySettings failed");
-            [display release];
             return false;
         }
 
