@@ -140,13 +140,10 @@ struct ScriptHeaderView: View {
 
     private var identity: some View {
         VStack(alignment: .leading, spacing: ClickerVisualTheme.spacing4) {
-            HStack(spacing: ClickerVisualTheme.spacing4) {
-                Text(presentation.title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(ClickerVisualTheme.primaryText)
-                    .lineLimit(1)
-                deliveryModeControl
-            }
+            Text(presentation.title)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(ClickerVisualTheme.primaryText)
+                .lineLimit(1)
             Text(presentation.metadata)
             .font(.caption)
             .foregroundStyle(ClickerVisualTheme.secondaryText)
@@ -205,32 +202,6 @@ struct ScriptHeaderView: View {
         .disabled(!state.canEditScripts)
     }
 
-    private var deliveryModeControl: some View {
-        Picker("回放模式", selection: Binding(
-            get: { script.playbackDeliveryMode },
-            set: { updatePlaybackDeliveryMode($0) }
-        )) {
-            Text("前台").tag(PlaybackDeliveryMode.foreground)
-            Text("后台").tag(PlaybackDeliveryMode.background)
-                .disabled(!hasRecordedTarget)
-        }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        .frame(width: 66)
-        .fixedSize(horizontal: true, vertical: false)
-        .disabled(!state.canEditScripts)
-        .help(
-            hasRecordedTarget
-                ? "后台模式会把事件定向发送给录制目标，不切换桌面或焦点。"
-                : "这个脚本没有录制目标，无法使用后台模式。"
-        )
-    }
-
-    private var hasRecordedTarget: Bool {
-        guard let target = script.targetBundleIdentifier else { return false }
-        return !target.isEmpty
-    }
-
     @ViewBuilder
     private func playbackProgress(width: CGFloat) -> some View {
         if let playbackProgressText = presentation.playbackProgressText {
@@ -258,13 +229,6 @@ struct ScriptHeaderView: View {
     private func updateRepeatInterval(_ interval: TimeInterval) {
         var updated = script
         updated.repeatInterval = max(0, interval)
-        state.update(updated)
-    }
-
-    private func updatePlaybackDeliveryMode(_ mode: PlaybackDeliveryMode) {
-        if mode == .background && !hasRecordedTarget { return }
-        var updated = script
-        updated.playbackDeliveryMode = mode
         state.update(updated)
     }
 }
